@@ -76,7 +76,17 @@ check_claude_image() {
     fail claude-image "image localhost/scion/scion-claude:latest missing"
   fi
 }
-check_hubproject()   { fail hubproject "not implemented"; }
+check_hubproject() {
+  # Read-only query of the hub DB on the VM. Reads the secret's *name* only.
+  local out
+  out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"
+    SELECT 'project', p.slug FROM projects p WHERE p.git_remote LIKE '%duboc/acme-airlines%';
+    SELECT 'secret', s.key FROM secrets s JOIN projects p ON s.scope_id = p.id
+      WHERE s.scope = 'project' AND s.key = 'GITHUB_TOKEN' AND p.git_remote LIKE '%duboc/acme-airlines%';\"" 2>/dev/null)"
+  grep -q '^project|' <<<"${out}" || { fail hubproject "no hub project with remote duboc/acme-airlines"; return 1; }
+  grep -q '^secret|GITHUB_TOKEN' <<<"${out}" || { fail hubproject "project secret GITHUB_TOKEN not set"; return 1; }
+  pass hubproject
+}
 check_smoke()        { fail smoke "not implemented"; }
 
 run() {

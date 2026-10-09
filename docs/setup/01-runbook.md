@@ -82,3 +82,65 @@ Result:
 - Run time ≈ 16 min (images built in ~5 min on n2-standard-16)
 
 Verify: `infra/verify.sh hub` → `PASS hub`.
+
+## 3. Vertex AI (global) access + Claude image (`infra/20-model-access.sh`)
+
+```bash
+infra/20-model-access.sh
+```
+
+What it does (idempotent):
+
+```bash
+gcloud projects add-iam-policy-binding acme-airlines-factory \
+  --member=serviceAccount:scion-hub-acme@acme-airlines-factory.iam.gserviceaccount.com \
+  --role=roles/aiplatform.user --condition=None      # already granted by deploy.sh; re-asserted
+# on the VM, in /opt/scion-source (same tag as the hub):
+sudo docker build -t scion-claude:latest --build-arg BASE_IMAGE=scion-base:latest \
+  -f harnesses/claude/Dockerfile harnesses/claude/
+sudo docker tag scion-claude:latest localhost/scion/scion-claude:latest
+```
+
+Hub-scoped env vars seen by every agent (seeded by deploy.sh):
+
+| Key | Value |
+|-----|-------|
+| `GOOGLE_CLOUD_PROJECT` | `acme-airlines-factory` |
+| `GOOGLE_CLOUD_LOCATION` | `global` |
+
+The Claude harness maps these to `CLAUDE_CODE_USE_VERTEX=1`,
+`ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` (from
+`GOOGLE_CLOUD_LOCATION` → `global`). Antigravity uses ADC from the VM metadata
+server with the same variables. No API keys are used.
+
+### Manual step — enable Claude in Vertex AI Model Garden
+
+Console → **Vertex AI → Model Garden** → search "Claude" → open each model →
+**Enable** (accept Anthropic terms), for project `acme-airlines-factory`:
+
+- Claude Opus 5.5 (`claude-opus-5-5`) — default model of the scion Claude harness
+- Claude Haiku 4.5 (`claude-haiku-4-5`) — background/small model
+
+Verify: `infra/verify.sh vertex` (calls Gemini `generateContent` and Claude
+`rawPredict` on `locations/global` from the VM with its service account) and
+`infra/verify.sh claude-image`.
+
+## 4. Register acme-airlines on the Hub (manual, web UI)
+
+The Hub runs with IAP proxy auth; the simplest path is the web UI at the access URL.
+
+1. Open <https://scion-hub-acme-iap-proxy-vdhcml5ceq-uc.a.run.app> and sign in
+   as `admin@duboc.altostrat.com` (auto-promoted to super-admin).
+2. **Create the GitHub token** — GitHub → Settings → Developer settings →
+   Personal access tokens → **Fine-grained tokens** → Generate new token:
+   - Resource owner: `duboc`; Repository access: **Only select repositories** → `duboc/acme-airlines`
+   - Permissions: **Contents: Read and write**, **Pull requests: Read and write**
+     (Metadata: Read-only is added automatically)
+   - Expiration: 90 days
+3. **Create the project** — Projects → New project → from Git URL
+   `https://github.com/duboc/acme-airlines.git` (slug `acme-airlines`, branch `main`).
+4. **Add the secret** — open the project → Settings → Secrets → Add Secret:
+   key `GITHUB_TOKEN`, value = the token from step 2. Never paste it anywhere else.
+
+Verify: `infra/verify.sh hubproject` (read-only query of the hub DB on the VM;
+checks the project exists and that a project secret *named* `GITHUB_TOKEN` exists).
