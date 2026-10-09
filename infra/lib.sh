@@ -51,5 +51,21 @@ vm_ssh() {
     --tunnel-through-iap --quiet --command="$1"
 }
 
+# Run `scion <args...>` on the VM against http://localhost:8080 as the operator
+# (requires infra/30-hub-admin-access.sh enable). The Google ID token travels
+# over SSH stdin, never in argv or files. Extra stdin for the scion command can
+# be supplied with HUB_CLI_STDIN (e.g. a secret value), sent after the token.
+hub_cli() {
+  local tok args
+  tok="$(gcloud auth print-identity-token 2>/dev/null)"
+  printf -v args '%q ' "$@"
+  { printf '%s\n' "${tok}"; [[ -n "${HUB_CLI_STDIN:-}" ]] && printf '%s' "${HUB_CLI_STDIN}"; } | \
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
+      --tunnel-through-iap --quiet --command="
+        IFS= read -r SCION_HUB_TOKEN; export SCION_HUB_TOKEN
+        export SCION_HUB_ENDPOINT=http://localhost:8080
+        mkdir -p ~/acme-cli && cd ~/acme-cli && scion ${args}"
+}
+
 export PROJECT_ID REGION HUB_NAME VM_NAME VM_SA PROXY_SVC
 export REPO_ROOT FOLDER_ID BILLING_ACCOUNT SCION_SRC SCION_VERSION CONFIG_FILE

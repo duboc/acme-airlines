@@ -87,7 +87,14 @@ check_hubproject() {
   grep -q '^secret|GITHUB_TOKEN' <<<"${out}" || { fail hubproject "project secret GITHUB_TOKEN not set"; return 1; }
   pass hubproject
 }
-check_smoke()        { fail smoke "not implemented"; }
+check_smoke() {
+  local titles a
+  titles="$(gh pr list -R duboc/acme-airlines --state all --search 'smoke: in:title' --json title -q '.[].title' 2>/dev/null)"
+  for a in smoke-gemini smoke-claude; do
+    grep -q "smoke: ${a}" <<<"${titles}" || { fail smoke "no PR titled 'smoke: ${a}'"; return 1; }
+  done
+  pass smoke
+}
 
 run() {
   case "$1" in
