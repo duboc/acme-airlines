@@ -55,7 +55,18 @@ flowchart LR
 
 ## Resource inventory
 
-_Filled in after hub deployment (Task 3)._
+| Resource | Name | Notes |
+|----------|------|-------|
+| Hub URL | <https://scion-hub-acme-iap-proxy-vdhcml5ceq-uc.a.run.app> | Google login via IAP |
+| GCE VM | `scion-hub-acme` (`us-central1-a`) | n2-standard-16, 500 GB, Ubuntu 22.04, Shielded VM, no public IP |
+| Scion | `nightly-20261009` | Hub + runtime broker in one systemd unit `scion-hub.service` |
+| VM service account | `scion-hub-acme@acme-airlines-factory.iam.gserviceaccount.com` | Agents' identity for Vertex AI |
+| Proxy service account | `scion-hub-acme-proxy@…` | No project roles |
+| Cloud Run | `scion-hub-acme-iap-proxy` | IAP-enforced reverse proxy → VM:8080 |
+| Artifact Registry | `cloud-run-source-deploy` (`us-central1`) | Holds the proxy image |
+| Cloud Router / NAT | created by deploy.sh | Egress for the private VM |
+| Firewall | `scion-hub-acme-allow-iap-ssh`, `scion-hub-acme-allow-proxy` | Scoped to tag `scion-hub-acme` |
+| Container images (on VM) | `localhost/scion/{core-base,scion-base,scion-antigravity,scion-claude}:latest` | Built from `/opt/scion-source` |
 
 ## Cost
 

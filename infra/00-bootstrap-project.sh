@@ -10,7 +10,7 @@ set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-APIS=(compute run iap cloudbuild artifactregistry aiplatform iamcredentials logging monitoring orgpolicy)
+APIS=(compute run iap cloudbuild artifactregistry aiplatform iamcredentials logging monitoring orgpolicy cloudresourcemanager)
 
 # Never block on interactive prompts (e.g. "enable API and retry? (y/N)").
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1

@@ -34,7 +34,7 @@ gcloud billing projects link acme-airlines-factory --billing-account=01820C-6329
 gcloud services enable compute.googleapis.com run.googleapis.com iap.googleapis.com \
   cloudbuild.googleapis.com artifactregistry.googleapis.com aiplatform.googleapis.com \
   iamcredentials.googleapis.com logging.googleapis.com monitoring.googleapis.com \
-  orgpolicy.googleapis.com
+  orgpolicy.googleapis.com cloudresourcemanager.googleapis.com
 gcloud org-policies describe <constraint> --project=acme-airlines-factory --effective   # informational
 gcloud compute networks create default --project=acme-airlines-factory --subnet-mode=auto
 ```
@@ -44,3 +44,41 @@ APIs enabled, auto-mode `default` network created (the org enforces
 `compute.skipDefaultNetworkCreation`, so the project had no network).
 
 Verify: `infra/verify.sh project` → `PASS project`.
+
+## 2. Deploy the Hub (`infra/10-deploy-hub.sh`)
+
+```bash
+infra/10-deploy-hub.sh            # DEPLOY_ZONE defaults to us-central1-a
+```
+
+What it does:
+
+1. Shallow-clones `GoogleCloudPlatform/scion` at tag `nightly-20261009` into
+   `.cache/` (git-ignored) so the deploy script matches the binary it installs.
+2. Applies a one-line patch so the zone honours `DEPLOY_ZONE` (see
+   [troubleshooting](03-troubleshooting.md#n2-standard-16-stockout-in-us-central1-c)).
+3. Runs Scion's supported deployer headlessly:
+
+   ```bash
+   ./scripts/single-node-vm/deploy.sh --version nightly-20261009 \
+     --config infra/deploy-config.json </dev/null
+   ```
+
+deploy.sh then (all idempotent): enables APIs, creates the hub VM service
+account (`logging.logWriter`, `monitoring.metricWriter`, `cloudtrace.agent`,
+`artifactregistry.writer`, `aiplatform.user`, `iam.serviceAccountAdmin`) and the
+proxy service account, grants the deployer `iap.tunnelResourceAccessor`,
+creates Cloud Router + NAT, firewall rules (IAP SSH, proxy→VM tcp:8080), the
+Shielded VM (no public IP), installs the scion binary + systemd unit, seeds
+hub env vars `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION=global`, builds
+`core-base`, `scion-base`, `scion-antigravity` images on the VM, builds and
+deploys the Cloud Run IAP proxy, grants IAP access to the deployer and switches
+the hub to `auth.mode: proxy`.
+
+Result:
+
+- VM `scion-hub-acme` in `us-central1-a` (n2-standard-16, 500 GB)
+- Access URL: <https://scion-hub-acme-iap-proxy-vdhcml5ceq-uc.a.run.app>
+- Run time ≈ 16 min (images built in ~5 min on n2-standard-16)
+
+Verify: `infra/verify.sh hub` → `PASS hub`.

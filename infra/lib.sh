@@ -10,9 +10,10 @@ INFRA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${INFRA_DIR}/.." && pwd)"
 CONFIG_FILE="${INFRA_DIR}/deploy-config.json"
 
-# Scion source checkout used to run deploy.sh (override with SCION_SRC).
-SCION_SRC="${SCION_SRC:-/Users/duboc/local/projects/scion}"
+# Clean Scion source checkout at the pinned release tag, used to run deploy.sh.
+# 10-deploy-hub.sh clones it here if missing (override with SCION_SRC).
 SCION_VERSION="${SCION_VERSION:-nightly-20261009}"
+SCION_SRC="${SCION_SRC:-${REPO_ROOT}/.cache/scion-${SCION_VERSION}}"
 
 # Dedicated gcloud configuration so the operator's default config is untouched.
 export CLOUDSDK_ACTIVE_CONFIG_NAME="${CLOUDSDK_ACTIVE_CONFIG_NAME:-acme-factory}"
@@ -28,6 +29,13 @@ HUB_NAME="$(cfg '.hub_name')"
 VM_NAME="scion-hub-${HUB_NAME}"
 VM_SA="scion-hub-${HUB_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 PROXY_SVC="scion-hub-${HUB_NAME}-iap-proxy"
+
+# Models probed by `verify.sh vertex` on the Vertex AI global endpoint.
+# Claude defaults mirror the scion claude harness (opus → claude-opus-5-5,
+# background haiku → claude-haiku-4-5).
+GEMINI_TEST_MODEL="${GEMINI_TEST_MODEL:-gemini-2.5-flash}"
+CLAUDE_TEST_MODELS="${CLAUDE_TEST_MODELS:-claude-opus-5-5 claude-haiku-4-5}"
+export GEMINI_TEST_MODEL CLAUDE_TEST_MODELS
 
 # Zone of the existing VM; falls back to <region>-b like deploy.sh does.
 resolve_zone() {
