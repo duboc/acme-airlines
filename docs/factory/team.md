@@ -1,16 +1,28 @@
 # The factory crew — how to work with the agent team
 
-The team is five Scion role templates, generated from `factory/team/` by
+The team is thirteen Scion role templates, generated from `factory/team/` by
 `infra/40-build-team-templates.sh` into `.scion/templates/acme-*` and pushed to
 the hub at **global** scope. Design: [addendum A](../superpowers/specs/2026-10-09-addendum-a-agent-team.md).
 
 | Role | Template | Harness / model | Hub agent role |
 |------|----------|-----------------|----------------|
-| Lead / tech lead | `acme-lead` | claude / Opus 5.5 (`large`) | `full` (can spawn and manage agents) |
+| Lead / tech lead | `acme-lead` | claude / Opus 5.5 (`large`) | `full` (spawns and manages agents, merges) |
+| Engineering manager | `acme-eng-manager` | claude / Opus 5.5 | `full` (one workstream, within the lead's worker budget; never merges) |
+| Architect | `acme-architect` | claude / Opus 5.5 | `baseline` |
 | Backend developer | `acme-backend` | claude / Sonnet 5.5 (`medium`) | `baseline` |
 | Frontend developer | `acme-frontend` | antigravity / Gemini Pro (`large`) | `baseline` |
-| QA / test engineer | `acme-qa` | antigravity / Gemini Pro (`large`) | `baseline` |
-| Code reviewer | `acme-reviewer` | claude / Opus 5.5 (`large`) | `baseline` |
+| QA / test engineer (automated) | `acme-qa` | antigravity / Gemini Pro | `baseline` |
+| QA tester (exploratory, Playwright) | `acme-qa-tester` | antigravity / Gemini Pro | `baseline` |
+| Code reviewer | `acme-reviewer` | claude / Opus 5.5 | `baseline` |
+| Security auditor | `acme-security-auditor` | claude / Opus 5.5 | `baseline` |
+| Investigator | `acme-investigator` | antigravity / Gemini Pro | `baseline` |
+| Researcher | `acme-researcher` | antigravity / Gemini Pro | `baseline` |
+| Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash (`medium`) | `baseline` |
+| Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `baseline` |
+
+The lead runs at most **6 agents** at once besides itself, counting
+eng-managers and their workers. When to use which role is in
+`factory/team/roles/lead.md`.
 
 Claude templates set `ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5`, because
 the harness default `claude-haiku-4-5` is not enabled on Vertex. All model

@@ -29,8 +29,22 @@ and issue text yourself.
    approving or merging the PR or by messaging you.
 
 ### Phase 1+ — Delivery loop
-- Keep at most **4 workers** running at once (VM capacity). Prefer parallel
-  issues that touch different areas.
+- Keep at most **6 agents** running at once besides yourself (VM capacity),
+  counting eng-managers and their workers. Prefer parallel issues that touch
+  different areas.
+- **Pick the right role:**
+  - fuzzy bug or unclear issue → `acme-investigator` first
+  - external facts (regulation, API behaviour) → `acme-researcher`
+  - medium or large design → `acme-architect`, before developers
+  - implementation → `acme-backend`, `acme-frontend` or `acme-qa`
+  - every PR → `acme-reviewer`
+  - security-sensitive PRs and each milestone → `acme-security-auditor`
+  - before declaring a milestone done → `acme-qa-tester`
+  - docs drift → `acme-doc-writer`
+  - end of milestone → `acme-release-notes`
+- For a large parallel workstream you may start one `acme-eng-manager` with
+  `--role full` and a worker budget (for example "max 2 workers"). Everyone
+  else gets `--role baseline`. You remain the only one who merges.
 - Dispatch with a brief file, not a long inline prompt. Write
   `/workspace/.scion-briefs/<agent>.md` (git-ignored scratch) containing: the
   issue number and link, acceptance criteria, files and areas owned, the
@@ -62,12 +76,22 @@ repository `duboc/acme-airlines`. The human product owner is
 | Role | Template | Harness / model | Typical agent name |
 |------|----------|-----------------|--------------------|
 | Lead / tech lead (orchestrator) | `acme-lead` | claude / Opus 5.5 | `acme-lead` |
+| Engineering manager (workstream sub-lead) | `acme-eng-manager` | claude / Opus 5.5 | `acme-em-<stream>` |
+| Architect | `acme-architect` | claude / Opus 5.5 | `acme-arch-<topic>` |
 | Backend developer | `acme-backend` | claude / Sonnet 5.5 | `acme-be-<issue>` |
 | Frontend developer | `acme-frontend` | antigravity / Gemini Pro | `acme-fe-<issue>` |
-| QA / test engineer | `acme-qa` | antigravity / Gemini Pro | `acme-qa-<issue>` |
+| QA / test engineer (automated tests) | `acme-qa` | antigravity / Gemini Pro | `acme-qa-<issue>` |
+| QA tester (exploratory / acceptance) | `acme-qa-tester` | antigravity / Gemini Pro | `acme-qat-<milestone>` |
 | Code reviewer | `acme-reviewer` | claude / Opus 5.5 | `acme-rev-<pr>` |
+| Security auditor | `acme-security-auditor` | claude / Opus 5.5 | `acme-sec-<scope>` |
+| Investigator | `acme-investigator` | antigravity / Gemini Pro | `acme-inv-<issue>` |
+| Researcher | `acme-researcher` | antigravity / Gemini Pro | `acme-res-<topic>` |
+| Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash | `acme-doc-<topic>` |
+| Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `acme-rel-<date>` |
 
-Only the lead starts, stops and deletes agents. Workers never start other agents.
+Only the lead starts, stops and deletes agents. An `acme-eng-manager` started by
+the lead may also start workers, within the budget the lead gives it. All other
+roles never start agents.
 
 ## How work flows
 

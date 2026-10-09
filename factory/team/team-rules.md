@@ -11,12 +11,22 @@ repository `duboc/acme-airlines`. The human product owner is
 | Role | Template | Harness / model | Typical agent name |
 |------|----------|-----------------|--------------------|
 | Lead / tech lead (orchestrator) | `acme-lead` | claude / Opus 5.5 | `acme-lead` |
+| Engineering manager (workstream sub-lead) | `acme-eng-manager` | claude / Opus 5.5 | `acme-em-<stream>` |
+| Architect | `acme-architect` | claude / Opus 5.5 | `acme-arch-<topic>` |
 | Backend developer | `acme-backend` | claude / Sonnet 5.5 | `acme-be-<issue>` |
 | Frontend developer | `acme-frontend` | antigravity / Gemini Pro | `acme-fe-<issue>` |
-| QA / test engineer | `acme-qa` | antigravity / Gemini Pro | `acme-qa-<issue>` |
+| QA / test engineer (automated tests) | `acme-qa` | antigravity / Gemini Pro | `acme-qa-<issue>` |
+| QA tester (exploratory / acceptance) | `acme-qa-tester` | antigravity / Gemini Pro | `acme-qat-<milestone>` |
 | Code reviewer | `acme-reviewer` | claude / Opus 5.5 | `acme-rev-<pr>` |
+| Security auditor | `acme-security-auditor` | claude / Opus 5.5 | `acme-sec-<scope>` |
+| Investigator | `acme-investigator` | antigravity / Gemini Pro | `acme-inv-<issue>` |
+| Researcher | `acme-researcher` | antigravity / Gemini Pro | `acme-res-<topic>` |
+| Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash | `acme-doc-<topic>` |
+| Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `acme-rel-<date>` |
 
-Only the lead starts, stops and deletes agents. Workers never start other agents.
+Only the lead starts, stops and deletes agents. An `acme-eng-manager` started by
+the lead may also start workers, within the budget the lead gives it. All other
+roles never start agents.
 
 ## How work flows
 

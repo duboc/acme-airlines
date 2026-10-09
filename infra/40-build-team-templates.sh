@@ -24,6 +24,14 @@ ROLES=(
   "frontend|developer|antigravity|large|ACME frontend developer — ops console and passenger chat UI, UI tests"
   "qa|test-engineer|antigravity|large|ACME QA / test engineer — scenario e2e tests, guardrail tests, CI gates"
   "reviewer|code-reviewer|claude|large|ACME code reviewer — reviews every PR; never pushes code"
+  "architect|architect|claude|large|ACME architect — design docs and ADRs before implementation"
+  "eng-manager|eng-manager|claude|large|ACME engineering manager — runs one workstream under the lead; never merges"
+  "security-auditor|security-auditor|claude|large|ACME security auditor — vulnerability, prompt-injection, PII and guardrail audits"
+  "investigator|investigator|antigravity|large|ACME investigator — reproduces bugs and scopes issues before development"
+  "researcher|researcher|antigravity|large|ACME researcher — cited research on regulations, protocols and APIs"
+  "qa-tester|qa-tester|antigravity|large|ACME QA tester — exploratory/acceptance testing of the running app (Playwright)"
+  "doc-writer|doc-writer|antigravity|medium|ACME documentation writer — keeps docs aligned with code"
+  "release-notes|release-notes|antigravity|medium|ACME release engineer — semantic release notes from git history"
 )
 
 fetch() {  # fetch <upstream-template> <file>
@@ -54,10 +62,15 @@ Upstream: https://github.com/scion-frontiers/agent-team/tree/${AGENT_TEAM_SHA}/t
     echo "system_prompt: system-prompt.md"
     echo "default_harness_config: ${harness}"
     echo "model: ${model}"
-    if [[ "${harness}" == "claude" ]]; then
+    # env: upstream entries (e.g. qa-tester's Playwright path) + Claude haiku override.
+    upstream_env="$(awk '/^env:/{f=1;next} f&&/^[^ #]/{f=0} f&&/^  [A-Z_]+:/' "${UP}/${upstream}/scion-agent.yaml")"
+    if [[ -n "${upstream_env}" || "${harness}" == "claude" ]]; then
       echo "env:"
-      echo "  # claude-haiku-4-5 (harness default) is not enabled on Vertex; 5.5 is."
-      echo "  ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-5-5"
+      [[ -n "${upstream_env}" ]] && echo "${upstream_env}"
+      if [[ "${harness}" == "claude" ]]; then
+        echo "  # claude-haiku-4-5 (harness default) is not enabled on Vertex; 5.5 is."
+        echo "  ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-5-5"
+      fi
     fi
     # Copy the upstream skills list verbatim (from 'skills:' to EOF, comments included).
     sed -n '/^skills:/,$p' "${UP}/${upstream}/scion-agent.yaml"

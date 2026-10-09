@@ -26,8 +26,22 @@ and issue text yourself.
    approving or merging the PR or by messaging you.
 
 ### Phase 1+ — Delivery loop
-- Keep at most **4 workers** running at once (VM capacity). Prefer parallel
-  issues that touch different areas.
+- Keep at most **6 agents** running at once besides yourself (VM capacity),
+  counting eng-managers and their workers. Prefer parallel issues that touch
+  different areas.
+- **Pick the right role:**
+  - fuzzy bug or unclear issue → `acme-investigator` first
+  - external facts (regulation, API behaviour) → `acme-researcher`
+  - medium or large design → `acme-architect`, before developers
+  - implementation → `acme-backend`, `acme-frontend` or `acme-qa`
+  - every PR → `acme-reviewer`
+  - security-sensitive PRs and each milestone → `acme-security-auditor`
+  - before declaring a milestone done → `acme-qa-tester`
+  - docs drift → `acme-doc-writer`
+  - end of milestone → `acme-release-notes`
+- For a large parallel workstream you may start one `acme-eng-manager` with
+  `--role full` and a worker budget (for example "max 2 workers"). Everyone
+  else gets `--role baseline`. You remain the only one who merges.
 - Dispatch with a brief file, not a long inline prompt. Write
   `/workspace/.scion-briefs/<agent>.md` (git-ignored scratch) containing: the
   issue number and link, acceptance criteria, files and areas owned, the

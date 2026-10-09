@@ -244,3 +244,41 @@ bash -c 'source infra/lib.sh; hub_cli start acme-lead --project duboc-acme-airli
 `--role full` lets the lead spawn and manage workers; it starts workers with
 `--role baseline`. Verify: `infra/verify.sh lead` → `PASS lead`.
 How to work with the team: [`docs/factory/team.md`](../factory/team.md).
+
+## 6. Full role catalog and domain web access
+
+### 6.1 Web access for @google.com and @duboc.altostrat.com (`infra/50-web-access.sh`)
+
+```bash
+infra/50-web-access.sh     # WEB_DOMAINS="google.com duboc.altostrat.com" DEFAULT_USER_ROLE=member (defaults)
+```
+
+1. **IAP** (who can reach the hub):
+   ```bash
+   gcloud iap web add-iam-policy-binding --resource-type=cloud-run \
+     --service=scion-hub-acme-iap-proxy --region=us-central1 \
+     --member=domain:<d> --role=roles/iap.httpsResourceAccessor
+   ```
+2. **Hub sign-in policy** (who the hub accepts): a marked block inserted under
+   `server.auth` in `settings.yaml`, followed by a hub restart.
+   ```yaml
+   user_access_mode: domain_restricted
+   authorized_domains: ["google.com", "duboc.altostrat.com"]
+   default_user_role: member
+   ```
+
+Re-run after every `infra/10-deploy-hub.sh`, because deploy.sh rewrites
+`settings.yaml`. Risks and options are in [ADR 0011](../decisions/0011-full-role-catalog-and-domain-web-access.md).
+
+### 6.2 Thirteen role templates
+
+```bash
+infra/40-build-team-templates.sh       # 13 roles → .scion/templates/acme-*
+infra/30-hub-admin-access.sh enable
+gcloud compute scp --recurse .scion/templates/acme-* scion-hub-acme:~/.scion/templates/ \
+  --zone=us-central1-a --project=acme-airlines-factory --tunnel-through-iap
+for d in .scion/templates/acme-*; do bash -c "source infra/lib.sh; hub_cli --global templates push $(basename "$d")"; done
+infra/30-hub-admin-access.sh disable
+```
+
+Verify: `infra/verify.sh team` → `PASS team` (all 13 registered).

@@ -107,10 +107,11 @@ check_smoke() {
   pass smoke
 }
 check_team() {
-  # Read-only: all five acme-* templates registered on the hub.
+  # Read-only: all 13 acme-* templates registered on the hub.
   local out t
   out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"SELECT name FROM templates WHERE name LIKE 'acme-%';\"" 2>/dev/null)"
-  for t in acme-lead acme-backend acme-frontend acme-qa acme-reviewer; do
+  for t in acme-lead acme-backend acme-frontend acme-qa acme-reviewer acme-architect acme-eng-manager \
+           acme-security-auditor acme-investigator acme-researcher acme-qa-tester acme-doc-writer acme-release-notes; do
     grep -qx "${t}" <<<"${out}" || { fail team "template ${t} not registered on hub"; return 1; }
   done
   pass team
