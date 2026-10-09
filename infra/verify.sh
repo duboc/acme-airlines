@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verification harness for the acme-airlines factory.
 #
-# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|all>
+# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|all>
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
@@ -95,6 +95,21 @@ check_smoke() {
   done
   pass smoke
 }
+check_team() {
+  # Read-only: all five acme-* templates registered on the hub.
+  local out t
+  out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"SELECT name FROM templates WHERE name LIKE 'acme-%';\"" 2>/dev/null)"
+  for t in acme-lead acme-backend acme-frontend acme-qa acme-reviewer; do
+    grep -qx "${t}" <<<"${out}" || { fail team "template ${t} not registered on hub"; return 1; }
+  done
+  pass team
+}
+check_lead() {
+  # The lead agent's container is running on the VM.
+  vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
+    || { fail lead "no running container for acme-lead"; return 1; }
+  pass lead
+}
 
 run() {
   case "$1" in
@@ -104,11 +119,13 @@ run() {
     claude-image) check_claude_image ;;
     hubproject)   check_hubproject ;;
     smoke)        check_smoke ;;
+    team)         check_team ;;
+    lead)         check_lead ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead; do run "$c" || rc=1; done
       return "$rc" ;;
-    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|all>" >&2; return 2 ;;
+    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|all>" >&2; return 2 ;;
   esac
 }
 

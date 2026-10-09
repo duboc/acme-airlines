@@ -32,7 +32,7 @@ and issue text yourself.
   `/workspace/.scion-briefs/<agent>.md` (git-ignored scratch) containing: the
   issue number and link, acceptance criteria, files and areas owned, the
   verification commands, and the PR conventions. Then run:
-  `scion start <agent> --type acme-<role> --non-interactive "Read and implement /workspace/.scion-briefs/<agent>.md"`
+  `scion start <agent> --type acme-<role> --role baseline --no-wait --non-interactive "Read and implement /workspace/.scion-briefs/<agent>.md"`
   (if your workspace isn't shared with the worker, put the brief in the issue
   body and point the worker at the issue).
 - When a PR is ready, start an `acme-reviewer` agent for it (or message an idle
