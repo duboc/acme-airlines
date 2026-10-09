@@ -53,13 +53,13 @@ check_vertex() {
       -H 'Content-Type: application/json' \
       '${base}/google/models/${GEMINI_TEST_MODEL}:generateContent' \
       -d '{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Say ok\"}]}]}')
-    echo \"gemini ${GEMINI_TEST_MODEL} \$code\"; [ \"\$code\" = 200 ] || head -c 300 /tmp/vx.json
+    echo \"gemini ${GEMINI_TEST_MODEL} \$code\"; [ \"\$code\" = 200 ] || { head -c 300 /tmp/vx.json; echo; }
     for m in ${CLAUDE_TEST_MODELS}; do
       code=\$(curl -s -o /tmp/vx.json -w '%{http_code}' -X POST -H \"Authorization: Bearer \$T\" \
         -H 'Content-Type: application/json' \
         '${base}/anthropic/models/'\$m':rawPredict' \
         -d '{\"anthropic_version\":\"vertex-2023-10-16\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"Say ok\"}]}')
-      echo \"claude \$m \$code\"; [ \"\$code\" = 200 ] || head -c 300 /tmp/vx.json
+      echo \"claude \$m \$code\"; [ \"\$code\" = 200 ] || { head -c 300 /tmp/vx.json; echo; }
     done
   " 2>/dev/null)"
   echo "${out//$'\n'/$'\n'    }" | sed '1s/^/    /'
