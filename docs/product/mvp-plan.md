@@ -92,7 +92,7 @@ Journey state machine: `DETECTED → RESOLVING → RESOLVED ⇄ REPLANNING → C
    - Leaving `RESOLVED` invalidates every open offer.
 3. **Policy.**
    - The pure `guardrail_offer` function decides, using six rules.
-   - It is re-checked in full at proposal, send and accept time, with at most one offer per flight (zero-pressure).
+   - It is re-checked in full at proposal, send and accept time, with at most one live or answered offer per journey; an offer invalidated by replanning may be re-proposed only on a different flight (zero-pressure).
 
 Each layer is tested on its own (#22, #29).
 
@@ -177,7 +177,7 @@ The MVP is done when **all** of the following hold:
    - `acme-sim` refuses Sales' credential on every server except `inventory`
    - Sales-authored text never reaches the passenger or the LLM
    - no offer is approved outside `RESOLVED` + acknowledged
-   - no offer message reaches the passenger before she acknowledges the final resolution, and at most one offer is made per flight
+   - no offer message reaches the passenger before she acknowledges the final resolution, and at most one live or answered offer per journey; an offer invalidated by replanning may be re-proposed only on a different flight
    - Sales' fare and margin claims are recomputed from inventory, and a paid upgrade never ends up without a seat
    - time-of-check/time-of-use races are safe
    - mutation checks show the suites catch a broken guardrail

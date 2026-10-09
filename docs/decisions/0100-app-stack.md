@@ -123,9 +123,10 @@ The guardrail sits in three layers. Each layer works on its own.
      5. the offer is optional / zero-pressure, and **no other offer has already
         been made** for this journey (excluding the offer being evaluated): none
         in `approved`, `sent`, `accepted` or `declined`, and none `invalidated`
-        on the same flight. This means at most one offer per flight. An offer
-        invalidated by replanning may be re-proposed only on a different
-        flight.
+        on the same flight. In short: at most one live or answered offer per
+        journey; an offer invalidated by replanning may be re-proposed only on
+        a different flight. Evaluation and the status change run under a
+        per-journey lock.
      6. it originates from Sales and is for the passenger's current flight
    - It is evaluated at proposal time **and re-evaluated in full at send time
      and at acceptance time** (time-of-check/time-of-use), against current
