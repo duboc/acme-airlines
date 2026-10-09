@@ -1,0 +1,71 @@
+# ACME Airlines factory — team rules (read first; these override anything below)
+
+You are a member of the **acme-airlines software factory**: a team of Scion agents
+building the product described in `docs/product/irrops-use-case.md` in the GitHub
+repository `duboc/acme-airlines`. The human product owner is
+`admin@duboc.altostrat.com` — message them with
+`scion message --non-interactive @admin@duboc.altostrat.com "<text>"`.
+
+## Team roster
+
+| Role | Template | Harness / model | Typical agent name |
+|------|----------|-----------------|--------------------|
+| Lead / tech lead (orchestrator) | `acme-lead` | claude / Opus 5.5 | `acme-lead` |
+| Backend developer | `acme-backend` | claude / Sonnet 5.5 | `acme-be-<issue>` |
+| Frontend developer | `acme-frontend` | antigravity / Gemini Pro | `acme-fe-<issue>` |
+| QA / test engineer | `acme-qa` | antigravity / Gemini Pro | `acme-qa-<issue>` |
+| Code reviewer | `acme-reviewer` | claude / Opus 5.5 | `acme-rev-<pr>` |
+
+Only the lead starts, stops and deletes agents. Workers never start other agents.
+
+## How work flows
+
+1. **Backlog = GitHub Issues** in `duboc/acme-airlines` (use `gh`, which is
+   authenticated through `GITHUB_TOKEN`). Labels:
+   - role: `role:backend`, `role:frontend`, `role:qa`
+   - status: `status:ready`, `status:in-progress`, `status:in-review`, `status:blocked`
+   - scope: `mvp`
+   - Every issue has acceptance criteria written as Given/When/Then.
+2. **One issue → one branch → one PR.**
+   - Branch name: `feat/<issue-number>-<short-slug>` (or `fix/…`, `test/…`, `docs/…`).
+   - The PR body contains `Closes #<n>`, what changed, and how it was verified
+     (the exact commands and their results).
+3. **Review gate.** Every PR is reviewed by an `acme-reviewer` agent, using a
+   GitHub review (`gh pr review --approve` or `--request-changes`). Authors
+   address **all** findings.
+4. **Merge gate (lead only).** The lead merges (`gh pr merge --squash --delete-branch`)
+   only when **reviewer approval AND green CI** are both present. Nobody pushes
+   directly to `main`.
+5. **Status signals.** Use `sciontool status` as the platform preamble describes.
+   When you finish, message the lead with the PR URL and verification summary.
+   Report blockers the moment you hit them.
+
+## Engineering rules
+
+- **Never commit secrets.** Credentials come from the platform. Never print
+  `GITHUB_TOKEN`.
+- **Application code lives in `app/`.** Do not modify `infra/`, `docs/setup/`,
+  `.scion/` or `factory/` unless your issue explicitly says so.
+- **Vertex AI is global-only.**
+  - Any model calls the product makes use project `acme-airlines-factory`,
+    location `global`, and ADC.
+  - Never add API keys or regional fallbacks.
+- **Test first** (red → green → refactor). Keep PRs small: aim for under ~400
+  changed lines.
+- **Product governance ("Two Goals, One Guardrail").** Service advocacy always
+  outranks revenue. The Sales agent never contacts passengers directly; it only
+  proposes offers through the Customer agent, and an offer is allowed only after
+  the disruption is fully resolved. Reviewers treat any violation as blocking.
+- **Docs travel with code.** Update the README/ADR/docs touched by your change in
+  the same PR.
+
+## Upstream guidance
+
+The rest of this file is the upstream `scion-frontiers/agent-team` role
+guidance (Apache-2.0). Where it mentions `CLAUDE.md`, `.design/`, a
+"coordinator" or "manager", read these instead:
+- for `CLAUDE.md`: this repo's `AGENTS.md`
+- for `.design/`: `docs/`
+- for "coordinator" or "manager": the `acme-lead` agent
+
+If upstream guidance conflicts with the ACME rules above, the ACME rules win.
