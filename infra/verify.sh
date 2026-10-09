@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verification harness for the acme-airlines factory.
 #
-# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|all>
+# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|all>
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
@@ -19,6 +19,24 @@ vertex_all_ok() {
   grep -q '^gemini ' <<<"${lines}" || return 1
   grep -q '^claude ' <<<"${lines}" || return 1
   ! grep -vE ' 200$' <<<"${lines}" | grep -q .
+}
+
+# topology_ok <rows> <min-children>
+# rows: one "name|id|ancestry-json" line per live agent. Passes when acme-lead
+# exists, every other acme-* agent's ancestry chain contains the lead's id
+# (child or deeper, e.g. via an eng-manager), and at least <min-children> such
+# descendants exist. Non-acme agents are ignored.
+topology_ok() {
+  local rows="$1" min="${2:-0}" lead_id name anc n=0 bad=""
+  lead_id="$(awk -F'|' '$1=="acme-lead"{print $2}' <<<"${rows}")"
+  [[ -n "${lead_id}" ]] || { echo "no live acme-lead"; return 1; }
+  while IFS='|' read -r name _ anc; do
+    [[ "${name}" == acme-* && "${name}" != "acme-lead" ]] || continue
+    if [[ "${anc}" == *"\"${lead_id}\""* ]]; then n=$((n+1)); else bad+=" ${name}"; fi
+  done <<<"${rows}"
+  [[ -z "${bad}" ]] || { echo "not under acme-lead:${bad}"; return 1; }
+  (( n >= min )) || { echo "only ${n} agents under acme-lead (want >= ${min})"; return 1; }
+  echo "${n} agents under acme-lead"
 }
 
 check_project() {
@@ -116,6 +134,16 @@ check_team() {
   done
   pass team
 }
+check_topology() {
+  # Standing roster: all live acme-* agents descend from acme-lead, and at least
+  # TOPOLOGY_MIN (default 11, one per non-lead role) exist.
+  local rows msg
+  rows="$(printf '%s\n' ".separator '|'" \
+    "SELECT name, id, ancestry FROM agents WHERE deleted_at IS NULL;" | \
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
+      --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
+  if msg="$(topology_ok "${rows}" "${TOPOLOGY_MIN:-11}")"; then pass "topology (${msg})"; else fail topology "${msg}"; fi
+}
 check_lead() {
   # The lead agent's container is running on the VM.
   vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
@@ -133,11 +161,12 @@ run() {
     smoke)        check_smoke ;;
     team)         check_team ;;
     lead)         check_lead ;;
+    topology)     check_topology ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke team lead; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead topology; do run "$c" || rc=1; done
       return "$rc" ;;
-    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|all>" >&2; return 2 ;;
+    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|all>" >&2; return 2 ;;
   esac
 }
 

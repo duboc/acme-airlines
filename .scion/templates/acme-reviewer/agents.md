@@ -44,6 +44,12 @@ repository `duboc/acme-airlines`. The human product owner is
 | Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash | `acme-doc-<topic>` |
 | Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `acme-rel-<date>` |
 
+**Topology.** The team is a tree rooted at `acme-lead`, shown live in the hub's
+Agent Lineage Graph. Standing agents (named exactly as the template, e.g. `acme-backend`)
+persist between assignments; they are suspended or stopped when idle, never deleted.
+When woken with a new assignment, always sync to the latest `origin/main` first and treat
+it as a fresh task.
+
 Only the lead starts, stops and deletes agents. An `acme-eng-manager` started by
 the lead may also start workers, within the budget the lead gives it. All other
 roles never start agents.

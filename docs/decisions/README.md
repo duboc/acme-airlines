@@ -13,3 +13,4 @@ Factory/infrastructure ADRs are 0001–0099. Application ADRs (written by the ag
 - [ADR 0009: Temporary federation for operator CLI admin access](0009-temporary-federation-admin-access.md)
 - [ADR 0010: Agent team as versioned templates vendored from scion-frontiers/agent-team](0010-agent-team-templates.md)
 - [ADR 0011: Full role catalog and domain-wide web access](0011-full-role-catalog-and-domain-web-access.md)
+- [ADR 0012: Standing roster under the lead (visible team topology)](0012-standing-roster-topology.md)

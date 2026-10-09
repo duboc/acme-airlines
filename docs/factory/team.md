@@ -63,6 +63,42 @@ flowchart LR
    - Each issue gets one branch and one PR, reviewed by `acme-reviewer`.
    - The lead merges only with reviewer approval **and** green CI.
 
+## Seeing the topology in the UI
+
+Open the hub, then **Projects → acme-airlines → Agents** and switch to the
+**graph** view (the lineage graph). You can also use the top-level **Agents**
+page. Press `t` to flip between vertical and horizontal, and `f` to fit.
+
+```mermaid
+flowchart TD
+  you["admin@duboc.altostrat.com"] --> lead["acme-lead (orchestrator)"]
+  lead --> arch[acme-architect] & be[acme-backend] & fe[acme-frontend] & qa[acme-qa] & qat[acme-qa-tester] & rev[acme-reviewer]
+  lead --> sec[acme-security-auditor] & inv[acme-investigator] & res[acme-researcher] & doc[acme-doc-writer] & rel[acme-release-notes]
+  lead -. "ephemeral extras" .-> be2["acme-backend-2 …"]
+  lead -. "optional workstream" .-> em["acme-eng-manager-*"] -.-> w["its workers"]
+```
+
+How the tree stays in place:
+
+- **Lineage is automatic.** An agent's parent is whoever started it. The lead
+  starts every `acme-*` agent, so all of them sit under it. An eng-manager's
+  workers sit one level below the eng-manager.
+- **Standing roster.** There is one persistent agent per role, named exactly
+  like its template.
+  - Idle agents are **suspended** (or **stopped**, if their harness can't
+    suspend). They use no CPU but stay in the graph.
+  - The lead assigns work with `scion message --wake <agent> "<issue>"`.
+  - Standing agents are never deleted.
+- **Ephemeral extras** (`acme-<role>-2…`) appear for parallel work and
+  disappear when their PR merges.
+- **Labels.** Every agent carries `acme.team/role=<role>` and
+  `acme.team/tier=standing|ephemeral`, so you can filter by them in the UI.
+- **Check.** `infra/verify.sh topology` confirms that every live `acme-*`
+  agent descends from `acme-lead`, and that at least 11 exist.
+
+If an agent shows up **outside** the lead's tree, someone started it directly.
+Ask the lead to adopt the work, then delete the stray agent.
+
 ## Talking to the team
 
 **Web UI:** <https://scion-hub-acme-iap-proxy-vdhcml5ceq-uc.a.run.app>, project

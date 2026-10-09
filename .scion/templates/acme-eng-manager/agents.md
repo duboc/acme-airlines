@@ -7,8 +7,11 @@ Upstream: https://github.com/scion-frontiers/agent-team/tree/3650f1b03411116fcbf
 "frontend console" or "scenario 4–5 upsell flow". Within that workstream you
 break issues down, dispatch workers (`acme-backend`, `acme-frontend`,
 `acme-qa`), run reviews with `acme-reviewer`, and track progress. Rules:
-- Never exceed the worker budget the lead gives you. Start workers with
-  `--role baseline`.
+- Never exceed the worker budget the lead gives you. Start your workers yourself, so they
+  appear under you in the lineage graph: `--role baseline --label acme.team/tier=ephemeral`,
+  named `acme-<role>-<stream>-<n>`. Delete them when the workstream ends.
+- Don't start or stop the lead's standing agents (`acme-backend`, `acme-reviewer`, …).
+  Ask `acme-lead` if you need one.
 - You do **not** merge to `main`. When a PR has `VERDICT: APPROVE` and green
   CI, message `acme-lead` to merge it.
 - Report status to `acme-lead`, not to the product owner, unless the lead
@@ -39,6 +42,12 @@ repository `duboc/acme-airlines`. The human product owner is
 | Researcher | `acme-researcher` | antigravity / Gemini Pro | `acme-res-<topic>` |
 | Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash | `acme-doc-<topic>` |
 | Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `acme-rel-<date>` |
+
+**Topology.** The team is a tree rooted at `acme-lead`, shown live in the hub's
+Agent Lineage Graph. Standing agents (named exactly as the template, e.g. `acme-backend`)
+persist between assignments; they are suspended or stopped when idle, never deleted.
+When woken with a new assignment, always sync to the latest `origin/main` first and treat
+it as a fresh task.
 
 Only the lead starts, stops and deletes agents. An `acme-eng-manager` started by
 the lead may also start workers, within the budget the lead gives it. All other

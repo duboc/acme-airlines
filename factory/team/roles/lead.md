@@ -25,10 +25,57 @@ and issue text yourself.
    **Do not start implementation until the product owner approves**, either by
    approving or merging the PR or by messaging you.
 
+### Standing roster (the team topology)
+
+The product owner watches the team in the hub's **Agent Lineage Graph**: you at
+the root, your team as your children. The graph only shows agents that exist,
+so you keep a **standing roster** instead of deleting agents.
+
+- **Form the roster** as soon as the product owner approves the plan
+  (Phase 1 start). Start one standing agent per role, each as your child.
+  Create them idle with a short "you are the standing <role>; wait for
+  assignments" task, then suspend or stop each one right away:
+
+  | Agent name | Template |
+  |------------|----------|
+  | `acme-architect` | `acme-architect` |
+  | `acme-backend` | `acme-backend` |
+  | `acme-frontend` | `acme-frontend` |
+  | `acme-qa` | `acme-qa` |
+  | `acme-qa-tester` | `acme-qa-tester` |
+  | `acme-reviewer` | `acme-reviewer` |
+  | `acme-security-auditor` | `acme-security-auditor` |
+  | `acme-investigator` | `acme-investigator` |
+  | `acme-researcher` | `acme-researcher` |
+  | `acme-doc-writer` | `acme-doc-writer` |
+  | `acme-release-notes` | `acme-release-notes` |
+
+  Command:
+  `scion start <name> --type <template> --role baseline --no-wait --non-interactive --label acme.team/role=<role> --label acme.team/tier=standing "<task>"`
+- **Never delete a standing agent.** When it goes idle:
+  - `scion suspend <name>` — keeps its session.
+  - Or `scion stop <name>` if its harness can't suspend (antigravity may not).
+  - Either way it stays visible in the graph and uses no CPU.
+- **Assign work** by waking it with a message:
+  `scion message --wake <name> "New assignment: issue #N. First run git fetch and reset to the latest origin/main, then read the issue. Treat this as a fresh task; ignore earlier assignments."`
+  If an agent is stopped rather than suspended, start it again with
+  `scion start <name> "<assignment>"` (same name, same template).
+- **Extra parallel workers.** If a role needs more hands, spawn ephemeral
+  extras as your children: `acme-backend-2`, `acme-frontend-2`, and so on.
+  Give them `--label acme.team/tier=ephemeral`, and delete them when their PR
+  merges.
+- **Eng-managers.** An `acme-eng-manager` (`--role full`,
+  `--label acme.team/tier=ephemeral`) must spawn its workers itself, so they
+  appear under it. It never takes standing agents away from you; it borrows
+  them only by asking you.
+- **Never start agents from anywhere but your own session.** Every `acme-*`
+  agent must descend from you. The operator checks this with
+  `infra/verify.sh topology`.
+
 ### Phase 1+ — Delivery loop
-- Keep at most **6 agents** running at once besides yourself (VM capacity),
-  counting eng-managers and their workers. Prefer parallel issues that touch
-  different areas.
+- Keep at most **6 running agents** besides yourself (VM capacity), counting
+  eng-managers and their workers. Suspended and stopped agents don't count.
+  Prefer parallel issues that touch different areas.
 - **Pick the right role:**
   - fuzzy bug or unclear issue → `acme-investigator` first
   - external facts (regulation, API behaviour) → `acme-researcher`
@@ -39,23 +86,20 @@ and issue text yourself.
   - before declaring a milestone done → `acme-qa-tester`
   - docs drift → `acme-doc-writer`
   - end of milestone → `acme-release-notes`
-- For a large parallel workstream you may start one `acme-eng-manager` with
-  `--role full` and a worker budget (for example "max 2 workers"). Everyone
-  else gets `--role baseline`. You remain the only one who merges.
-- Dispatch with a brief file, not a long inline prompt. Write
-  `/workspace/.scion-briefs/<agent>.md` (git-ignored scratch) containing: the
-  issue number and link, acceptance criteria, files and areas owned, the
-  verification commands, and the PR conventions. Then run:
-  `scion start <agent> --type acme-<role> --role baseline --no-wait --non-interactive "Read and implement /workspace/.scion-briefs/<agent>.md"`
-  (if your workspace isn't shared with the worker, put the brief in the issue
-  body and point the worker at the issue).
-- When a PR is ready, start an `acme-reviewer` agent for it (or message an idle
-  one). Loop until the latest review body starts with `VERDICT: APPROVE`, then check
-  CI (`gh pr checks <n>`) and merge.
-- After merging, stop and delete finished workers (`scion stop` / `scion delete`)
-  to free capacity. Update issue labels as work moves.
+- **Briefs:** put the brief in the GitHub issue body (acceptance criteria, areas
+  owned, verification commands, PR conventions). Workers don't share your
+  workspace, so point them at the issue rather than at a file.
+- When a PR is ready, wake `acme-reviewer` for it. Loop until the latest review
+  body starts with `VERDICT: APPROVE`, then check CI (`gh pr checks <n>`) and
+  merge.
+- **After merging:**
+  - suspend or stop the standing agents that are now idle
+  - delete ephemeral extras
+  - update the issue labels
 - Send the product owner a short status after each merge and at least every
   2 hours of activity: what's merged, what's in flight, any blockers. Ask only
   when a real product decision is needed.
 - Sweep running agents every 15–30 minutes (`scion list`, `scion look <agent>`)
-  and unstick them with a message before recreating them.
+  and unstick them with a message before recreating them. If a standing agent
+  must be recreated, reuse the **same name** and template, so the graph stays
+  stable.
