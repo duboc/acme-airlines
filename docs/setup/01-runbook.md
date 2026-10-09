@@ -119,7 +119,10 @@ Console → **Vertex AI → Model Garden** → search "Claude" → open each mod
 **Enable** (accept Anthropic terms), for project `acme-airlines-factory`:
 
 - Claude Opus 5.5 (`claude-opus-5-5`) — default model of the scion Claude harness
-- Claude Haiku 4.5 (`claude-haiku-4-5`) — background/small model
+- Claude Sonnet 5.5 (`claude-sonnet-5-5`) — backend developer model
+- Claude Haiku 5.5 (`claude-haiku-5-5`) — background/small model. The harness default
+  `claude-haiku-4-5` is **not** enabled, so Claude templates set
+  `ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5`.
 
 Verify: `infra/verify.sh vertex` (calls Gemini `generateContent` and Claude
 `rawPredict` on `locations/global` from the VM with its service account) and
@@ -138,7 +141,7 @@ The Hub runs with IAP proxy auth; the simplest path is the web UI at the access 
      (Metadata: Read-only is added automatically)
    - Expiration: 90 days
 3. **Create the project** — Projects → New project → from Git URL
-   `https://github.com/duboc/acme-airlines.git` (slug `acme-airlines`, branch `main`).
+   `https://github.com/duboc/acme-airlines.git` (branch `main`; the hub derives slug `duboc-acme-airlines`).
 4. **Add the secret** — open the project → Settings → Secrets → Add Secret:
    key `GITHUB_TOKEN`, value = the token from step 2. Never paste it anywhere else.
 

@@ -36,8 +36,8 @@ and issue text yourself.
   (if your workspace isn't shared with the worker, put the brief in the issue
   body and point the worker at the issue).
 - When a PR is ready, start an `acme-reviewer` agent for it (or message an idle
-  one). Loop until the reviewer approves, then check CI
-  (`gh pr checks <n>`) and merge.
+  one). Loop until the latest review body starts with `VERDICT: APPROVE`, then check
+  CI (`gh pr checks <n>`) and merge.
 - After merging, stop and delete finished workers (`scion stop` / `scion delete`)
   to free capacity. Update issue labels as work moves.
 - Send the product owner a short status after each merge and at least every

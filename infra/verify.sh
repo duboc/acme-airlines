@@ -5,10 +5,21 @@
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 fail() { echo "FAIL $1: $2"; return 1; }
 pass() { echo "PASS $1"; }
+
+# vertex_all_ok <probe-output>: true only if there is a gemini line and at
+# least one claude line, and EVERY gemini/claude result line ends in " 200".
+# A missing or empty HTTP code counts as a failure (no false PASS).
+vertex_all_ok() {
+  local lines
+  lines="$(grep -E '^(gemini|claude) ' <<<"$1")"
+  grep -q '^gemini ' <<<"${lines}" || return 1
+  grep -q '^claude ' <<<"${lines}" || return 1
+  ! grep -vE ' 200$' <<<"${lines}" | grep -q .
+}
 
 check_project() {
   gcloud projects describe "${PROJECT_ID}" --format='value(projectId)' >/dev/null 2>&1 \
@@ -63,7 +74,7 @@ check_vertex() {
     done
   " 2>/dev/null)"
   echo "${out//$'\n'/$'\n'    }" | sed '1s/^/    /'
-  if grep -qE '^(gemini|claude) \S+ [0-9]+$' <<<"${out}" && ! grep -E '^(gemini|claude) \S+ [0-9]+$' <<<"${out}" | grep -qv ' 200$'; then
+  if vertex_all_ok "${out}"; then
     pass vertex
   else
     fail vertex "one or more model calls did not return 200 (see above)"
@@ -129,4 +140,4 @@ run() {
   esac
 }
 
-run "${1:-all}"
+[[ -n "${VERIFY_LIB_ONLY:-}" ]] || run "${1:-all}"

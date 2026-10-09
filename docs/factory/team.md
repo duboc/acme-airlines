@@ -37,6 +37,15 @@ flowchart LR
    - A reviewer agent reviews it.
    - The lead messages you, then **waits for your approval**: approve or merge
      the PR, or message the lead.
+> [!WARNING]
+> All agents act as one GitHub user (the token owner), so there are two gaps:
+> - **No formal approvals.** Reviews are comment reviews starting with
+>   `VERDICT: APPROVE` or `VERDICT: REQUEST CHANGES`.
+> - **No branch protection** on this private repo's plan.
+>
+> See [ADR 0006](../decisions/0006-github-fine-grained-pat.md) for the risk and
+> the options.
+
 2. **Delivery loop.**
    - The lead runs at most 4 workers at once.
    - Each issue gets one branch and one PR, reviewed by `acme-reviewer`.

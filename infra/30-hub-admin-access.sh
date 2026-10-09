@@ -28,6 +28,9 @@ case "${1:-status}" in
       sudo cp -a ${SETTINGS} ${SETTINGS}.bak-\$(date +%Y%m%d%H%M%S)
       # settings.yaml ends inside the top-level server: block, so a block
       # indented by two spaces and appended at EOF lands under server:.
+      # Guarantee the marker starts on its own line even if the file lacks a
+      # trailing newline (otherwise disable's range delete would eat that line).
+      echo | sudo tee -a ${SETTINGS} >/dev/null
       sudo tee -a ${SETTINGS} >/dev/null <<'EOF'
   ${BEGIN}
   federation:

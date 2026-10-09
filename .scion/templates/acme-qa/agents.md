@@ -43,12 +43,19 @@ Only the lead starts, stops and deletes agents. Workers never start other agents
    - Branch name: `feat/<issue-number>-<short-slug>` (or `fix/…`, `test/…`, `docs/…`).
    - The PR body contains `Closes #<n>`, what changed, and how it was verified
      (the exact commands and their results).
-3. **Review gate.** Every PR is reviewed by an `acme-reviewer` agent, using a
-   GitHub review (`gh pr review --approve` or `--request-changes`). Authors
-   address **all** findings.
+3. **Review gate.** Every PR is reviewed by an `acme-reviewer` agent.
+   - All agents share one GitHub identity (the token owner), and GitHub forbids
+     approving your own PR. So reviews are submitted as
+     `gh pr review <n> --comment --body-file <file>`.
+   - The body's **first line** is the verdict, exactly `VERDICT: APPROVE` or
+     `VERDICT: REQUEST CHANGES`.
+   - Authors address **all** findings, then the lead asks for a re-review.
 4. **Merge gate (lead only).** The lead merges (`gh pr merge --squash --delete-branch`)
-   only when **reviewer approval AND green CI** are both present. Nobody pushes
-   directly to `main`.
+   only when the **latest** reviewer verdict is `VERDICT: APPROVE` **and** CI is
+   green (`gh pr checks <n>`). Nobody pushes directly to `main`.
+   - Branch protection is unavailable on this private repo's plan, so this rule
+     is enforced by the team, not by GitHub. Treat a direct push to `main` as a
+     serious incident and report it to the product owner.
 5. **Status signals.** Use `sciontool status` as the platform preamble describes.
    When you finish, message the lead with the PR URL and verification summary.
    Report blockers the moment you hit them.
