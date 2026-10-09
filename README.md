@@ -14,7 +14,10 @@ changes as pull requests.
 | [`infra/`](infra/) | Scripts and config that create and operate the factory. |
 | [`docs/setup/`](docs/setup/) | How the factory was built, step by step, and how to run it. |
 | [`docs/decisions/`](docs/decisions/) | Architecture decision records. |
-| [`docs/factory/`](docs/factory/) | Factory usage notes and smoke-test records. |
+| [`docs/product/`](docs/product/) | Product brief (IRROPS use case) and MVP plan. |
+| [`docs/factory/`](docs/factory/) | How to work with the agent team; smoke-test records. |
+| [`factory/team/`](factory/team/) | Source for the agent team's role templates. |
+| [`.scion/templates/`](.scion/templates/) | Generated Scion role templates (`acme-*`). |
 | [`docs/superpowers/`](docs/superpowers/) | Design spec and implementation plan for the factory. |
 
 ## Start here
@@ -24,6 +27,7 @@ changes as pull requests.
 3. [Operations](docs/setup/02-operations.md) — access, logs, stop/start, upgrades.
 4. [Troubleshooting](docs/setup/03-troubleshooting.md)
 5. [Teardown](docs/setup/04-teardown.md)
+6. [Working with the agent team](docs/factory/team.md)
 
 ## Verify the factory
 

@@ -144,3 +144,100 @@ The Hub runs with IAP proxy auth; the simplest path is the web UI at the access 
 
 Verify: `infra/verify.sh hubproject` (read-only query of the hub DB on the VM;
 checks the project exists and that a project secret *named* `GITHUB_TOKEN` exists).
+
+> **Actual path taken (addendum A):** instead of the web UI, the project and
+> secret were created from the CLI as the admin user, using temporary hub
+> federation (§5). The web-UI steps above remain a valid alternative.
+
+## 5. Hub admin access, project, secret, smoke test, team (addendum A)
+
+### 5.1 Temporary admin access (`infra/30-hub-admin-access.sh`)
+
+In IAP proxy-auth mode the hub has no non-interactive CLI login. User access
+tokens can't create projects or secrets, and dev mode would create resources
+owned by a pseudo-user. So, for the duration of the admin work, this script
+adds a federation trusted issuer that accepts Google ID tokens minted by the
+gcloud CLI for `duboc.altostrat.com` users. The block is marked, and the script
+backs up `settings.yaml` before changing it:
+
+```yaml
+server:
+  federation:
+    enabled: true
+    trusted_issuers:
+      - issuer_url: "https://accounts.google.com"
+        jwks_url: "https://www.googleapis.com/oauth2/v3/certs"
+        issuer_type: "user"
+        expected_audience: "32555940559.apps.googleusercontent.com"   # gcloud CLI client
+        allowed_domains: ["duboc.altostrat.com"]
+```
+
+```bash
+infra/30-hub-admin-access.sh enable     # adds the block, restarts scion-hub, waits for /healthz
+bash -c 'source infra/lib.sh; hub_cli hub status'   # → User: admin@duboc.altostrat.com, Role: admin
+infra/30-hub-admin-access.sh disable    # removes the block when done
+```
+
+`hub_cli` (in `infra/lib.sh`) sends `gcloud auth print-identity-token` over SSH
+**stdin** and runs `scion …` on the VM against `http://localhost:8080`.
+IAP keeps guarding the public URL the whole time.
+
+### 5.2 Project and GitHub secret
+
+```bash
+bash -c 'source infra/lib.sh; hub_cli hub projects create https://github.com/duboc/acme-airlines.git'
+# → ID 61b6ae3d-9335-4360-a259-5b306dc229f6, slug duboc-acme-airlines
+printf '%s' "$GITHUB_PAT" | infra/31-set-project-secret.sh 61b6ae3d-9335-4360-a259-5b306dc229f6 GITHUB_TOKEN
+# → HTTP 200 (PUT /api/v1/secrets/GITHUB_TOKEN, scope=project, encoding=raw, injectionMode=always)
+```
+
+`scion hub secret set` only takes the value as an argument, or as `@file`,
+which it base64-encodes into a file secret. So the helper sends the value
+over SSH stdin and PUTs it to the Hub API from memory. It never appears in
+argv, on disk or in logs.
+
+GitHub token permissions (fine-grained, `duboc/acme-airlines` only):
+Contents RW, Pull requests RW, Issues RW, Workflows RW (Metadata R is implicit).
+
+Verify: `infra/verify.sh hubproject` → `PASS hubproject`.
+
+### 5.3 Smoke test
+
+```bash
+bash -c 'source infra/lib.sh; hub_cli start smoke-gemini --project duboc-acme-airlines --harness-config antigravity --no-wait "<task>"'
+HUB_CLI_STDIN=$'env:\n  ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-5-5\n' \
+  bash -c 'source infra/lib.sh; hub_cli start smoke-claude --project duboc-acme-airlines --harness-config claude --config - --no-wait "<task>"'
+```
+
+Both agents cloned the repo with `GITHUB_TOKEN` and opened PRs #1 and #2. The
+Claude agent reported `CLOUD_ML_REGION=global`, `CLAUDE_CODE_USE_VERTEX=1` and
+`ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5`. Results are recorded in
+[`docs/factory/smoke-tests.md`](../factory/smoke-tests.md); the PRs were closed
+and the agents deleted.
+
+Verify: `infra/verify.sh smoke` → `PASS smoke`.
+
+### 5.4 Team templates
+
+```bash
+infra/40-build-team-templates.sh     # factory/team/* + upstream agent-team@3650f1b → .scion/templates/acme-*
+# upload to the hub at global scope (admin access enabled):
+gcloud compute scp --recurse .scion/templates/acme-* scion-hub-acme:~/.scion/templates/ \
+  --zone=us-central1-a --project=acme-airlines-factory --tunnel-through-iap
+for t in acme-lead acme-backend acme-frontend acme-qa acme-reviewer; do
+  bash -c "source infra/lib.sh; hub_cli --global templates push $t"
+done
+```
+
+Verify: `infra/verify.sh team` → `PASS team`.
+
+### 5.5 Launch the lead
+
+```bash
+bash -c 'source infra/lib.sh; hub_cli start acme-lead --project duboc-acme-airlines \
+  --type acme-lead --role full --no-wait "<kickoff: begin Phase 0 planning>"'
+```
+
+`--role full` lets the lead spawn and manage workers; it starts workers with
+`--role baseline`. Verify: `infra/verify.sh lead` → `PASS lead`.
+How to work with the team: [`docs/factory/team.md`](../factory/team.md).

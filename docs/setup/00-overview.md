@@ -70,4 +70,8 @@ flowchart LR
 
 ## Cost
 
-_Filled in in Task 7._
+About **$650/month** if left running 24/7, plus Vertex AI usage. See the breakdown in [operations](02-operations.md#cost-us-central1-list-prices-approximate).
+
+## Agent team
+
+Five role templates (lead, backend, frontend, QA, reviewer): see [docs/factory/team.md](../factory/team.md).
