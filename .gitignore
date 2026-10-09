@@ -1,0 +1,10 @@
+.env
+.env.*
+.envrc
+*.key
+*.pem
+*-sa-key.json
+node_modules/
+.DS_Store
+infra/logs/
+.superpowers/
