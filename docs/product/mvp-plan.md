@@ -81,7 +81,9 @@ is only meaningful after 1–3, and scenario 5 verifies the earlier ones.
 
 Journey state machine: `DETECTED → RESOLVING → RESOLVED ⇄ REPLANNING → CLOSED`.
 
-**Guardrail enforcement** (details in ADR 0100). 1. **Architecture.**
+**Guardrail enforcement** (details in ADR 0100):
+
+1. **Architecture.**
    - `acme-sim` refuses Sales' credential on every server except the PII-free `inventory` server.
    - Sales can only send a structured, fully constrained `Offer` (no free text) over A2A, and the Customer recomputes the fare and margin from inventory.
    - The passenger message is always written by the Customer agent.
@@ -90,7 +92,7 @@ Journey state machine: `DETECTED → RESOLVING → RESOLVED ⇄ REPLANNING → C
    - Leaving `RESOLVED` invalidates every open offer.
 3. **Policy.**
    - The pure `guardrail_offer` function decides, using six rules.
-   - It is re-checked in full at proposal, send and accept time, with one offer per journey (zero-pressure).
+   - It is re-checked in full at proposal, send and accept time, with at most one offer per flight (zero-pressure).
 
 Each layer is tested on its own (#22, #29).
 
@@ -105,7 +107,7 @@ parallel. At most 4 workers run at once.
 | **M1 Policy, simulators, contract** | ⟂ #5 connection/duty-of-care, #6 margin/guardrail, #7 sim 1 (+inventory), #17 API contract, #21 QA harness; then ⟂ #8 sim 2a, #26 sim 2b, #27 sim access control | All simulators reachable over MCP with per-caller allowlist, policy at 100% branch coverage, scenario harness merged (strict xfail). |
 | **M2 Scenarios 1–2** | #10 Customer agent + S1 (+ API wiring) → ⟂ #11 S2a, #12 S2b; ⟂ #19 console, #20 WhatsApp UI | Scenario 1–2 tests pass, and the console shows a live rebuild against real agents. |
 | **M3 Scenario 3** | #13 notification + acknowledgement → #30 Change agent replanning | Scenario 3 tests pass; live Gemini smoke passes on the factory VM. |
-| **M4 Scenarios 4–5** | ⟂ #14 Sales A2A, #22 governance part 1 → #15 offer + delivery → #28 conversion → ⟂ #16 verification + memory, #29 governance part 2 | Scenario 1–5 tests all pass (no xfail left), both governance suites green. |
+| **M4 Scenarios 4–5** | #14 Sales A2A → ⟂ #22 governance part 1, #15 offer + delivery → #28 conversion → ⟂ #16 verification + memory, #29 governance part 2 | Scenario 1–5 tests all pass (no xfail left), both governance suites green. |
 | **M5 Demo-ready** | ⟂ #23 Playwright E2E, #24 containers + deploy doc | Definition of done (§6) met. |
 
 | # | Title | Role | Depends on |
@@ -175,7 +177,7 @@ The MVP is done when **all** of the following hold:
    - `acme-sim` refuses Sales' credential on every server except `inventory`
    - Sales-authored text never reaches the passenger or the LLM
    - no offer is approved outside `RESOLVED` + acknowledged
-   - no offer message reaches the passenger before she acknowledges the final resolution, and at most one offer is made per journey
+   - no offer message reaches the passenger before she acknowledges the final resolution, and at most one offer is made per flight
    - Sales' fare and margin claims are recomputed from inventory, and a paid upgrade never ends up without a seat
    - time-of-check/time-of-use races are safe
    - mutation checks show the suites catch a broken guardrail

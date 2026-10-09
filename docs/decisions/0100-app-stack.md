@@ -84,7 +84,8 @@ The guardrail sits in three layers. Each layer works on its own.
      `inventory` server (cabin counts, fares). Calls to every other server are
      refused server-side (403). The check is deny-by-default and runs before
      routing, so it holds even for paths that aren't mounted. This is not just
-     omitted from Sales' client config.
+     omitted from Sales' client config. The Customer credential may use every
+     server, including `inventory` (read-only), which the guardrail needs.
    - Sales' only other channel is the Customer agent's A2A skills:
      - `list_journeys` returns open journey ids, with no PII.
      - `journey_status` returns `{status, flight, resolution_acknowledged}`, with no PII.
@@ -119,9 +120,11 @@ The guardrail sits in three layers. Each layer works on its own.
         offer**; a mismatching claim is rejected.
      4. the net margin is non-negative. The margin is **recomputed** as
         price − inventory cost floor; a mismatching claim is rejected.
-     5. the offer is optional / zero-pressure, and **no offer has already been
-        made** for this journey (`approved`, `sent`, `accepted` or `declined`).
-        An offer invalidated by replanning may be re-proposed once, on the new
+     5. the offer is optional / zero-pressure, and **no other offer has already
+        been made** for this journey (excluding the offer being evaluated): none
+        in `approved`, `sent`, `accepted` or `declined`, and none `invalidated`
+        on the same flight. This means at most one offer per flight. An offer
+        invalidated by replanning may be re-proposed only on a different
         flight.
      6. it originates from Sales and is for the passenger's current flight
    - It is evaluated at proposal time **and re-evaluated in full at send time
