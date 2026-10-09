@@ -40,7 +40,7 @@ Everything done to build the factory is documented in this repository
 | D2 | New project `acme-airlines-factory` in `dubofolder`, billing `01820C-6329B4-8A7409`, region `us-central1` | Isolation of cost/IAM; region with broad service availability. |
 | D3 | Machine size *medium* (n2-standard-16), 500 GB disk | Room for several concurrent agents plus on-VM image builds. |
 | D4 | Container images built locally on the VM (`source: build`) + extra `scion-claude` build | Simplest; no registry to manage. deploy.sh only builds Antigravity, so Claude is built as a post-step. |
-| D5 | LLM auth = Vertex AI via the VM service account (metadata-server ADC) for both harnesses | No API keys to manage or leak. Hub seeds `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION=global`. |
+| D5 | LLM auth = Vertex AI via the VM service account (metadata-server ADC) for both harnesses | No API keys to manage or leak. Hub seeds `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION=global`. All model calls use the Vertex `global` endpoint exclusively. |
 | D6 | GitHub auth = fine-grained PAT scoped to `duboc/acme-airlines` (Contents RW, Pull requests RW, Metadata R), stored as a project-scoped `GITHUB_TOKEN` hub secret, set by the human | Least setup; the token never passes through agent chat or git history. GitHub App can replace it later. |
 | D7 | Update policy `notify` | Avoid surprise binary swaps mid-session; admin upgrades deliberately. |
 | D8 | Hub name `acme` | Resource names derive from it (`scion-hub-acme`, `scion-hub-acme-iap-proxy`). |
@@ -101,7 +101,11 @@ flowchart LR
 3. **Manual (human):** enable Claude models in Vertex AI Model Garden for the
    project (terms acceptance in console). Document the exact models enabled.
 4. Verify: from the VM, a Vertex `generateContent` call for Gemini and a
-   `rawPredict` call for Claude succeed with metadata-server credentials.
+   `rawPredict` call for Claude succeed against the `global` endpoint
+   (`aiplatform.googleapis.com`, `locations/global`) with metadata-server
+   credentials. Confirm the Claude harness also resolves its region to
+   `global` (`CLOUD_ML_REGION`/`GOOGLE_CLOUD_REGION`); if the hub only seeds
+   `GOOGLE_CLOUD_LOCATION`, add the missing key as a hub env var set to `global`.
 
 ### 4.4 Repository + Hub project
 1. Initial commit to `acme-airlines` `main`: `README.md`, `AGENTS.md`,
@@ -154,7 +158,7 @@ docs/
 | Argolis org policies block a step (e.g., domain-restricted sharing, shielded VM, no default network) | Inspect policies in 4.1; deploy.sh already handles the common ones; record any overrides in troubleshooting doc. |
 | Project ID `acme-airlines-factory` already taken globally | Append `-<4 chars>` suffix; record final ID everywhere. |
 | On-VM image build slow / fails | Builds run under `nohup`; deploy.sh polls. Re-run is idempotent. Capture logs into troubleshooting. |
-| Claude not enabled / quota on `global` | Manual Model Garden enablement step; fallback to a regional location (`us-east5`) set as agent env if global unavailable. |
+| Claude not enabled / quota on `global` | Manual Model Garden enablement step; request quota increase on the `global` endpoint if needed. All Vertex traffic (Gemini and Claude) uses `global` only — no regional fallback. |
 | PAT leakage | Human sets secret directly; `.gitignore` covers `.env*`; no tokens in docs. |
 | Cost (~$550–600/mo for VM + disk, 24/7) | `02-operations.md` documents `gcloud compute instances stop/start`; teardown script. |
 
