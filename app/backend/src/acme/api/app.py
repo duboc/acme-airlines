@@ -105,7 +105,7 @@ def create_app(clock: Clock | None = None) -> FastAPI:
     async def trigger_cancellation(body: TriggerCancellation) -> TriggerResult:
         if body.flight not in rt.world.flights:
             raise HTTPException(404, f"unknown flight {body.flight}")
-        return TriggerResult(journey_ids=rt.cancel_flight(body.flight, body.reason))
+        return TriggerResult(journey_ids=await rt.trigger_cancellation(body.flight, body.reason))
 
     @app.get("/journeys", tags=["journeys"])
     async def list_journeys() -> list[JourneySummary]:

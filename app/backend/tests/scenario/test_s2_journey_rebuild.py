@@ -53,7 +53,6 @@ def test_journey_reaches_resolved_after_the_rebuild(driver: ScenarioDriver):
     assert driver.get_journey().status is DisruptionStatus.RESOLVED
 
 
-@needs(14)
 def test_sales_is_suppressed_while_the_disruption_is_being_resolved(driver: ScenarioDriver):
     # Sales watches Premium Business inventory but may not pitch during resolution.
     cancelled(driver)

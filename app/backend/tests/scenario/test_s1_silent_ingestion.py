@@ -4,10 +4,8 @@ from acme.domain.fixtures import DISRUPTION_DETECTED_AT
 
 from .driver import EventType, ScenarioDriver
 from .flows import cancelled, sole
-from .marks import needs
 
 
-@needs(10)
 def test_cancellation_is_detected_at_2203_from_the_occ_stream(driver: ScenarioDriver):
     # Given Mariana's seeded journey; When OCC cancels AC1234 for maintenance
     cancelled(driver)
@@ -18,7 +16,6 @@ def test_cancellation_is_detected_at_2203_from_the_occ_stream(driver: ScenarioDr
     assert detected.payload["reason"] == "unscheduled maintenance"
 
 
-@needs(10)
 def test_profile_evaluation_loads_diamond_tier_seat_14a_and_one_bag(driver: ScenarioDriver):
     cancelled(driver)
     profile = sole(driver, EventType.PROFILE_LOADED).payload
@@ -27,7 +24,6 @@ def test_profile_evaluation_loads_diamond_tier_seat_14a_and_one_bag(driver: Scen
     assert profile["bags"] == 1
 
 
-@needs(10)
 def test_onward_connection_is_flagged_as_the_high_stakes_constraint(driver: ScenarioDriver):
     cancelled(driver)
     connection = sole(driver, EventType.PROFILE_LOADED).payload["connection"]
@@ -35,7 +31,6 @@ def test_onward_connection_is_flagged_as_the_high_stakes_constraint(driver: Scen
     assert connection["departure"].startswith("2026-10-10T14:00")
 
 
-@needs(10)
 def test_ingestion_is_silent_no_passenger_message_is_sent(driver: ScenarioDriver):
     cancelled(driver)
     assert driver.transcript() == []

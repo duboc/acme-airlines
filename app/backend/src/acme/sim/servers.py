@@ -46,6 +46,24 @@ def build_pss(sim: SimWorld) -> FastMCP:
         """Return a PNR: segments, seats, bags."""
         return _dump(sim.get_pnr(pnr))
 
+    @mcp.tool(name="flights.get")
+    def flights_get(flight: str) -> dict[str, Any]:
+        """Return one flight with its scheduled times and status."""
+        return _dump(sim.flight(flight))
+
+    @mcp.tool(name="flight.manifest")
+    def flight_manifest(flight: str) -> dict[str, Any]:
+        """PNRs (locator + passenger id) holding a segment on the flight."""
+        sim.flight(flight)
+        return {
+            "flight": flight,
+            "pnrs": [
+                {"pnr": p.locator, "passenger_id": p.passenger_id}
+                for p in sim.world.pnrs.values()
+                if flight in {s.flight_number for s in p.segments}
+            ],
+        }
+
     @mcp.tool(name="flights.search")
     def flights_search(
         origin: str,

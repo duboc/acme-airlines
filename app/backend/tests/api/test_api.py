@@ -61,7 +61,7 @@ async def test_journey_detail(client):
     d = r.json()
     assert d["journey_id"] == jid
     assert d["passenger_id"] == PID
-    assert d["status"] == "DETECTED"
+    assert d["status"] == "RESOLVING"
     assert [s["flight_number"] for s in d["itinerary"]] == ["AC1234", "AC0800"]
     assert d["seat"]["seat"] == "14A"
     assert d["bags"][0]["tag"] == "BAG0001"
@@ -90,20 +90,36 @@ async def test_sse_streams_existing_and_new_events(client, app):
         app.state.runtime.journeys[jid].state.append_event("test", "ping", {"n": 1})
 
     task = asyncio.create_task(append_later())
-    r = await asyncio.wait_for(client.get(f"/journeys/{jid}/events?limit=2"), timeout=5)
+    r = await asyncio.wait_for(client.get(f"/journeys/{jid}/events?limit=5"), timeout=5)
     await task
     assert r.headers["content-type"].startswith("text/event-stream")
     frames = [f for f in r.text.split("\n\n") if f]
     assert all(f.startswith("data: ") for f in frames)
     events = [json.loads(f[len("data: ") :]) for f in frames]
-    assert [e["type"] for e in events] == ["cancellation_detected", "ping"]
-    assert events[1]["payload"] == {"n": 1}
+    assert [e["type"] for e in events] == [
+        "cancellation_detected",
+        "status_changed",
+        "profile_loaded",
+        "connection_constraint",
+        "ping",
+    ]
+    assert events[2]["payload"]["tier"] == "diamond"
+    assert events[4]["payload"] == {"n": 1}
 
 
-async def test_whatsapp_thread_after_trigger(client):
-    await trigger(client)
-    msgs = (await client.get(f"/whatsapp/{PID}/messages")).json()
-    assert msgs and msgs[0]["direction"] == "outbound" and "AC1234" in msgs[0]["text"]
+async def test_whatsapp_thread_is_silent_after_trigger(client):
+    await trigger(client)  # quiet hours: nothing is sent until the journey is RESOLVED
+    assert (await client.get(f"/whatsapp/{PID}/messages")).json() == []
+
+
+async def test_trigger_reflects_real_agent_state(client):
+    (jid,) = await trigger(client)
+    d = (await client.get(f"/journeys/{jid}")).json()
+    assert d["status"] == "RESOLVING"
+    r = await client.post(
+        "/scenario/trigger-cancellation", json={"flight": "AC1240", "reason": "crew"}
+    )
+    assert r.json() == {"journey_ids": []}
 
 
 async def test_whatsapp_unknown_passenger_404(client):

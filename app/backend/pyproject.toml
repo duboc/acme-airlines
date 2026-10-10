@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 acme-sim = "acme.sim.app:main"
+acme-customer = "acme.customer.main:main"
 
 [dependency-groups]
 dev = [
