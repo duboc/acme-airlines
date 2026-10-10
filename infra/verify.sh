@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verification harness for the acme-airlines factory.
 #
-# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|all>
+# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|all>
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
@@ -255,6 +255,31 @@ check_budget() {
   fi
   pass "budget ($(jq -r '.[0].amount.specifiedAmount.units' <<<"${b}") USD, 50/90/100%, guard suspends agents, never stops VM)"
 }
+check_observatory() {
+  # Platform for the Observatory workstream (addendum C) exists and is wired.
+  local p="${PROJECT_ID}" r="${REGION}" sa missing=""
+  for sa in acme-observatory acme-observatory-collector acme-observatory-deployer; do
+    gcloud iam service-accounts describe "${sa}@${p}.iam.gserviceaccount.com" --project="${p}" >/dev/null 2>&1 || missing+=" sa:${sa}"
+  done
+  for ds in billing_export factory_ops; do
+    bq --project_id="${p}" show --format=none "${p}:${ds}" >/dev/null 2>&1 || missing+=" dataset:${ds}"
+  done
+  gcloud iam workload-identity-pools providers describe github-actions --workload-identity-pool=github \
+    --location=global --project="${p}" >/dev/null 2>&1 || missing+=" wif:github/github-actions"
+  gcloud artifacts repositories describe observatory --location="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" ar:observatory"
+  gcloud secrets versions list acme-observatory-hub-token --project="${p}" --filter=state=ENABLED --format='value(name)' 2>/dev/null | grep -q . \
+    || missing+=" secret:acme-observatory-hub-token"
+  gcloud secrets describe acme-observatory-github-token --project="${p}" >/dev/null 2>&1 || missing+=" secret:acme-observatory-github-token"
+  gcloud run services describe acme-observatory --region="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" run:acme-observatory"
+  gcloud run jobs describe acme-observatory-collector --region="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" job:acme-observatory-collector"
+  gcloud scheduler jobs describe acme-observatory-collect --location="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" scheduler:acme-observatory-collect"
+  gh variable list -R duboc/acme-airlines 2>/dev/null | grep -q '^OBSERVATORY_WIF_PROVIDER' || missing+=" gh-var:OBSERVATORY_WIF_PROVIDER"
+  [[ -z "${missing}" ]] || { fail observatory "missing:${missing}"; return 1; }
+  local note=""
+  gcloud secrets versions list acme-observatory-github-token --project="${p}" --filter=state=ENABLED --format='value(name)' 2>/dev/null | grep -q . \
+    || note=" (GitHub read token not yet added)"
+  pass "observatory platform${note}"
+}
 check_lead() {
   # The lead agent's container is running on the VM.
   vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
@@ -277,11 +302,12 @@ run() {
     skills)       check_skills ;;
     loop)         check_loop ;;
     budget)       check_budget ;;
+    observatory)  check_observatory ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory; do run "$c" || rc=1; done
       return "$rc" ;;
-    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|all>" >&2; return 2 ;;
+    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|all>" >&2; return 2 ;;
   esac
 }
 
