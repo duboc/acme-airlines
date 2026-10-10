@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { eventsUrl, getJourney, listJourneys, resetScenario, triggerCancellation } from './api';
 import './console.css';
+import { DemoPanel } from '../demo/DemoPanel';
+import type { ScenarioState } from '../demo/types';
+import { ChatView } from '../whatsapp/ChatView';
 import { JourneyCard } from './JourneyCard';
 import { Timeline } from './Timeline';
 import type { JourneyDetail, JourneyEvent } from './types';
+
+// Mariana's passenger id in the seeded AC1234 scenario.
+const PASSENGER_ID = 'P-MARIANA';
 
 export function ConsolePage() {
   const [journey, setJourney] = useState<JourneyDetail | null>(null);
@@ -58,6 +64,26 @@ export function ConsolePage() {
       cancelled = true;
     };
   }, [attach]);
+
+  const currentId = journey?.journey_id ?? null;
+
+  function demoStarted() {
+    close();
+    setJourney(null);
+    setEvents([]);
+    setError(null);
+  }
+
+  async function demoChanged(state?: ScenarioState) {
+    const id = state?.journey_id ?? currentId;
+    if (!id) return;
+    try {
+      if (source.current && currentId === id) setJourney(await getJourney(id));
+      else await attach(id);
+    } catch {
+      setError('Could not refresh the journey.');
+    }
+  }
 
   async function trigger() {
     setBusy(true);
@@ -116,9 +142,14 @@ export function ConsolePage() {
           {error}
         </p>
       )}
+      <DemoPanel passengerId={PASSENGER_ID} onStarted={demoStarted} onChanged={demoChanged} />
       <div className="console-grid">
         <JourneyCard journey={journey} />
         <Timeline events={events} />
+        <section className="panel chat-col" aria-labelledby="chat-h">
+          <h2 id="chat-h">Passenger chat (simulated)</h2>
+          <ChatView passengerId={PASSENGER_ID} />
+        </section>
       </div>
     </section>
   );

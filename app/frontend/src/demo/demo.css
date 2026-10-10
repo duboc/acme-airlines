@@ -1,0 +1,91 @@
+.demo {
+  max-width: 72rem;
+  margin-bottom: 2rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.demo h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+.demo h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.9375rem;
+}
+.demo p {
+  margin: 0.5rem 0;
+  max-width: 70ch;
+}
+.demo-badge {
+  display: inline-block;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid var(--navy);
+  color: var(--navy);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.demo-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+}
+.demo select {
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--navy);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 0.25rem;
+}
+.demo-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-top: 0.75rem;
+}
+.demo-step p {
+  margin: 0;
+}
+.demo-final strong {
+  color: var(--ink);
+}
+.demo-expected {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+}
+.demo-expected .pass::before {
+}
+.demo-expected .fail {
+  font-weight: 650;
+  color: var(--ink);
+}
+.demo-expected .fail::before {
+  color: oklch(0.5 0.17 50);
+}
+.demo-expected ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+}
+.demo-msg {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+.demo-manual {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding: 0.5rem 0 0;
+  border: 0;
+}
+.demo-manual legend {
+  padding: 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
