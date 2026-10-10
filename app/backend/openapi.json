@@ -1364,6 +1364,58 @@
         "title": "RebookedPayload",
         "type": "object"
       },
+      "RequestClosedEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/RequestClosedPayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "request_closed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "RequestClosedEvent",
+        "type": "object"
+      },
+      "RequestClosedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "outcome": {
+            "enum": [
+              "satisfied",
+              "unsatisfiable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "outcome"
+        ],
+        "title": "RequestClosedPayload",
+        "type": "object"
+      },
       "ResolutionAcknowledgedEvent": {
         "properties": {
           "actor": {
@@ -2217,6 +2269,7 @@
                         "passenger_message": "#/components/schemas/PassengerMessageEvent",
                         "profile_loaded": "#/components/schemas/ProfileLoadedEvent",
                         "rebooked": "#/components/schemas/RebookedEvent",
+                        "request_closed": "#/components/schemas/RequestClosedEvent",
                         "resolution_acknowledged": "#/components/schemas/ResolutionAcknowledgedEvent",
                         "resolution_blocked": "#/components/schemas/ResolutionBlockedEvent",
                         "sales_opportunity": "#/components/schemas/SalesOpportunityEvent",
@@ -2278,6 +2331,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/ChangeHandoffEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/RequestClosedEvent"
                       },
                       {
                         "$ref": "#/components/schemas/VoucherIssuedEvent"

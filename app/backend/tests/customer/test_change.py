@@ -129,3 +129,16 @@ async def test_seat_failure_needs_human_and_keeps_replanning(setup):
     await rt.handle_inbound(PID, "Can I leave after 10am?")
     assert of(rec, "needs_human")
     assert rec.state.status == S.REPLANNING and len(rec.state.open_requests) == 1
+
+
+async def test_every_event_of_the_full_replanning_flow_matches_the_api_contract(setup):
+    from pydantic import TypeAdapter
+
+    from acme.api.events import TimelineEvent
+
+    rt, rec = setup
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    await rt.handle_inbound(PID, "Perfect, thanks!")
+    adapter = TypeAdapter(TimelineEvent)
+    for e in rec.state.timeline:
+        adapter.validate_python(e.model_dump(mode="json"))

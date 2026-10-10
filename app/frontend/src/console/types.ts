@@ -75,6 +75,7 @@ export const EVENT_TYPES = [
   'passenger_message',
   'profile_loaded',
   'rebooked',
+  'request_closed',
   'resolution_acknowledged',
   'resolution_blocked',
   'sales_opportunity',
