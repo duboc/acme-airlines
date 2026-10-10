@@ -172,3 +172,5 @@ to `localhost:8080` (run the API with `OBSERVATORY_DATA=fake`). Set `VITE_DATA_M
 the image sets `DASHBOARD_STATIC=/app/web/dist` and FastAPI serves it at `/`. Panel bodies plug into `Panel` as render children (#119/#120).
 
 Panels: Spend (stacked SVG bars + daily table), Model usage (24h/7d), Budget (meter with 50/90/100% markers, textual threshold, guard actions). Billing `empty` shows "Billing export not enabled yet".
+
+Panels (cont.): Agents (grouped by role, lead staleness >30 min, LIMITS_EXCEEDED text flag) and GitHub (CI pass rate, issues by status, open PRs with latest verdict, 14-day merges + table). Empty GitHub shows "GitHub token isn't configured yet".
