@@ -69,4 +69,8 @@ def main() -> None:
         SalesRadar(A2ACustomerClient(customer), inventory),
         float(os.environ.get("ACME_SALES_TICK_SECONDS", "5")),
     )
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("ACME_SALES_PORT", "8801")))
+    uvicorn.run(
+        app,
+        host=os.environ.get("ACME_SALES_HOST", "127.0.0.1"),
+        port=int(os.environ.get("ACME_SALES_PORT", "8801")),
+    )
