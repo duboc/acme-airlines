@@ -3,7 +3,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from acme.domain.fixtures import mariana_world
-from acme.policy.connection_check import DEFAULT_MCT_MINUTES, check_connection, check_flights
+from acme.policy.connection_check import (
+    DEFAULT_MCT_MINUTES,
+    check_connection,
+    check_flights,
+    latest_arrival,
+)
 
 TZ = timezone(timedelta(hours=-3))
 
@@ -57,3 +62,12 @@ def test_flights_must_meet_at_one_airport_and_have_arrival():
     with pytest.raises(ValueError, match="no scheduled arrival"):
         no_arrival = w.flights["AC1240"].model_copy(update={"scheduled_arrival": None})
         check_flights(no_arrival, w.flights["AC0800"])
+
+
+def test_latest_arrival():
+    latest, mct = latest_arrival("SCL", at(14))
+    assert (latest, mct) == (at(12, 30), 90)
+    assert latest_arrival("SCL", at(14), mct_minutes=60) == (at(13), 60)
+    assert check_connection("SCL", latest, at(14)).margin_minutes == 0
+    with pytest.raises(ValueError, match="timezone-aware"):
+        latest_arrival("SCL", datetime(2026, 10, 10, 14))

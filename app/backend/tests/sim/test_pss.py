@@ -33,3 +33,14 @@ async def test_rebook_errors(connect):
     async with connect("pss") as s:
         assert (await s.call_tool("pnr.rebook", {"pnr": "NOPE", "flight": "AC1240"})).isError
         assert (await s.call_tool("pnr.rebook", {"pnr": "MSLV42", "flight": "ZZ1"})).isError
+
+
+async def test_flight_get_and_manifest(connect):
+    async with connect("pss") as s:
+        f = await call(s, "flights.get", flight="AC0800")
+        m = await call(s, "flight.manifest", flight="AC1234")
+        empty = await call(s, "flight.manifest", flight="AC1240")
+        assert (await s.call_tool("flights.get", {"flight": "ZZ1"})).isError
+    assert f["origin"] == "SCL" and f["scheduled_departure"].startswith("2026-10-10T14:00")
+    assert m["pnrs"] == [{"pnr": "MSLV42", "passenger_id": "P-MARIANA"}]
+    assert empty["pnrs"] == []

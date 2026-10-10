@@ -30,7 +30,7 @@ class SimWorld:
     # --- OCC ---------------------------------------------------------------------------
     async def publish_cancellation(self, flight: str, reason: str) -> dict[str, Any]:
         async with self._cond:
-            f = self._flight(flight)
+            f = self.flight(flight)
             f.status = "cancelled"
             event = {
                 "type": "flight_cancelled",
@@ -55,7 +55,7 @@ class SimWorld:
             return list(self._events[cursor:]), len(self._events)
 
     # --- PSS ---------------------------------------------------------------------------
-    def _flight(self, number: str) -> Flight:
+    def flight(self, number: str) -> Flight:
         try:
             return self.world.flights[number]
         except KeyError:
@@ -86,9 +86,9 @@ class SimWorld:
     async def rebook(self, locator: str, flight: str) -> PNR:
         """Replace the PNR segment on the same route; the old seat is released."""
         async with self._cond:
-            pnr, new = self.get_pnr(locator), self._flight(flight)
+            pnr, new = self.get_pnr(locator), self.flight(flight)
             for i, seg in enumerate(pnr.segments):
-                old = self._flight(seg.flight_number)
+                old = self.flight(seg.flight_number)
                 if (old.origin, old.destination) == (new.origin, new.destination):
                     pnr.segments[i] = Segment(flight_number=flight)
                     pnr.seats = [s for s in pnr.seats if s.flight_number != old.number]

@@ -44,3 +44,16 @@ passenger is both an origin resident and PNAE with an overnight wait, DOC-06 app
 
 Mariana (cancelled 22:03, re-accommodated next morning, ~10.2h, overnight, non-resident):
 communication, dinner + breakfast, hotel + transfer, re-accommodation, compensation flag.
+
+## Quiet hours (Customer agent, `acme.customer.quiet_hours`)
+
+Default window 22:00-07:00 passenger-local, configurable (`QuietHours(start, end)`).
+
+- During quiet hours the system sends **nothing** to the passenger until the journey has first reached `RESOLVED`.
+- It then sends **exactly one** consolidated resolution message (#13).
+- Passenger-initiated replies may always be answered.
+- Offers in quiet hours are allowed only after the passenger acknowledges the final resolution (guardrail rule 2, #6).
+
+`can_send_proactive(journey, now, quiet, passenger_initiated)` implements the gate (a journey that
+later moves to `REPLANNING` still counts as having been resolved). Scenario 1 ingestion at 22:03
+sends no message at all.

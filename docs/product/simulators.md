@@ -17,6 +17,8 @@ MCP tool errors. Times are timezone-aware ISO 8601.
 | Tool | Args | Result |
 |---|---|---|
 | `pnr.get` | `pnr` | PNR: `locator`, `passenger_id`, `segments`, `seats`, `bags`. |
+| `flights.get` | `flight` | One flight with scheduled times and status. |
+| `flight.manifest` | `flight` | `{flight, pnrs: [{pnr, passenger_id}]}` for PNRs holding a segment on the flight. |
 | `flights.search` | `origin`, `dest`, `after?`, `before?` (aware datetimes, bound departure) | `{flights: [Flight...]}`, non-cancelled, by departure. |
 | `pnr.rebook` | `pnr`, `flight` | Updated PNR. Replaces the segment on the same route; releases the old seat; keeps bags. |
 

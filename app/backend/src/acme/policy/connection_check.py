@@ -6,7 +6,7 @@ default international MCT at SCL is 90 minutes (see `acme.domain.fixtures`).
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from acme.domain.models import Flight
 
@@ -51,3 +51,17 @@ def check_flights(
     return check_connection(
         arriving.destination, arriving.scheduled_arrival, onward.scheduled_departure, mct_minutes
     )
+
+
+def latest_arrival(
+    airport: str, onward_departure: datetime, mct_minutes: int | None = None
+) -> tuple[datetime, int]:
+    """Latest feasible arrival at `airport` (onward departure - MCT) and the MCT used."""
+    if onward_departure.tzinfo is None:
+        raise ValueError("onward_departure must be timezone-aware")
+    mct = (
+        mct_minutes
+        if mct_minutes is not None
+        else DEFAULT_MCT_MINUTES.get(airport, FALLBACK_MCT_MINUTES)
+    )
+    return onward_departure - timedelta(minutes=mct), mct

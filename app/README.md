@@ -62,3 +62,9 @@ Vite dev server (`http://localhost:5173`). `GET /journeys/{id}/events` is Server
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. The `backend`
 job runs the four commands above. A `frontend` job is added with the frontend scaffold.
+
+## Customer agent
+
+`uv run acme-customer` (from `app/backend`) serves the runtime API on `ACME_CUSTOMER_PORT` (default 8800) with the
+Customer agent and in-process simulators. `POST /scenario/trigger-cancellation` runs scenario 1
+(silent ingestion and profile evaluation); see `docs/product/policy-rules.md` for the quiet-hours rule.
