@@ -40,6 +40,23 @@ cd app/backend
 LLM_MODE=vertex uv run pytest -m live tests/live
 ```
 
+## Runtime API (`acme.api`)
+
+FastAPI REST + SSE for the UI. Agent behaviour is stubbed (#17); the Customer agent work (#10-#16)
+wires in real agents without changing the contract.
+
+```bash
+cd app/backend
+uv run uvicorn acme.api.main:app --reload      # http://localhost:8000/docs
+uv run python -m acme.api.openapi              # regenerate the committed contract
+```
+
+The contract is committed at `app/backend/openapi.json`; a test fails if `GET /openapi.json`
+drifts from it, so regenerate and commit it whenever endpoints or models change. CORS allows the
+Vite dev server (`http://localhost:5173`). `GET /journeys/{id}/events` is Server-Sent Events: one
+`data:` frame (JSON `JourneyEvent`) per timeline event, replaying history first; optional
+`?limit=N` closes the stream after N events.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. The `backend`

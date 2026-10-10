@@ -1,0 +1,831 @@
+{
+  "components": {
+    "schemas": {
+      "ActionResult": {
+        "properties": {
+          "offer_status": {
+            "title": "Offer Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "offer_status"
+        ],
+        "title": "ActionResult",
+        "type": "object"
+      },
+      "Bag": {
+        "properties": {
+          "checked": {
+            "default": true,
+            "title": "Checked",
+            "type": "boolean"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "title": "Bag",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HotelBooking": {
+        "properties": {
+          "booking_id": {
+            "title": "Booking Id",
+            "type": "string"
+          },
+          "hotel_id": {
+            "title": "Hotel Id",
+            "type": "string"
+          },
+          "nights": {
+            "minimum": 1.0,
+            "title": "Nights",
+            "type": "integer"
+          },
+          "passenger_id": {
+            "title": "Passenger Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "booking_id",
+          "hotel_id",
+          "passenger_id",
+          "nights"
+        ],
+        "title": "HotelBooking",
+        "type": "object"
+      },
+      "JourneyDetail": {
+        "properties": {
+          "bags": {
+            "items": {
+              "$ref": "#/components/schemas/Bag"
+            },
+            "title": "Bags",
+            "type": "array"
+          },
+          "hotel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HotelBooking"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "itinerary": {
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "title": "Itinerary",
+            "type": "array"
+          },
+          "journey_id": {
+            "title": "Journey Id",
+            "type": "string"
+          },
+          "offer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OfferView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "passenger_id": {
+            "title": "Passenger Id",
+            "type": "string"
+          },
+          "resolution_acknowledged": {
+            "title": "Resolution Acknowledged",
+            "type": "boolean"
+          },
+          "seat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeatAssignment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "vouchers": {
+            "items": {
+              "$ref": "#/components/schemas/Voucher"
+            },
+            "title": "Vouchers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "journey_id",
+          "passenger_id",
+          "status",
+          "resolution_acknowledged",
+          "itinerary",
+          "seat",
+          "bags",
+          "hotel",
+          "vouchers",
+          "offer"
+        ],
+        "title": "JourneyDetail",
+        "type": "object"
+      },
+      "JourneyEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "type",
+          "timestamp"
+        ],
+        "title": "JourneyEvent",
+        "type": "object"
+      },
+      "JourneySummary": {
+        "properties": {
+          "journey_id": {
+            "title": "Journey Id",
+            "type": "string"
+          },
+          "passenger_id": {
+            "title": "Passenger Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "journey_id",
+          "passenger_id",
+          "status"
+        ],
+        "title": "JourneySummary",
+        "type": "object"
+      },
+      "OfferView": {
+        "properties": {
+          "flight": {
+            "title": "Flight",
+            "type": "string"
+          },
+          "offer_id": {
+            "title": "Offer Id",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "string"
+          },
+          "standard_price": {
+            "title": "Standard Price",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "offer_id",
+          "flight",
+          "price",
+          "standard_price",
+          "status"
+        ],
+        "title": "OfferView",
+        "type": "object"
+      },
+      "PassengerAction": {
+        "properties": {
+          "action": {
+            "enum": [
+              "accept_offer",
+              "decline_offer"
+            ],
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "PassengerAction",
+        "type": "object"
+      },
+      "PassengerReply": {
+        "properties": {
+          "text": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "PassengerReply",
+        "type": "object"
+      },
+      "SeatAssignment": {
+        "properties": {
+          "cabin": {
+            "default": "economy",
+            "enum": [
+              "economy",
+              "premium_business"
+            ],
+            "title": "Cabin",
+            "type": "string"
+          },
+          "flight_number": {
+            "title": "Flight Number",
+            "type": "string"
+          },
+          "seat": {
+            "title": "Seat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flight_number",
+          "seat"
+        ],
+        "title": "SeatAssignment",
+        "type": "object"
+      },
+      "Segment": {
+        "properties": {
+          "flight_number": {
+            "title": "Flight Number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flight_number"
+        ],
+        "title": "Segment",
+        "type": "object"
+      },
+      "TriggerCancellation": {
+        "properties": {
+          "flight": {
+            "examples": [
+              "AC1234"
+            ],
+            "title": "Flight",
+            "type": "string"
+          },
+          "reason": {
+            "examples": [
+              "unscheduled maintenance"
+            ],
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flight",
+          "reason"
+        ],
+        "title": "TriggerCancellation",
+        "type": "object"
+      },
+      "TriggerResult": {
+        "properties": {
+          "journey_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Journey Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "journey_ids"
+        ],
+        "title": "TriggerResult",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "Voucher": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "meal",
+              "hotel",
+              "transport"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "passenger_id": {
+            "title": "Passenger Id",
+            "type": "string"
+          },
+          "voucher_id": {
+            "title": "Voucher Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "voucher_id",
+          "passenger_id",
+          "kind",
+          "amount"
+        ],
+        "title": "Voucher",
+        "type": "object"
+      },
+      "WhatsAppMessage": {
+        "properties": {
+          "buttons": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Buttons",
+            "type": "array"
+          },
+          "direction": {
+            "enum": [
+              "inbound",
+              "outbound"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id",
+          "direction",
+          "text",
+          "timestamp"
+        ],
+        "title": "WhatsAppMessage",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "ACME Airlines runtime API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/journeys": {
+      "get": {
+        "operationId": "list_journeys_journeys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JourneySummary"
+                  },
+                  "title": "Response List Journeys Journeys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Journeys",
+        "tags": [
+          "journeys"
+        ]
+      }
+    },
+    "/journeys/{journey_id}": {
+      "get": {
+        "operationId": "journey_detail_journeys__journey_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "journey_id",
+            "required": true,
+            "schema": {
+              "title": "Journey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Journey Detail",
+        "tags": [
+          "journeys"
+        ]
+      }
+    },
+    "/journeys/{journey_id}/events": {
+      "get": {
+        "description": "SSE stream: each timeline event is one `data:` frame holding a JSON `JourneyEvent`.",
+        "operationId": "journey_events_journeys__journey_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "journey_id",
+            "required": true,
+            "schema": {
+              "title": "Journey Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Close the stream after N events.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Close the stream after N events.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JourneyEvent"
+                  },
+                  "title": "Response Journey Events Journeys  Journey Id  Events Get",
+                  "type": "array"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Journey Events",
+        "tags": [
+          "journeys"
+        ]
+      }
+    },
+    "/scenario/reset": {
+      "post": {
+        "operationId": "reset_scenario_reset_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Reset Scenario Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reset",
+        "tags": [
+          "scenario"
+        ]
+      }
+    },
+    "/scenario/trigger-cancellation": {
+      "post": {
+        "operationId": "trigger_cancellation_scenario_trigger_cancellation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerCancellation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriggerResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger Cancellation",
+        "tags": [
+          "scenario"
+        ]
+      }
+    },
+    "/whatsapp/{passenger_id}/actions": {
+      "post": {
+        "operationId": "whatsapp_action_whatsapp__passenger_id__actions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "passenger_id",
+            "required": true,
+            "schema": {
+              "title": "Passenger Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassengerAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Whatsapp Action",
+        "tags": [
+          "whatsapp"
+        ]
+      }
+    },
+    "/whatsapp/{passenger_id}/messages": {
+      "get": {
+        "operationId": "whatsapp_messages_whatsapp__passenger_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "passenger_id",
+            "required": true,
+            "schema": {
+              "title": "Passenger Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WhatsAppMessage"
+                  },
+                  "title": "Response Whatsapp Messages Whatsapp  Passenger Id  Messages Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Whatsapp Messages",
+        "tags": [
+          "whatsapp"
+        ]
+      },
+      "post": {
+        "operationId": "whatsapp_reply_whatsapp__passenger_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "passenger_id",
+            "required": true,
+            "schema": {
+              "title": "Passenger Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassengerReply"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatsAppMessage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Whatsapp Reply",
+        "tags": [
+          "whatsapp"
+        ]
+      }
+    }
+  }
+}
