@@ -10,7 +10,7 @@ Owner: `acme-qa`. Companion to the MVP plan ([mvp-plan](mvp-plan.md)) and the pr
 | 1. Unit / policy | Pure logic: domain, `connection_check`, `duty_of_care`, `margin_opt`, `guardrail_offer` | `tests/domain`, `tests/policy` | yes |
 | 2. MCP contract | Each simulated system's tools, schemas and per-caller allowlist | `tests/mcp` | yes |
 | 3. Scenario | Brief scenarios 1–5 end to end through `ScenarioDriver` | `tests/scenario` | yes |
-| 4. Governance | Sales never reaches the passenger; no offer before resolution (architecture, structured offers, TOCTOU races) | `tests/governance` (#22, #29) | yes |
+| 4. Governance | Sales never reaches the passenger; no offer before resolution (architecture, structured offers, TOCTOU races) | `tests/governance` (#22 part 1, #29 part 2) | yes |
 | 5. UI E2E | Playwright narrative against the running stack (#23) | `app/frontend` | yes (M5) |
 | 6. Live smoke | Real Gemini on Vertex AI `global` | `-m live` | **opt-in**, factory VM only |
 
@@ -48,6 +48,25 @@ Every scenario test is Given/When/Then and is marked `@needs(<issue>[, ...])`
    If the driver contract must change, change `driver.py` in a PR reviewed by `acme-qa`.
 
 At M4 no `@needs` remains.
+
+## Governance suite (part 1, #22)
+
+`tests/governance/` attacks each guardrail layer on its own:
+
+| Layer | File | What it proves |
+|-------|------|----------------|
+| Architecture | `test_architecture.py` | Sales config/tools are `inventory` only; the Sales token gets 403 from every other registered server; `journey_status` has three non-PII fields |
+| Structured offers | `test_structured_offers.py` | No free-text field; extra keys (fuzzed), injected text in `seat_hint`/`flight`/`cabin` and text A2A parts are rejected |
+| Claims vs inventory | `test_claims_vs_inventory.py` | Inflated standard price, false margin, zero inventory are rejected |
+| Policy | `test_policy_properties.py` | hypothesis: approval implies all six rules (independent oracle, vacuity-guarded); each rule also hand-tested |
+| State | `test_state.py` | Nothing proposed or emitted unless RESOLVED and acknowledged |
+
+A real violation is filed as a bug and the test is `xfail(strict=True)` with the issue number
+(currently #83), never weakened.
+
+**Mutation check** (run locally, not in CI): remove rule 1 from `guardrail_offer.evaluate` → 7
+governance tests fail; remove the radar's status/acknowledgement guard → 4 fail; let `Offer`
+accept extra keys → 9 fail; drop the rule-6 origin check → 1 fails.
 
 ## Fact → test traceability
 
