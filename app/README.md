@@ -100,3 +100,12 @@ template is sent instead (`notification_sent.source` = `llm` | `template`). Inbo
 interface (`RecordingChangeAgent` stub until #30); `acknowledge` with no open request ->
 `resolution_acknowledged = True`; anything else -> `needs_human`, request stays open. The API
 transcript is read from the whatsapp simulator (`message.send` now takes `attachments`).
+
+## Timeline event contract
+
+`GET /journeys/{id}/events` is typed in `app/backend/openapi.json` as a `TimelineEvent` union
+discriminated by `type` (`acme.api.events`). Emitted events have strict payload schemas; events
+that #14-#16 will emit (`sales_opportunity`, `offer_sent`, ...) are provisional. When you add or
+change an event, update `acme.api.events`, regenerate the contract
+(`uv run python -m acme.api.openapi`), and update `EVENT_TYPES` in
+`app/frontend/src/console/types.ts`: the backend drift test and `contract.test.ts` fail otherwise.

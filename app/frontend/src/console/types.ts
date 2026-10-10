@@ -50,3 +50,46 @@ export interface JourneyEvent {
   timestamp: string;
   payload?: Record<string, unknown>;
 }
+
+// Timeline event types in the OpenAPI contract (app/backend/openapi.json). contract.test.ts fails on drift.
+export const EVENT_TYPES = [
+  'accept_offer',
+  'analytics_recorded',
+  'bag_rerouted',
+  'cancellation_detected',
+  'connection_constraint',
+  'connection_verified',
+  'crm_logged',
+  'decline_offer',
+  'duty_of_care_assessed',
+  'duty_of_care_fulfilled',
+  'guardrail_decision',
+  'hotel_booked',
+  'memory_committed',
+  'needs_human',
+  'nps_scheduled',
+  'offer_sent',
+  'passenger_message',
+  'profile_loaded',
+  'rebooked',
+  'resolution_blocked',
+  'sales_opportunity',
+  'sales_suppressed',
+  'seat_held',
+  'status_changed',
+  'transfer_booked',
+  'upgrade_confirmed',
+  'verification_passed',
+  'voucher_issued',
+] as const;
+export type EventType = (typeof EVENT_TYPES)[number];
+
+export interface GuardrailDecisionPayload {
+  approved: boolean;
+  reasons: string[];
+  offer_id: string | null;
+}
+export interface SalesSuppressedPayload {
+  journey_status: string;
+  reason: string;
+}

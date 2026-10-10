@@ -111,7 +111,7 @@ class HotelBookedPayload(Payload):
     reason: str
 
 
-class TransferBookedPayload(Payload):
+class TransferArrangedPayload(Payload):
     transfer_ref: str
     leg: str
     entitlement: str
@@ -119,11 +119,24 @@ class TransferBookedPayload(Payload):
 
 
 class VoucherIssuedPayload(Payload):
+    """`kind` is the scenario-harness name (#77); `meal` is the legacy key, accepted until renamed."""
+
     voucher_id: str
-    meal: str
+    kind: str | None = None
+    meal: str | None = None
     amount: str
     entitlement: str
     reason: str
+
+
+class NotificationSentPayload(Payload):
+    message_id: str
+    source: Literal["llm", "template"]
+
+
+class ChangeHandoffPayload(Payload):
+    request_id: str
+    after: str
 
 
 class ResolutionBlockedPayload(Payload):
@@ -190,7 +203,11 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "duty_of_care_assessed": DutyOfCareAssessedPayload,
     "duty_of_care_fulfilled": Empty,
     "hotel_booked": HotelBookedPayload,
-    "transfer_booked": TransferBookedPayload,
+    "transfer_arranged": TransferArrangedPayload,  # scenario-harness name (#77)
+    "transfer_booked": TransferArrangedPayload,  # legacy alias until the #77 rename lands
+    "notification_sent": NotificationSentPayload,
+    "resolution_acknowledged": Empty,
+    "change_handoff": ChangeHandoffPayload,
     "voucher_issued": VoucherIssuedPayload,
     "resolution_blocked": ResolutionBlockedPayload,
     "passenger_message": PassengerMessagePayload,
