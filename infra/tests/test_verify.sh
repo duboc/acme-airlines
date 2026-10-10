@@ -64,4 +64,16 @@ cexpect 1 "missing caps rejected" "$T/nocap"
 mexpect 1 "empty dir rejected" "$T/none"
 rm -rf "$T"
 
+kexpect() {  # kexpect <0|1> <cron>
+  if cron_interval_ok "$2" 30; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   cron '$2'"; else echo "FAIL cron '$2' (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+kexpect 0 "*/30 * * * *"
+kexpect 0 "0,30 * * * *"
+kexpect 0 "0 * * * *"
+kexpect 1 "*/10 * * * *"
+kexpect 1 "* * * * *"
+kexpect 1 "0,15,30,45 * * * *"
+kexpect 1 ""
+
 if [[ "${fails}" == 0 ]]; then echo "PASS test_verify"; else echo "FAIL test_verify (${fails})"; exit 1; fi

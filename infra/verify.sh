@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verification harness for the acme-airlines factory.
 #
-# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|all>
+# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|all>
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
@@ -76,6 +76,25 @@ caps_ok() {
   (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
   [[ -z "${bad}" ]] || { echo "missing caps:${bad}"; return 1; }
   echo "caps present on all non-lead templates"
+}
+
+# cron_interval_ok <cron> <min-minutes>: the minute field fires at most every
+# <min-minutes> minutes ("*/N", a single minute, or a comma list whose smallest
+# gap, including wrap-around, is >= min).
+cron_interval_ok() {
+  local cron="$1" min="$2" m
+  read -r m _ <<<"${cron}"
+  [[ -n "${m}" ]] || return 1
+  if [[ "${m}" =~ ^\*/([0-9]+)$ ]]; then (( BASH_REMATCH[1] >= min )); return; fi
+  [[ "${m}" =~ ^[0-9]+(,[0-9]+)*$ ]] || return 1
+  local -a v; IFS=',' read -ra v <<<"${m}"
+  (( ${#v[@]} == 1 )) && return 0
+  local i gap smallest=60
+  for ((i=0; i<${#v[@]}; i++)); do
+    if (( i+1 < ${#v[@]} )); then gap=$(( v[i+1] - v[i] )); else gap=$(( 60 - v[i] + v[0] )); fi
+    (( gap < smallest )) && smallest=${gap}
+  done
+  (( smallest >= min ))
 }
 
 check_project() {
@@ -199,6 +218,33 @@ check_skills() {
     fail skills "impeccable skill not found in a hub-stored template"
   fi
 }
+check_loop() {
+  # The recurring TICK schedule exists, targets acme-lead, is active, and fires at most every 30 min.
+  local row cron status payload
+  row="$(printf '%s\n' ".separator '|'" "SELECT cron_expr, status, payload FROM schedules WHERE name='acme-factory-tick';" | \
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
+      --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
+  [[ -n "${row}" ]] || { fail loop "schedule acme-factory-tick not found"; return 1; }
+  IFS='|' read -r cron status payload <<<"${row}"
+  [[ "${status}" == "active" ]] || { fail loop "schedule status=${status} (paused? run infra/60-factory.sh resume)"; return 1; }
+  [[ "${payload}" == *acme-lead* ]] || { fail loop "schedule does not target acme-lead"; return 1; }
+  cron_interval_ok "${cron}" 30 || { fail loop "cron '${cron}' fires more often than every 30 min"; return 1; }
+  pass "loop (${cron}, active)"
+}
+check_budget() {
+  # Budget exists with a 100% threshold wired to the guard topic, and the guard service is deployed.
+  local b
+  b="$(gcloud billing budgets list --billing-account="${BILLING_ACCOUNT}" \
+        --filter='displayName=acme-airlines-factory-monthly' --format=json 2>/dev/null)"
+  [[ "$(jq 'length' <<<"${b:-[]}")" -ge 1 ]] || { fail budget "budget acme-airlines-factory-monthly not found"; return 1; }
+  jq -e '.[0].thresholdRules | map(.thresholdPercent) | index(1)' <<<"${b}" >/dev/null \
+    || { fail budget "no 100% threshold"; return 1; }
+  jq -e '.[0].notificationsRule.pubsubTopic | endswith("/topics/acme-budget-alerts")' <<<"${b}" >/dev/null \
+    || { fail budget "budget not wired to topic acme-budget-alerts"; return 1; }
+  gcloud run services describe acme-budget-guard --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1 \
+    || { fail budget "Cloud Run acme-budget-guard missing"; return 1; }
+  pass "budget ($(jq -r '.[0].amount.specifiedAmount.units' <<<"${b}") USD, 50/90/100%, auto-stop guard)"
+}
 check_lead() {
   # The lead agent's container is running on the VM.
   vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
@@ -219,11 +265,13 @@ run() {
     topology)     check_topology ;;
     cost)         check_cost ;;
     skills)       check_skills ;;
+    loop)         check_loop ;;
+    budget)       check_budget ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget; do run "$c" || rc=1; done
       return "$rc" ;;
-    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|all>" >&2; return 2 ;;
+    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|all>" >&2; return 2 ;;
   esac
 }
 

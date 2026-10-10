@@ -17,6 +17,8 @@ SCION_SRC="${SCION_SRC:-${REPO_ROOT}/.cache/scion-${SCION_VERSION}}"
 
 # Dedicated gcloud configuration so the operator's default config is untouched.
 export CLOUDSDK_ACTIVE_CONFIG_NAME="${CLOUDSDK_ACTIVE_CONFIG_NAME:-acme-factory}"
+# Never block on interactive gcloud prompts (e.g. "enable API and retry? (y/N)").
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
 FOLDER_ID="543080121395"            # dubofolder
 BILLING_ACCOUNT="01820C-6329B4-8A7409"
