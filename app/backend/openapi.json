@@ -192,6 +192,54 @@
         "title": "CancellationDetectedPayload",
         "type": "object"
       },
+      "ChangeHandoffEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/ChangeHandoffPayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "change_handoff",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "ChangeHandoffEvent",
+        "type": "object"
+      },
+      "ChangeHandoffPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "title": "After",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "after"
+        ],
+        "title": "ChangeHandoffPayload",
+        "type": "object"
+      },
       "ConnectionConstraintEvent": {
         "properties": {
           "actor": {
@@ -896,6 +944,58 @@
         "title": "NeedsHumanPayload",
         "type": "object"
       },
+      "NotificationSentEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/NotificationSentPayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "notification_sent",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "NotificationSentEvent",
+        "type": "object"
+      },
+      "NotificationSentPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "llm",
+              "template"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id",
+          "source"
+        ],
+        "title": "NotificationSentPayload",
+        "type": "object"
+      },
       "NpsScheduledEvent": {
         "properties": {
           "actor": {
@@ -1216,6 +1316,35 @@
         "title": "RebookedPayload",
         "type": "object"
       },
+      "ResolutionAcknowledgedEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/Empty"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "resolution_acknowledged",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "ResolutionAcknowledgedEvent",
+        "type": "object"
+      },
       "ResolutionBlockedEvent": {
         "properties": {
           "actor": {
@@ -1504,14 +1633,14 @@
         "title": "StatusChangedPayload",
         "type": "object"
       },
-      "TransferBookedEvent": {
+      "TransferArrangedEvent": {
         "properties": {
           "actor": {
             "title": "Actor",
             "type": "string"
           },
           "payload": {
-            "$ref": "#/components/schemas/TransferBookedPayload"
+            "$ref": "#/components/schemas/TransferArrangedPayload"
           },
           "timestamp": {
             "format": "date-time",
@@ -1519,7 +1648,7 @@
             "type": "string"
           },
           "type": {
-            "const": "transfer_booked",
+            "const": "transfer_arranged",
             "title": "Type",
             "type": "string"
           }
@@ -1530,10 +1659,10 @@
           "type",
           "payload"
         ],
-        "title": "TransferBookedEvent",
+        "title": "TransferArrangedEvent",
         "type": "object"
       },
-      "TransferBookedPayload": {
+      "TransferArrangedPayload": {
         "additionalProperties": false,
         "properties": {
           "entitlement": {
@@ -1559,7 +1688,36 @@
           "entitlement",
           "reason"
         ],
-        "title": "TransferBookedPayload",
+        "title": "TransferArrangedPayload",
+        "type": "object"
+      },
+      "TransferBookedEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/TransferArrangedPayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "transfer_booked",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "TransferBookedEvent",
         "type": "object"
       },
       "TriggerCancellation": {
@@ -1809,6 +1967,7 @@
       },
       "VoucherIssuedPayload": {
         "additionalProperties": false,
+        "description": "`kind` is the scenario-harness name (#77); `meal` is the legacy key until renamed.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -1818,9 +1977,27 @@
             "title": "Entitlement",
             "type": "string"
           },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
           "meal": {
-            "title": "Meal",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meal"
           },
           "reason": {
             "title": "Reason",
@@ -1833,7 +2010,6 @@
         },
         "required": [
           "voucher_id",
-          "meal",
           "amount",
           "entitlement",
           "reason"
@@ -2011,6 +2187,7 @@
                         "analytics_recorded": "#/components/schemas/AnalyticsRecordedEvent",
                         "bag_rerouted": "#/components/schemas/BagReroutedEvent",
                         "cancellation_detected": "#/components/schemas/CancellationDetectedEvent",
+                        "change_handoff": "#/components/schemas/ChangeHandoffEvent",
                         "connection_constraint": "#/components/schemas/ConnectionConstraintEvent",
                         "connection_verified": "#/components/schemas/ConnectionVerifiedEvent",
                         "crm_logged": "#/components/schemas/CrmLoggedEvent",
@@ -2021,16 +2198,19 @@
                         "hotel_booked": "#/components/schemas/HotelBookedEvent",
                         "memory_committed": "#/components/schemas/MemoryCommittedEvent",
                         "needs_human": "#/components/schemas/NeedsHumanEvent",
+                        "notification_sent": "#/components/schemas/NotificationSentEvent",
                         "nps_scheduled": "#/components/schemas/NpsScheduledEvent",
                         "offer_sent": "#/components/schemas/OfferSentEvent",
                         "passenger_message": "#/components/schemas/PassengerMessageEvent",
                         "profile_loaded": "#/components/schemas/ProfileLoadedEvent",
                         "rebooked": "#/components/schemas/RebookedEvent",
+                        "resolution_acknowledged": "#/components/schemas/ResolutionAcknowledgedEvent",
                         "resolution_blocked": "#/components/schemas/ResolutionBlockedEvent",
                         "sales_opportunity": "#/components/schemas/SalesOpportunityEvent",
                         "sales_suppressed": "#/components/schemas/SalesSuppressedEvent",
                         "seat_held": "#/components/schemas/SeatHeldEvent",
                         "status_changed": "#/components/schemas/StatusChangedEvent",
+                        "transfer_arranged": "#/components/schemas/TransferArrangedEvent",
                         "transfer_booked": "#/components/schemas/TransferBookedEvent",
                         "upgrade_confirmed": "#/components/schemas/UpgradeConfirmedEvent",
                         "verification_passed": "#/components/schemas/VerificationPassedEvent",
@@ -2076,7 +2256,19 @@
                         "$ref": "#/components/schemas/HotelBookedEvent"
                       },
                       {
+                        "$ref": "#/components/schemas/TransferArrangedEvent"
+                      },
+                      {
                         "$ref": "#/components/schemas/TransferBookedEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/NotificationSentEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ResolutionAcknowledgedEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ChangeHandoffEvent"
                       },
                       {
                         "$ref": "#/components/schemas/VoucherIssuedEvent"

@@ -119,7 +119,7 @@ class TransferArrangedPayload(Payload):
 
 
 class VoucherIssuedPayload(Payload):
-    """`kind` is the scenario-harness name (#77); `meal` is the legacy key, accepted until renamed."""
+    """`kind` is the scenario-harness name (#77); `meal` is the legacy key until renamed."""
 
     voucher_id: str
     kind: str | None = None
