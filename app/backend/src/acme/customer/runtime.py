@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
@@ -49,15 +50,27 @@ def journey_id_for(locator: str) -> str:
 
 
 class CustomerRuntime:
-    def __init__(self, clock: Clock | None = None, connector: Connector | None = None) -> None:
+    def __init__(
+        self,
+        clock: Clock | None = None,
+        connector: Connector | None = None,
+        connector_factory: Callable[[SimWorld], Connector] | None = None,
+    ) -> None:
         self.clock = clock or SystemClock()
         self._custom_connector = connector
+        self._connector_factory = connector_factory
         self.reset()
 
     def reset(self) -> None:
         self.sim = SimWorld.seeded(self.clock)
         # Plain config for now; #27 swaps in a per-caller credentialed connector.
-        self.client = SimClient(self._custom_connector or inprocess_connector(self.sim))
+        if self._custom_connector:
+            connector = self._custom_connector
+        elif self._connector_factory:
+            connector = self._connector_factory(self.sim)  # e.g. ADK connector to a served sim
+        else:
+            connector = inprocess_connector(self.sim)
+        self.client = SimClient(connector)
         self.journeys: dict[str, JourneyRecord] = {}
         self.messages: dict[str, list[WhatsAppMessage]] = {}
         self._cursor = 0
