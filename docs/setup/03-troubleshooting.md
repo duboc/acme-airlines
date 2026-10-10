@@ -96,3 +96,19 @@ stale.
 
 **Fix:** the generated templates now live in `factory/templates/` (not a Scion
 discovery path). The hub's global scope is the single source of truth.
+
+## Scripts exited silently right after minting a hub token
+
+**Symptom:** `70-budget-guard.sh` and `80-observatory-platform.sh` stopped,
+with no error, right after `Created version [1] of the secret …`. Once, admin
+access was left enabled.
+
+**Cause:** `30-hub-admin-access.sh` waited only 60 seconds for `/healthz`
+after restarting the hub. Its final `curl … && echo` returned non-zero when the
+restart took longer, and `set -e` aborted the caller, whose output was sent to
+`/dev/null`.
+
+**Fix:**
+- The wait is now 180 seconds, with an explicit error message.
+- Callers no longer silence `disable`, and they verify that `status` reports
+  `disabled` before continuing.

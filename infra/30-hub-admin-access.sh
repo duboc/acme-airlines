@@ -44,8 +44,8 @@ case "${1:-status}" in
   ${END}
 EOF
       sudo systemctl restart scion-hub
-      for i in \$(seq 1 30); do curl -sf http://localhost:8080/healthz >/dev/null && break; sleep 2; done
-      curl -sf http://localhost:8080/healthz >/dev/null && echo 'enabled; hub healthy'
+      for i in \$(seq 1 90); do curl -sf http://localhost:8080/healthz >/dev/null && break; sleep 2; done
+      if curl -sf http://localhost:8080/healthz >/dev/null; then echo 'enabled; hub healthy'; else echo 'ERROR: hub not healthy 180s after restart' >&2; exit 1; fi
     " ;;
   disable)
     vm_ssh "
@@ -53,8 +53,8 @@ EOF
       if ! sudo grep -qF '${BEGIN}' ${SETTINGS}; then echo 'already disabled'; exit 0; fi
       sudo sed -i '/${BEGIN//\//\\/}/,/${END//\//\\/}/d' ${SETTINGS}
       sudo systemctl restart scion-hub
-      for i in \$(seq 1 30); do curl -sf http://localhost:8080/healthz >/dev/null && break; sleep 2; done
-      curl -sf http://localhost:8080/healthz >/dev/null && echo 'disabled; hub healthy'
+      for i in \$(seq 1 90); do curl -sf http://localhost:8080/healthz >/dev/null && break; sleep 2; done
+      if curl -sf http://localhost:8080/healthz >/dev/null; then echo 'disabled; hub healthy'; else echo 'ERROR: hub not healthy 180s after restart' >&2; exit 1; fi
     " ;;
   status)
     if vm_ssh "sudo grep -qF '${BEGIN}' ${SETTINGS}" 2>/dev/null; then echo enabled; else echo disabled; fi ;;

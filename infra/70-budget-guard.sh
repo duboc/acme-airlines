@@ -47,7 +47,11 @@ if [[ -z "$(gcloud secrets versions list "${TOKEN_SECRET}" --project="${PROJECT_
   hub_cli hub token create --project duboc-acme-airlines --name acme-budget-guard \
       --scopes agent:list,agent:lifecycle --expires 90d --purpose "budget guard: suspend agents at 100% budget" --json 2>/dev/null \
     | jq -er '.token' | tr -d '\n' | gcloud secrets versions add "${TOKEN_SECRET}" --project="${PROJECT_ID}" --data-file=- --format=none
-  bash "${INFRA_DIR}/30-hub-admin-access.sh" disable >/dev/null && trap - EXIT
+  # Disable explicitly (not >/dev/null) so a slow hub restart is visible, then verify.
+  bash "${INFRA_DIR}/30-hub-admin-access.sh" disable || echo "WARN: disable reported an error; checking status" >&2
+  [[ "$(bash "${INFRA_DIR}/30-hub-admin-access.sh" status 2>/dev/null | tail -1)" == "disabled" ]] \
+    || { echo "ERROR: admin access still enabled; run: infra/30-hub-admin-access.sh disable" >&2; exit 1; }
+  trap - EXIT
 fi
 gcloud secrets add-iam-policy-binding "${TOKEN_SECRET}" --project="${PROJECT_ID}" \
   --member="serviceAccount:${SA}" --role=roles/secretmanager.secretAccessor --format=none
