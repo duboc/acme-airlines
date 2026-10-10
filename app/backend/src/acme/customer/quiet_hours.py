@@ -39,6 +39,6 @@ def can_send_proactive(
     """`now` must be aware and expressed in the passenger's local timezone."""
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware (passenger-local)")
-    if passenger_initiated or not quiet.contains(now.timetz().replace(tzinfo=None)):
+    if passenger_initiated or not quiet.contains(now.time()):
         return True
     return has_been_resolved(journey)
