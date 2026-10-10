@@ -22,6 +22,9 @@ class SimWorld:
         self.interactions: list[dict[str, Any]] = []
         self._events: list[dict[str, Any]] = []
         self._cond = asyncio.Condition()
+        from acme.sim.partners import PartnerState
+
+        self.partners = PartnerState(self)
 
     @classmethod
     def seeded(cls, clock: Clock | None = None) -> "SimWorld":
