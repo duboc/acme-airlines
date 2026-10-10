@@ -42,6 +42,24 @@ never in this repo.
 The operator creates the IAP-protected `acme-irrops-demo` Cloud Run platform with
 `infra/90-irrops-demo-platform.sh` (see the [runbook](../setup/01-runbook.md#9-irrops-demo-platform-mocked-scenarios-behind-iap)).
 
+## Single-container demo image (`app/demo/Dockerfile`)
+
+One image for the hosted demo: the built frontend, the runtime API, `acme-sim` and the Sales agent.
+`acme-demo` starts the three Python services as loopback-only child processes and serves a front
+proxy on `$PORT` (default 8080). `/api/a2a`, `/api/.well-known` and `/mcp/*` return 404 (also when
+case-changed or percent-encoded). Per-caller sim tokens are generated at startup, passed to each
+child through its own environment only, and never logged. Non-root (uid 10001), `LLM_MODE=fake`.
+
+```bash
+docker build -f app/demo/Dockerfile -t acme-demo app && docker run --rm -p 127.0.0.1:8080:8080 acme-demo
+```
+
+`.github/workflows/irrops-deploy.yml` builds it on every push to main touching `app/**`, pushes it to
+`IRROPS_AR_REPO` and swaps only the image on Cloud Run service `IRROPS_DEMO_SERVICE` (keyless WIF,
+`OBSERVATORY_*` variables), then checks the deployed image SHA. If the service does not exist yet it
+warns and succeeds. The `containers` CI job builds the image and smokes it (cancellation -> RESOLVED,
+`/api/a2a` -> 404).
+
 ## Cloud Run (target, not deployed)
 
 One Cloud Run service per container, one service account per service, **no unauthenticated access**:

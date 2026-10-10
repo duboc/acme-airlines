@@ -16,6 +16,7 @@ dependencies = [
 acme-sim = "acme.sim.app:main"
 acme-customer = "acme.customer.main:main"
 acme-sales = "acme.sales.main:main"
+acme-demo = "acme.demo.supervisor:main"
 
 [dependency-groups]
 dev = [
