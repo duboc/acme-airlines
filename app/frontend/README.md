@@ -17,6 +17,21 @@ should be generated from `app/backend/openapi.json`. The UI talks only to the ap
 
 **Dev proxy:** the UI calls `/api/*`, and the backend serves its routes at the root, so `devProxy.ts` rewrites `^/api` to an empty prefix (`/api/journeys` reaches `/journeys`). Any other host (e.g. the production container) must do the same rewrite.
 
+## End-to-end test (`e2e/`, Playwright)
+
+`npm run e2e` drives Mariana's full story through the console and the WhatsApp view: cancellation
+→ RESOLVED (AC1240, 14A, HT8842) → one WhatsApp message → "after 10am" → AC1252 11:40 → no offer
+bubble until "Perfect, thanks!" → optional $135 offer → Accept → seat 2A, journey CLOSED,
+verification passed. It starts `acme-sim`, the Customer API (`e2e/serve_customer.py`: FakeLlm and a
+fixed clock that the test advances through `POST /e2e/advance`), `acme-sales` and the Vite dev
+server itself, and runs headless in about 30 s.
+
+Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22+, ports 5173, 8000, 8700 and 8801 free, and
+once: `npm ci && npx playwright install chromium` (add `--with-deps` on a fresh Linux box).
+Locally, already running servers are reused. CI runs the `e2e` workflow
+(`.github/workflows/e2e.yml`, on PRs touching `app/`) and uploads `playwright-report` and the
+trace as the `playwright-trace` artifact on failure; view with `npx playwright show-trace <trace.zip>`.
+
 ## Operator console (`src/console/`)
 
 Trigger/Reset controls, a journey card (status stepper + itinerary) and a live timeline fed by
