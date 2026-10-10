@@ -61,11 +61,11 @@ async def test_journey_detail(client):
     d = r.json()
     assert d["journey_id"] == jid
     assert d["passenger_id"] == PID
-    assert d["status"] == "RESOLVING"
-    assert [s["flight_number"] for s in d["itinerary"]] == ["AC1234", "AC0800"]
+    assert d["status"] == "RESOLVED"
+    assert [s["flight_number"] for s in d["itinerary"]] == ["AC1240", "AC0800"]
     assert d["seat"]["seat"] == "14A"
     assert d["bags"][0]["tag"] == "BAG0001"
-    assert d["hotel"] is None and d["vouchers"] == [] and d["offer"] is None
+    assert d["hotel"]["hotel_id"] == "HT8842" and d["vouchers"] and d["offer"] is None
 
 
 async def test_journey_404(client):
@@ -89,22 +89,19 @@ async def test_sse_streams_existing_and_new_events(client, app):
         await asyncio.sleep(0.1)
         app.state.runtime.journeys[jid].state.append_event("test", "ping", {"n": 1})
 
+    n = len(app.state.runtime.journeys[jid].state.timeline)
     task = asyncio.create_task(append_later())
-    r = await asyncio.wait_for(client.get(f"/journeys/{jid}/events?limit=5"), timeout=5)
+    r = await asyncio.wait_for(client.get(f"/journeys/{jid}/events?limit={n + 1}"), timeout=5)
     await task
     assert r.headers["content-type"].startswith("text/event-stream")
     frames = [f for f in r.text.split("\n\n") if f]
     assert all(f.startswith("data: ") for f in frames)
     events = [json.loads(f[len("data: ") :]) for f in frames]
-    assert [e["type"] for e in events] == [
-        "cancellation_detected",
-        "status_changed",
-        "profile_loaded",
-        "connection_constraint",
-        "ping",
-    ]
+    types = [e["type"] for e in events]
+    assert types[:3] == ["cancellation_detected", "status_changed", "profile_loaded"]
+    assert "rebooked" in types and types[-1] == "ping"
     assert events[2]["payload"]["tier"] == "diamond"
-    assert events[4]["payload"] == {"n": 1}
+    assert events[-1]["payload"] == {"n": 1}
 
 
 async def test_whatsapp_thread_is_silent_after_trigger(client):
@@ -115,7 +112,7 @@ async def test_whatsapp_thread_is_silent_after_trigger(client):
 async def test_trigger_reflects_real_agent_state(client):
     (jid,) = await trigger(client)
     d = (await client.get(f"/journeys/{jid}")).json()
-    assert d["status"] == "RESOLVING"
+    assert d["status"] == "RESOLVED"
     r = await client.post(
         "/scenario/trigger-cancellation", json={"flight": "AC1240", "reason": "crew"}
     )
@@ -174,3 +171,11 @@ async def test_cors_for_vite_dev_server(client):
         headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
     )
     assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+async def test_journey_detail_reflects_rebuilt_flight_seat_and_bag(client):
+    (jid,) = await trigger(client)
+    d = (await client.get(f"/journeys/{jid}")).json()
+    assert [s["flight_number"] for s in d["itinerary"]] == ["AC1240", "AC0800"]
+    assert (d["seat"]["flight_number"], d["seat"]["seat"]) == ("AC1240", "14A")
+    assert d["status"] == "RESOLVED"

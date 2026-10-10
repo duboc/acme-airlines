@@ -55,7 +55,9 @@ def adk_runtime():
         servers.append(server)
         return adk_connector(f"http://127.0.0.1:{sock.getsockname()[1]}")
 
-    yield lambda: CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT), connector_factory=factory)
+    yield lambda: CustomerRuntime(
+        FixedClock(DISRUPTION_DETECTED_AT), connector_factory=factory, auto_duty_of_care=False
+    )
     for server in servers:
         server.should_exit = True
 

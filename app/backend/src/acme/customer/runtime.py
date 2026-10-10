@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from pydantic import AwareDatetime, BaseModel
 
+from acme.customer.rebuild import rebuild_journey
 from acme.domain.clock import Clock, SystemClock
 from acme.domain.fixtures import World
 from acme.domain.journey import DisruptionStatus, JourneyState
@@ -55,7 +56,9 @@ class CustomerRuntime:
         clock: Clock | None = None,
         connector: Connector | None = None,
         connector_factory: Callable[[SimWorld], Connector] | None = None,
+        auto_duty_of_care: bool = True,
     ) -> None:
+        self.auto_duty_of_care = auto_duty_of_care  # False isolates the rebuild in tests
         self.clock = clock or SystemClock()
         self._custom_connector = connector
         self._connector_factory = connector_factory
@@ -135,6 +138,11 @@ class CustomerRuntime:
             state.append_event("occ", "cancellation_detected", {"flight": flight, "reason": reason})
             state.transition(DisruptionStatus.RESOLVING, actor="customer_agent")
             await self._load_context(rec, flight)
+            result = await rebuild_journey(self.client, rec, flight)
+            if self.auto_duty_of_care:
+                from acme.customer.specialists.duty import run_duty_of_care  # noqa: PLC0415
+
+                await run_duty_of_care(self, rec, result)
             opened.append(jid)
         return opened
 

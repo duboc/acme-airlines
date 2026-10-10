@@ -12,7 +12,7 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from acme.sim.app import create_app
+from acme.sim.app import DEFAULT_REGISTRY, create_app
 from acme.sim.world import SimWorld
 
 Connector = Callable[[str], AbstractAsyncContextManager[ClientSession]]
@@ -40,7 +40,8 @@ async def _session(http: httpx.AsyncClient, server: str):
 def inprocess_connector(sim: SimWorld) -> Connector:
     @asynccontextmanager
     async def connect(server: str):
-        app = create_app(sim)
+        # Mount only the requested server: a session manager runs once per instance.
+        app = create_app(sim, registry={server: DEFAULT_REGISTRY[server]})
         http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://acme-sim")
         async with app.router.lifespan_context(app), _session(http, server) as session:
             yield session

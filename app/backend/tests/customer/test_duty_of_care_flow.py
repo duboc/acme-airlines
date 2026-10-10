@@ -13,7 +13,7 @@ DONE = RebuildResult(new_flight="AC1240", seat_done=True, bag_done=True)
 
 @pytest.fixture
 async def setup():
-    rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT))
+    rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT), auto_duty_of_care=False)
     (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
     return rt, rt.journeys[jid]
 
