@@ -57,3 +57,33 @@ Default window 22:00-07:00 passenger-local, configurable (`QuietHours(start, end
 `can_send_proactive(journey, now, quiet, passenger_initiated)` implements the gate (a journey that
 later moves to `REPLANNING` still counts as having been resolved). Scenario 1 ingestion at 22:03
 sends no message at all.
+
+## margin_opt
+
+`acme.policy.margin_opt` calculates the recovery upgrade price for courtesy-eligible tiers. Pure, deterministic, no LLM.
+
+Formula (all amounts USD, `Decimal`):
+
+    discounted = standard_fare * (1 - discount_pct[tier] / 100)
+    price      = ceil_to_5(discounted)            # whole-$5 price points
+    price      = clamp(price, cost_floor, standard_fare)
+    net_margin = price - cost_floor
+
+Tier discount table (`RECOVERY_DISCOUNT_PCT`):
+- `diamond`: 55% off (Mariana: $290 standard → $130.50 → $135 price, cost floor $55, net margin +$80)
+- `gold`: 40% off
+- `silver`, `basic`: not eligible for recovery discount
+
+## guardrail_offer
+
+`evaluate(journey, offer, inventory)` in `acme.policy.guardrail_offer` implements the core "Two Goals, One Guardrail" policy. An offer from Sales is approved only if **all six rules** hold:
+
+1. **`disruption_resolved`:** Disruption status is `RESOLVED`.
+2. **`resolution_acknowledged`:** Passenger has acknowledged the current resolution (`resolution_acknowledged = True`) and has no open requests pending.
+3. **`genuine_discount`:** Offer standard price matches inventory, inventory has open seats in the offered cabin, offer price is strictly below standard fare and at or below tier recovery price, and passenger tier is courtesy-eligible.
+4. **`margin_verified`:** Net margin is non-negative and equals `price - cost_floor` recomputed from current inventory.
+5. **`zero_pressure`:** Offer is optional (`optional = True`), and no other live or answered offer exists for this journey (none in `approved`, `sent`, `accepted`, `declined`, and none `invalidated` on the same flight).
+6. **`origin_and_flight_verified`:** Offer origin is `"sales"` and offer flight matches the journey's current flight.
+
+The guardrail is evaluated at proposal time, and re-evaluated in full at send time and accept time under the per-journey lock (`CustomerRuntime.journey_lock`).
+

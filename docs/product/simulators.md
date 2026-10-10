@@ -103,5 +103,5 @@ callers only). If unset, random per-process tokens are generated and **not print
 to use the sim from another process. Tokens are never committed, logged or echoed (tested).
 `create_app(sim, tokens=...)` takes tokens explicitly (tests). Clients build their MCP config with
 `acme.sim.auth.client_config(caller, base_url, tokens, servers)`, which returns only the servers the
-caller may use, each with that caller's header. The Customer runtime already uses it (`sim.client.inprocess_connector` / `http_connector` act as one
-caller with only that caller's token); Sales (#14) must do the same with the `sales` credential.
+caller may use, each with that caller's header. The Customer runtime uses it (`sim.client.inprocess_connector` / `http_connector` act as one
+caller with only that caller's token); Sales uses it with the `sales` credential via `acme.sales.config.sales_mcp_config`.
