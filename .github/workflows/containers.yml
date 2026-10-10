@@ -55,7 +55,7 @@ jobs:
             docker rm "$id" > /dev/null
             # public CA bundles (system, certifi, grpc) are expected; anything else is a finding
             if grep -E '(^|/)\.env($|\.)|\.pem$|\.key$|id_rsa|-sa-key\.json$|credentials\.json$' /tmp/files.txt \
-               | grep -Ev '^(etc/ssl/|usr/lib/ssl/|usr/share/ca-certificates/)|/(certifi/cacert|grpc/_cython/_credentials/roots)\.pem$'; then
+               | grep -Ev '^(etc/ssl[0-9.]*/|usr/lib/ssl/|usr/share/ca-certificates/)|/(certifi/cacert|grpc/_cython/_credentials/roots)\.pem$'; then
               echo "::error::$img contains env/key files"; exit 1
             fi
             echo "$img: clean ($(wc -l < /tmp/files.txt) files)"
