@@ -138,3 +138,17 @@ hotel->airport transfer rescheduled (`transfer_arranged`), request closed (`requ
 `satisfied` | `unsatisfiable`) and the journey returned to `RESOLVED` with a confirmation message.
 Nothing feasible keeps the booking and the passenger gets an honest explanation. A failed step records
 `needs_human` and leaves the journey `REPLANNING`. Leaving `RESOLVED` invalidates live offers (#4).
+
+### Guardrailed offer delivery (scenario 4b)
+
+`propose_offer` (A2A, `CustomerSkills.propose_and_deliver`) runs `guardrail_offer.evaluate` at proposal
+and again immediately before sending, both under a per-journey lock (`CustomerRuntime.journey_lock`),
+so concurrent or duplicate proposals cannot both be approved or sent. Tier comes from the loyalty
+server and inventory from the inventory server (customer credential). A proposal while the journey is
+not RESOLVED is rejected with a `SkillError` and not recorded as an offer (#83); other rejections are
+recorded as `rejected`. Sales gets back only `approved | rejected` plus reason codes. The passenger
+message (boarding pass + hotel voucher summary + the optional offer, buttons Accept / No thanks) is
+composed from Customer-owned data only: flight, cabin and seat come from the journey and inventory,
+and only `price` (a bounded `Decimal`) comes from the offer; no Sales string is rendered or sent to the
+LLM. If the journey leaves RESOLVED before sending, the offer is `invalidated` and nothing is sent.
+Events: `guardrail_decision`, `offer_proposed`, `offer_sent`.
