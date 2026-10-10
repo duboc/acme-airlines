@@ -1,9 +1,11 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from acme.domain.clock import FixedClock, SystemClock
-from acme.domain.fixtures import DISRUPTION_DETECTED_AT
+
+DISRUPTION_DETECTED_AT = datetime(2026, 10, 9, 22, 3, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 def test_fixed_clock_returns_instant():
