@@ -65,11 +65,11 @@ async def test_confirmation_message_invites_the_passenger_to_confirm(setup):
 
 async def test_transfer_to_airport_is_rescheduled_for_the_later_flight(setup):
     rt, rec = setup
-    before = len(of(rec, "transfer_arranged")) + len(of(rec, "transfer_booked"))
-    await rt.handle_inbound(PID, "Can I leave after 10am?")
-    after = of(rec, "transfer_arranged")
-    assert len(after) == 1 and after[0].payload["leg"] == "hotel_to_airport"
+    before = len(of(rec, "transfer_arranged"))
     assert before == 2  # the original airport<->hotel legs
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    new = of(rec, "transfer_arranged")[before:]
+    assert len(new) == 1 and new[0].payload["leg"] == "hotel_to_airport"
     pickups = [t["pickup_at"] for t in rt.sim.partners.transfers.values()]
     assert any(p.startswith("2026-10-10T08:40") for p in pickups)  # 11:40 - 3h
 
