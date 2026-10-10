@@ -8,6 +8,17 @@ from mcp.client.streamable_http import streamable_http_client
 from acme.sim.app import create_app
 from acme.sim.world import SimWorld
 
+# Fixed, test-only credentials (never valid outside the tests).
+TOKENS = {
+    "test-admin": "tok-test-admin-0001",
+    "customer": "tok-customer-0002",
+    "sales": "tok-sales-0003",
+}
+
+
+def bearer(caller: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {TOKENS[caller]}"}
+
 
 @pytest.fixture
 def sim() -> SimWorld:
@@ -21,7 +32,9 @@ def connect(sim):
     @asynccontextmanager
     async def _connect(server: str, headers: dict[str, str] | None = None):
         # One app (and lifespan) per connection, all over the same shared `sim` world.
-        app = create_app(sim)
+        app = create_app(sim, tokens=TOKENS)
+        if headers is None:  # default: full access; pass headers={} to send no credential
+            headers = bearer("test-admin")
         http = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://acme-sim", headers=headers
         )

@@ -77,3 +77,23 @@ Access intent (enforced by the #27 allowlist, which is not merged yet): `custome
 |---|---|---|
 | `member.get` | `passenger_id` | `{passenger_id, member_id, tier, status_miles, benefits}`. Mariana: Diamond, 250000 miles. |
 | `courtesy.eligibility` | `passenger_id`, `kind` (`upgrade_recovery`) | `{passenger_id, kind, tier, eligible, discount_pct, rule}`. Eligible iff the tier is in `margin_opt.RECOVERY_DISCOUNT_PCT` (Diamond, Gold); `rule` references that table. |
+
+## Access control (governance layer 1)
+`acme-sim` is deny-by-default (`acme.sim.auth.AccessControlMiddleware`, wraps the whole app):
+- Every request needs `Authorization: Bearer <token>`. Missing or unknown token: **401**.
+- The token maps to a caller. The caller's allowlist is checked **before routing**: a path outside it
+  gets **403** whether or not a server is mounted there (`/mcp/doesnotexist` included). Paths with
+  `..`, `//` or `%` are refused for allowlisted callers, and the server name must match exactly.
+
+| Caller | Servers |
+|---|---|
+| `customer` | all, including read-only `inventory` (and `loyalty`) |
+| `sales` | `inventory` only |
+| `test-admin` | all (tests/demo only) |
+
+Tokens: `ACME_SIM_TOKENS="customer=<tok>,sales=<tok>,test-admin=<tok>"` (≥ 12 chars, distinct, known
+callers only). If unset, random per-process tokens are generated and **not printed**; set the variable
+to use the sim from another process. Tokens are never committed, logged or echoed (tested).
+`create_app(sim, tokens=...)` takes tokens explicitly (tests). Clients build their MCP config with
+`acme.sim.auth.client_config(caller, base_url, tokens, servers)`, which returns only the servers the
+caller may use, each with that caller's header. The Customer runtime (#10) and Sales (#14) must use it.
