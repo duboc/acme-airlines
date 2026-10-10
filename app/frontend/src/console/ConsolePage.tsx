@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { eventsUrl, getJourney, resetScenario, triggerCancellation } from './api';
+import { eventsUrl, getJourney, listJourneys, resetScenario, triggerCancellation } from './api';
 import './console.css';
 import { JourneyCard } from './JourneyCard';
 import { Timeline } from './Timeline';
@@ -34,15 +34,40 @@ export function ConsolePage() {
     [close],
   );
 
+  const attach = useCallback(
+    async (id: string) => {
+      setEvents([]); // the stream replays the whole timeline
+      setJourney(await getJourney(id));
+      open(id);
+    },
+    [open],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await listJourneys();
+        const current = all.find((j) => j.status !== 'CLOSED') ?? all[0];
+        if (current && !cancelled) await attach(current.journey_id);
+      } catch {
+        if (!cancelled) setError('Could not load the current journey. Reload the page to retry.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [attach]);
+
   async function trigger() {
     setBusy(true);
     setError(null);
     try {
-      const [id] = await triggerCancellation('AC1234', 'unscheduled maintenance');
+      const [created] = await triggerCancellation('AC1234', 'unscheduled maintenance');
+      // The backend ignores a duplicate cancellation; fall back to the journey it already has.
+      const id = created ?? (await listJourneys())[0]?.journey_id;
       if (!id) throw new Error('no journey');
-      setEvents([]);
-      setJourney(await getJourney(id));
-      open(id);
+      await attach(id);
     } catch {
       setError(
         'Could not trigger the cancellation. Check that the API is running, then try again.',
@@ -72,7 +97,12 @@ export function ConsolePage() {
       <div className="console-head">
         <h1>Operations console</h1>
         <div className="actions">
-          <button type="button" className="primary" onClick={trigger} disabled={busy}>
+          <button
+            type="button"
+            className="primary"
+            onClick={trigger}
+            disabled={busy || journey !== null}
+          >
             Trigger AC1234 cancellation
           </button>
           <button type="button" onClick={reset} disabled={busy}>
@@ -80,6 +110,7 @@ export function ConsolePage() {
           </button>
         </div>
       </div>
+      {journey && <p className="hint">A journey is already open. Reset to run it again.</p>}
       {error && (
         <p role="alert" className="error">
           {error}
