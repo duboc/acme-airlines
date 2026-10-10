@@ -88,3 +88,15 @@ a typed request/response and `handle(request, emit)` (timeline entries via `emit
 **Seat** (same seat via DCS, else nearest window seat as a tier courtesy; the timeline says why) and
 **Baggage** (`bag.reroute` via WorldTracer). If no flight is feasible, or no window seat is open, the
 journey stays `RESOLVING` and a `needs_human` timeline entry is written.
+
+### Proactive notification and acknowledgement (scenario 3a)
+
+`CustomerRuntime.tick()` sends **one** consolidated WhatsApp message per journey, `notify_delay`
+(default 6 min) after it first reaches `RESOLVED` (22:03 -> 22:09; quiet hours allow exactly this).
+`LlmPort.compose_passenger_message` words it from Customer-owned journey facts; the text must contain
+the cancelled and new flight, departure time, seat, hotel, transfer and voucher or a deterministic
+template is sent instead (`notification_sent.source` = `llm` | `template`). Inbound messages go through
+`handle_inbound`: `departure_after` -> open request, `REPLANNING`, hand-off to the `ChangeAgent`
+interface (`RecordingChangeAgent` stub until #30); `acknowledge` with no open request ->
+`resolution_acknowledged = True`; anything else -> `needs_human`, request stays open. The API
+transcript is read from the whatsapp simulator (`message.send` now takes `attachments`).

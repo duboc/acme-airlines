@@ -432,6 +432,14 @@
       },
       "WhatsAppMessage": {
         "properties": {
+          "attachments": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
           "buttons": {
             "default": [],
             "items": {

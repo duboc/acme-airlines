@@ -44,7 +44,7 @@ MCP tool errors. Times are timezone-aware ISO 8601.
 ## whatsapp — `/mcp/whatsapp/`
 | Tool | Args | Result |
 |---|---|---|
-| `message.send` | `to` (passenger id), `body`, `buttons?` | The stored outbound message `{message_id, passenger_id, direction, body, buttons, at}`. |
+| `message.send` | `to` (passenger id), `body`, `buttons?`, `attachments?` (kinds such as `meal_voucher`) | The stored outbound message `{message_id, passenger_id, direction, body, buttons, attachments, at}`. |
 | `message.transcript` | `to` | `{messages: [...]}`, both directions, in order. |
 | `message.receive` | `sender`, `body` | Inbound hook (API/UI/tests): stored in the transcript, appended to the inbound log and passed to in-process listeners (`sim.partners.add_inbound_listener`). |
 | `message.inbound` | `cursor = 0`, `timeout_s = 0` (max 60) | `{messages, next_cursor}`. Long-poll of inbound messages for remote subscribers such as the Customer runtime. |

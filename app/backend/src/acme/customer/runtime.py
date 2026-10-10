@@ -3,26 +3,30 @@
 Scenario 1 (silent ingestion): subscribe to OCC `flight_ops`; for each cancellation open a
 `JourneyState` per affected passenger (DETECTED -> RESOLVING), load the CRM profile and PNR,
 and record the onward-connection constraint (onward departure - MCT, via `connection_check`).
-Nothing is sent to the passenger here; see `quiet_hours`. No LLM is used.
+Scenario 3a (`outreach`): once RESOLVED, one consolidated WhatsApp message is sent (`tick`),
+and inbound passenger messages are routed (`handle_inbound`). Quiet hours: see `quiet_hours`.
+Orchestration is deterministic; the LLM only words messages and parses replies (FakeLlm in CI).
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal
-from uuid import uuid4
 
 from pydantic import AwareDatetime, BaseModel
 
+from acme.customer import outreach
+from acme.customer.change import ChangeAgent, RecordingChangeAgent
 from acme.customer.rebuild import rebuild_journey
 from acme.domain.clock import Clock, SystemClock
 from acme.domain.fixtures import World
 from acme.domain.journey import DisruptionStatus, JourneyState
 from acme.domain.models import HotelBooking, Voucher
+from acme.llm import LlmPort, build_llm
 from acme.policy.connection_check import latest_arrival
 from acme.sim.client import Connector, SimClient, ToolError, inprocess_connector
 from acme.sim.world import SimWorld
@@ -33,6 +37,7 @@ class WhatsAppMessage(BaseModel):
     direction: Literal["inbound", "outbound"]
     text: str
     buttons: list[str] = []
+    attachments: list[str] = []
     timestamp: AwareDatetime
 
 
@@ -46,6 +51,17 @@ class JourneyRecord:
     constraint_latest_arrival: datetime | None = None
 
 
+def _to_message(m: dict[str, Any]) -> WhatsAppMessage:
+    return WhatsAppMessage(
+        message_id=m["message_id"],
+        direction=m["direction"],
+        text=m["body"],
+        buttons=m["buttons"],
+        attachments=m.get("attachments", []),
+        timestamp=datetime.fromisoformat(m["at"]),
+    )
+
+
 def journey_id_for(locator: str) -> str:
     return "J-" + hashlib.sha1(locator.encode()).hexdigest()[:8]  # noqa: S324 (not security)
 
@@ -57,7 +73,12 @@ class CustomerRuntime:
         connector: Connector | None = None,
         connector_factory: Callable[[SimWorld], Connector] | None = None,
         auto_duty_of_care: bool = True,
+        llm: LlmPort | None = None,
+        notify_delay: timedelta = timedelta(minutes=6),
     ) -> None:
+        self.llm = llm or build_llm()
+        self.change_agent: ChangeAgent = RecordingChangeAgent()
+        self.notify_delay = notify_delay  # settle time after RESOLVED before the one notification
         self.auto_duty_of_care = auto_duty_of_care  # False isolates the rebuild in tests
         self.clock = clock or SystemClock()
         self._custom_connector = connector
@@ -75,7 +96,6 @@ class CustomerRuntime:
             connector = inprocess_connector(self.sim)
         self.client = SimClient(connector)
         self.journeys: dict[str, JourneyRecord] = {}
-        self.messages: dict[str, list[WhatsAppMessage]] = {}
         self._cursor = 0
         self._lock = asyncio.Lock()
 
@@ -84,16 +104,36 @@ class CustomerRuntime:
         return self.sim.world
 
     # --- passenger messaging (WhatsApp thread) ---------------------------------------------
-    def say(self, passenger_id: str, direction: str, text: str, buttons=()) -> WhatsAppMessage:
-        msg = WhatsAppMessage(
-            message_id=str(uuid4()),
-            direction=direction,
-            text=text,
-            buttons=list(buttons),
-            timestamp=self.clock.now(),
+    @property
+    def messages(self) -> dict[str, list[WhatsAppMessage]]:
+        """The WhatsApp transcript per passenger, read from the whatsapp simulator."""
+        return {
+            pid: [_to_message(m) for m in msgs]
+            for pid, msgs in self.sim.partners.transcripts.items()
+        }
+
+    async def send(
+        self, passenger_id: str, text: str, attachments: Sequence[str] = ()
+    ) -> WhatsAppMessage:
+        sent = await self.client.call(
+            "whatsapp", "message.send", to=passenger_id, body=text, attachments=list(attachments)
         )
-        self.messages.setdefault(passenger_id, []).append(msg)
-        return msg
+        return _to_message(sent)
+
+    async def handle_inbound(self, passenger_id: str, text: str) -> WhatsAppMessage:
+        """A passenger message arrives (always answerable, even in quiet hours)."""
+        received = await self.client.call(
+            "whatsapp", "message.receive", sender=passenger_id, body=text
+        )
+        if rec := self.journey_for_passenger(passenger_id):
+            await outreach.handle_inbound(self, rec, text)
+        return _to_message(received)
+
+    async def tick(self) -> None:
+        """Run time-driven work: send each due proactive notification (once per journey)."""
+        for rec in list(self.journeys.values()):
+            if outreach.notification_due(self, rec):
+                await outreach.notify_resolution(self, rec)
 
     def journey_for_passenger(self, passenger_id: str) -> JourneyRecord | None:
         for rec in self.journeys.values():

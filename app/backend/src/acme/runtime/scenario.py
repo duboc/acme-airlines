@@ -26,7 +26,7 @@ class RuntimeScenarioDriver:
         asyncio.run(self.rt.trigger_cancellation(flight, reason))
 
     def passenger_reply(self, text: str) -> None:
-        raise NotImplementedError("passenger replies arrive with #11+")
+        asyncio.run(self.rt.handle_inbound(_PASSENGER_ID, text))
 
     def passenger_tap(self, button_id: str) -> None:
         raise NotImplementedError("button taps arrive with #14+")
@@ -50,6 +50,7 @@ class RuntimeScenarioDriver:
                 text=m.text,
                 timestamp=m.timestamp,
                 buttons=m.buttons,
+                attachments=m.attachments,
             )
             for m in sent
         ]
@@ -58,6 +59,7 @@ class RuntimeScenarioDriver:
         if to < self.clock.now():
             raise ValueError("the clock never moves backwards")
         self.clock.advance(to - self.clock.now())
+        asyncio.run(self.rt.tick())
 
 
 def make_driver(clock: FixedClock) -> RuntimeScenarioDriver:
