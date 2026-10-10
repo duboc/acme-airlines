@@ -43,3 +43,13 @@ to plain text in `labels.ts`; unknown codes are shown raw. Tests mock `fetch` an
 On load, the console fetches `GET /journeys`, attaches to the first open journey and resubscribes
 to its SSE stream (which replays the timeline), so a refresh keeps context. Trigger is disabled
 while a journey is open; use Reset to start again.
+
+## Guided scenario runner (`src/demo/`)
+
+A "Guided scenario" panel on `/console`, labelled "Demo, all systems mocked", with the WhatsApp
+chat beside the journey card and timeline. Pick a preset (from `GET /scenarios`), **Start
+scenario**, then **Next step** runs the next scripted action. After each step, "Expected now"
+says what the tester should see and compares it with the observed state (`expectations.ts`),
+showing "Matches" or "Differs" plus the differing fields. Manual passenger actions (quick replies,
+Accept, No thanks) use the WhatsApp API. Presets only exist with the fake LLM mode; otherwise the
+panel reports that scenarios are unavailable. E2E: `e2e/scenarios.spec.ts` (happy path, seat taken).

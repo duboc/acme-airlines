@@ -1,5 +1,5 @@
 .console {
-  max-width: 72rem;
+  max-width: 96rem;
 }
 .console-head {
   display: flex;
@@ -155,4 +155,16 @@
 .console .hint {
   color: var(--ink-soft);
   margin: 0 0 1rem;
+}
+
+.console .chat-col {
+  grid-column: 1 / -1;
+}
+@media (min-width: 90rem) {
+  .console-grid {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 5fr) minmax(0, 4fr);
+  }
+  .console .chat-col {
+    grid-column: auto;
+  }
 }

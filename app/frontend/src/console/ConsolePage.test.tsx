@@ -26,19 +26,23 @@ const json = (body: unknown, status = 200) =>
 describe('ConsolePage', () => {
   let detail = detected;
   let existing: unknown[] = [];
+  let journeysStatus = 200;
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     FakeEventSource.instances = [];
     detail = detected;
     existing = [];
+    journeysStatus = 200;
     fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url === '/api/scenario/trigger-cancellation') {
         expect(JSON.parse(String(init?.body))).toMatchObject({ flight: 'AC1234' });
         return json({ journey_ids: ['J-1'] });
       }
       if (url === '/api/scenario/reset') return json({ status: 'reset' });
-      if (url === '/api/journeys') return json(existing);
+      if (url === '/api/scenarios') return json([]);
+      if (url.startsWith('/api/whatsapp/')) return json([]);
+      if (url === '/api/journeys') return json(existing, journeysStatus);
       if (url === '/api/journeys/J-1') return json(detail);
       return json({}, 404);
     });
@@ -112,7 +116,7 @@ describe('ConsolePage', () => {
     });
 
     it('stays usable when the journey list cannot be loaded', async () => {
-      fetchMock.mockImplementationOnce(() => json({}, 500));
+      journeysStatus = 500;
       render(<ConsolePage />);
       expect(await screen.findByRole('alert')).toHaveTextContent(/could not load/i);
       expect(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' })).toBeEnabled();
@@ -142,6 +146,8 @@ describe('ConsolePage', () => {
     it('attaches to the existing journey when Trigger returns no new journey', async () => {
       fetchMock.mockImplementation((url: string) => {
         if (url === '/api/scenario/trigger-cancellation') return json({ journey_ids: [] });
+        if (url === '/api/scenarios') return json([]);
+        if (url.startsWith('/api/whatsapp/')) return json([]);
         if (url === '/api/journeys') return json(existing);
         if (url === '/api/journeys/J-1') return json(resolved);
         return json({}, 404);
@@ -155,6 +161,56 @@ describe('ConsolePage', () => {
       expect(await screen.findByText('14A')).toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       expect(FakeEventSource.instances).toHaveLength(1);
+    });
+  });
+
+  describe('guided scenario wiring', () => {
+    it('attaches to the journey created by a scenario step and clears it on start', async () => {
+      const state = {
+        scenario_id: 'happy-path',
+        step_index: 1,
+        total_steps: 5,
+        done: false,
+        last_step: 'x',
+        next_step: 'y',
+        journey_id: 'J-1',
+        journey_status: 'RESOLVED',
+        flight: 'AC1240',
+        seat: '14A',
+        seat_reason: null,
+        offers_sent: 0,
+        offer_status: null,
+        charged: '0.00',
+        needs_human: false,
+        last_message: null,
+      };
+      const base = fetchMock.getMockImplementation() as (
+        u: string,
+        i?: RequestInit,
+      ) => Promise<Response>;
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url === '/api/scenarios')
+          return json([
+            {
+              id: 'happy-path',
+              title: 'Happy path',
+              description: 'd',
+              steps: ['a'],
+              expectation: 'e',
+            },
+          ]);
+        if (url.startsWith('/api/scenarios/')) return json(state);
+        return base(url, init);
+      });
+      detail = resolved;
+      render(<ConsolePage />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+      expect(await screen.findByText('14A', { selector: 'dd span' })).toBeInTheDocument();
+      expect(FakeEventSource.instances).toHaveLength(1);
+      await userEvent.click(screen.getByRole('button', { name: 'Start scenario' }));
+      await waitFor(() => expect(FakeEventSource.instances[0]!.closed).toBe(true));
+      expect(screen.getByText(/no journey open/i)).toBeInTheDocument();
     });
   });
 });
