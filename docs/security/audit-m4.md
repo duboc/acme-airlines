@@ -102,7 +102,7 @@
 - **Audit:** Examined `list_journeys` and `journey_status` responses and all Sales-facing schemas.
 - **Verification:**
   - `list_journeys()` outputs only anonymous journey identifiers (`["J-xxxxxxxx"]`).
-  - `journey_status()` exposes strictly `{status, flight, resolution_acknowledged}`. Names, PNRs, contact details, seat assignments, and loyalty tiers are completely excluded.
+  - `journey_status()` exposes strictly `{status, flight, resolution_acknowledged, run_id}` (`run_id` added by #104 is a random opaque nonce, not derived from any booking or passenger data). Names, PNRs, contact details, seat assignments, and loyalty tiers are completely excluded.
   - Sales prices offers assuming courtesy tier `diamond` without knowing the passenger's tier; the Customer guardrail authoritatively checks the offer against the tier loaded directly from the `loyalty` MCP server.
   - Zero PII leaks to Sales.
 

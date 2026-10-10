@@ -143,7 +143,7 @@ Customer, API, WhatsApp, payments, CRM, PSS or DCS code.
 
 The Customer agent card (`/.well-known/agent-card.json`) lists three skills, served at `POST /a2a`
 (JSON-RPC `message/send`, exactly one data part `{skill, args}`; text parts, extra keys and unknown
-skills are rejected): `list_journeys`, `journey_status` (`{status, flight, resolution_acknowledged}`,
+skills are rejected): `list_journeys`, `journey_status` (`{status, flight, resolution_acknowledged, run_id}`, `run_id` = opaque per-run nonce so Sales can pitch again after a scenario reset,
 no PII) and `propose_offer` (structured `Offer` only, `extra="forbid"`; recorded as `proposed`,
 guardrail evaluation is #15). When `journey_status` answers for an ineligible journey (not RESOLVED,
 or not acknowledged) the Customer side records `sales_suppressed`.
