@@ -86,6 +86,7 @@ export const EVENT_TYPES = [
   'status_changed',
   'transfer_arranged',
   'upgrade_confirmed',
+  'verification_failed',
   'verification_passed',
   'voucher_issued',
 ] as const;

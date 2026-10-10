@@ -37,6 +37,7 @@ class PartnerState:
         self.vouchers: dict[str, dict[str, Any]] = {}
         self.charges: dict[str, dict[str, Any]] = {}  # by idempotency key
         self.transcripts: dict[str, list[dict[str, Any]]] = {}
+        self.surveys: list[dict[str, Any]] = []
         self.inbound: list[dict[str, Any]] = []
         self._listeners: list[Callable[[dict[str, Any]], None]] = []
         self._cond = asyncio.Condition()
@@ -124,6 +125,12 @@ class PartnerState:
         rec = {**request, "charge_id": _ref("CH"), "status": "succeeded", "at": self._now()}
         self.charges[key] = rec
         return {**rec, "idempotent_replay": False}
+
+    def schedule_survey(self, passenger_id: str, send_after: AwareDatetime) -> dict:
+        rec = {"survey_id": _ref("NPS"), "passenger_id": passenger_id,
+               "send_after": send_after.isoformat()}  # fmt: skip
+        self.surveys.append(rec)
+        return rec
 
     def void(self, charge_id: str) -> dict:
         """Void/refund a charge (idempotent). A voided charge no longer counts as money taken."""
@@ -215,5 +222,17 @@ def build_payments(sim: SimWorld) -> FastMCP:
     def charge_void(charge_id: str) -> dict[str, Any]:
         """Void/refund a charge. Idempotent; unknown ids are an error."""
         return sim.partners.void(charge_id)
+
+    return mcp
+
+
+def build_scheduler(sim: SimWorld) -> FastMCP:
+    mcp = _server("scheduler")
+
+    @mcp.tool(name="survey.schedule")
+    def survey_schedule(passenger_id: str, send_after: AwareDatetime) -> dict[str, Any]:
+        """Schedule a post-trip NPS survey (a simulated scheduler entry)."""
+        sim.get_passenger(passenger_id)
+        return sim.partners.schedule_survey(passenger_id, send_after)
 
     return mcp

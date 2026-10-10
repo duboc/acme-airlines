@@ -23,6 +23,10 @@ PROBES = {
         {"pnr": "MSLV42", "amount": "1", "currency": "USD", "idempotency_key": "ac"},
     ),
     "loyalty": ("member.get", {"passenger_id": "P-MARIANA"}),
+    "scheduler": (
+        "survey.schedule",
+        {"passenger_id": "P-MARIANA", "send_after": "2026-10-11T09:00:00-03:00"},
+    ),
 }
 
 

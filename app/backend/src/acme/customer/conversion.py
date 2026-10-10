@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from acme.customer.closure import close_loop
 from acme.customer.skills import CustomerSkills
 from acme.domain.journey import OfferRecord
 from acme.policy.guardrail_offer import evaluate
@@ -59,6 +60,7 @@ async def decline_offer(rt: CustomerRuntime, rec: JourneyRecord) -> str:
         rec.state.append_event(
             "passenger", "decline_offer", {"offer_id": str(record.offer.offer_id)}
         )
+        await close_loop(rt, rec)
         return "declined"
 
 
@@ -149,6 +151,7 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
         attachments=["boarding_pass"],
     )
     del bp
+    await close_loop(rt, rec)
     return "accepted"
 
 

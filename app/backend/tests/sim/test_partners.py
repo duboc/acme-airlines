@@ -123,3 +123,10 @@ async def test_charge_void_is_idempotent_and_leaves_no_net_charge(connect, sim):
     assert replay["status"] == "voided" and replay["charge_id"] == c["charge_id"]
     assert unknown.isError
     assert sim.partners.net_charged("MSLV42") == 0
+
+
+async def test_scheduler_sim_tool(connect, sim):
+    async with connect("scheduler") as s:
+        r = await call(s, "survey.schedule", passenger_id="P-MARIANA",
+                       send_after="2026-10-11T09:00:00-03:00")  # fmt: skip
+    assert r["survey_id"] in {x["survey_id"] for x in sim.partners.surveys}

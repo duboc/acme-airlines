@@ -163,3 +163,16 @@ Order: `seat.hold` -> `charge` (idempotency key = offer id) -> `seat.assign` + `
 confirmation, offer `accepted`. A failure after the charge voids it (`charge.void`, event
 `charge_voided`; if the void itself fails, `needs_human`). Duplicate taps do nothing more.
 `decline_offer` ("No thanks") marks the offer `declined`, changes nothing else and sends nothing.
+
+### Closed loop and journey memory (scenario 5b)
+
+After the passenger's decision (accept, or "No thanks") `acme.customer.closure.close_loop` runs under the
+journey lock. `customer/verify.py` checks that flight (PSS), seat (exactly one seat, the expected one),
+hotel (concierge), baggage (WorldTracer routing) and upgrade/payment (one successful charge equal to the
+offer price, or no net charge and no premium seat) agree with the journey. A mismatch records
+`verification_failed` with per-check details and leaves the journey `RESOLVED`. On success it records
+`verification_passed`, logs a CRM interaction, schedules the NPS survey (scheduler sim, 24h after the last
+segment), records `analytics_recorded` (`offer_accepted` with the net margin, or `offer_declined`), moves
+the journey to `CLOSED`, appends `memory_committed` and saves the journey to the `JourneyStore`
+(`acme.memory`; SQLite, `ACME_JOURNEY_DB` for a file path, in-memory by default). A saved journey reloads
+with an identical timeline. `GET /journeys/{id}` includes `verification`; the events stream over SSE.

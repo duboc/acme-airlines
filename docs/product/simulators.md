@@ -80,6 +80,11 @@ Access (enforced by the allowlist, see Access control below): `customer` is allo
 | `member.get` | `passenger_id` | `{passenger_id, member_id, tier, status_miles, benefits}`. Mariana: Diamond, 250000 miles. |
 | `courtesy.eligibility` | `passenger_id`, `kind` (`upgrade_recovery`) | `{passenger_id, kind, tier, eligible, discount_pct, rule}`. Eligible iff the tier is in `margin_opt.RECOVERY_DISCOUNT_PCT` (Diamond, Gold); `rule` references that table. |
 
+## scheduler — `/mcp/scheduler/`
+| Tool | Args | Result |
+|---|---|---|
+| `survey.schedule` | `passenger_id`, `send_after` (aware datetime) | `{survey_id, passenger_id, send_after}`; entries in `sim.partners.surveys`. |
+
 ## Access control (governance layer 1)
 `acme-sim` is deny-by-default (`acme.sim.auth.AccessControlMiddleware`, wraps the whole app):
 - Every request needs `Authorization: Bearer <token>`. Missing or unknown token: **401**.

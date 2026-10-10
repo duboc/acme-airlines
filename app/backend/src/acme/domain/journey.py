@@ -77,6 +77,29 @@ class JourneyState:
         self.offers: list[OfferRecord] = []
         self._timeline: list[JourneyEvent] = []
 
+    @classmethod
+    def restore(
+        cls,
+        journey_id: str,
+        *,
+        status: DisruptionStatus,
+        resolution_acknowledged: bool,
+        open_requests: list[PassengerRequest],
+        offers: list[OfferRecord],
+        timeline: list[JourneyEvent],
+        clock: Clock | None = None,
+        passenger_tier: Tier | None = None,
+        current_flight: str | None = None,
+    ) -> "JourneyState":
+        """Rebuild a persisted journey exactly (timeline included); see `acme.memory`."""
+        state = cls(journey_id, clock, passenger_tier=passenger_tier, current_flight=current_flight)
+        state.status = status
+        state.resolution_acknowledged = resolution_acknowledged
+        state.open_requests = list(open_requests)
+        state.offers = list(offers)
+        state._timeline = list(timeline)
+        return state
+
     @property
     def timeline(self) -> tuple[JourneyEvent, ...]:
         """Read-only view; entries are frozen, the sequence cannot be edited."""
