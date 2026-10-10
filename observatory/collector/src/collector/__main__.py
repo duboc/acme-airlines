@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import UTC, datetime
 
-from .sink import Sink, make_sink
+from .sink import BigQuerySink, Sink, make_sink
 from .sources import Source, default_sources
 
 log = logging.getLogger("collector")
@@ -35,10 +35,13 @@ def main() -> int:
         from .tables import ensure_tables
 
         project = os.environ["PROJECT_ID"]
-        ensure_tables(
-            bigquery.Client(project=project), project, os.environ.get("OPS_DATASET", "factory_ops")
-        )
-    return 0 if run(make_sink(), mode) else 1
+        dataset = os.environ.get("OPS_DATASET", "factory_ops")
+        client = bigquery.Client(project=project)
+        ensure_tables(client, project, dataset)
+        sink: Sink = BigQuerySink(client, project, dataset)
+    else:
+        sink = make_sink()
+    return 0 if run(sink, mode) else 1
 
 
 if __name__ == "__main__":
