@@ -77,8 +77,10 @@ async def test_status_for_ineligible_journey_records_sales_suppressed_once(skill
     skills.journey_status(jid)
     events = [e for e in rec.state.timeline if e.type == "sales_suppressed"]
     assert len(events) == 1 and events[0].actor == "customer_agent"
-    assert events[0].payload["reason"] == status.value
-    assert set(events[0].payload) == {"reason"}
+    assert events[0].payload == {
+        "journey_status": status.value,
+        "reason": "disruption_not_resolved",
+    }
 
 
 async def test_resolved_but_unacknowledged_is_suppressed(skills_and_jid):
@@ -86,7 +88,7 @@ async def test_resolved_but_unacknowledged_is_suppressed(skills_and_jid):
     rt.journeys[jid].state.transition(S.RESOLVED)
     skills.journey_status(jid)
     (e,) = [e for e in rt.journeys[jid].state.timeline if e.type == "sales_suppressed"]
-    assert e.payload["reason"] == "resolution_not_acknowledged"
+    assert e.payload == {"journey_status": "RESOLVED", "reason": "resolution_not_acknowledged"}
 
 
 async def test_eligible_journey_is_not_suppressed(skills_and_jid):
@@ -173,3 +175,19 @@ async def test_a2a_rejects_extra_keys_in_skill_envelope(app, skills_and_jid):
 async def test_card_lists_exactly_three_skills():
     card = customer_agent_card("http://x/")
     assert [s.id for s in card.skills] == ["list_journeys", "journey_status", "propose_offer"]
+
+
+async def test_sales_events_conform_to_the_typed_timeline_union(skills_and_jid):
+    from pydantic import TypeAdapter
+
+    from acme.api.events import TimelineEvent
+
+    skills, jid, rt = skills_and_jid
+    skills.journey_status(jid)  # -> sales_suppressed
+    skills.propose_offer(offer_dict(jid))  # -> offer_proposed
+    adapter = TypeAdapter(TimelineEvent)
+    types_seen = set()
+    for e in rt.journeys[jid].state.timeline:
+        adapter.validate_python(e.model_dump(mode="json"))
+        types_seen.add(e.type)
+    assert {"sales_suppressed", "offer_proposed"} <= types_seen

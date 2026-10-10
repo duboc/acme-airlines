@@ -37,9 +37,10 @@ class JourneyStatusView(BaseModel):
 
 
 def ineligible_reason(rec: JourneyRecord) -> str | None:
+    """Guardrail-style reason code (same names as `guardrail_offer`), or None if eligible."""
     state = rec.state
     if state.status is not DisruptionStatus.RESOLVED:
-        return state.status.value
+        return "disruption_not_resolved"
     if not state.resolution_acknowledged:
         return "resolution_not_acknowledged"
     return None
@@ -64,9 +65,10 @@ class CustomerSkills:
         rec = self._journey(journey_id)
         state = rec.state
         if reason := ineligible_reason(rec):
+            payload = {"journey_status": state.status.value, "reason": reason}  # typed: #61
             last = state.timeline[-1] if state.timeline else None
-            if not (last and last.type == "sales_suppressed" and last.payload["reason"] == reason):
-                state.append_event("customer_agent", "sales_suppressed", {"reason": reason})
+            if not (last and last.type == "sales_suppressed" and last.payload == payload):
+                state.append_event("customer_agent", "sales_suppressed", payload)
         flight = state.current_flight
         if flight is None:  # the rebooked flight: first segment of the PNR still operating
             pnr = self._rt.world.pnrs[rec.pnr_locator]
