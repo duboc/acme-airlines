@@ -47,6 +47,7 @@ jobs:
         run: gcloud auth configure-docker "${AR_REPO%%/*}" --quiet
 
       - name: Build and push images
+        id: build
         run: |
           docker build -t "$AR_REPO/dashboard:$GITHUB_SHA" observatory/dashboard
           docker push "$AR_REPO/dashboard:$GITHUB_SHA"
@@ -60,30 +61,14 @@ jobs:
             --image "$AR_REPO/dashboard:$GITHUB_SHA" \
             --region "$REGION" --project "$PROJECT" --quiet
 
-      # The deployer cannot read Secret Manager, so we cannot check whether the secret has a
-      # version. Try with the secret; if that fails, retry image-only and warn.
+      # Maps GITHUB_TOKEN only when its secret has a version, else removes the mapping and warns.
+      # Decision logic and tests: observatory/deploy/.
       - name: Deploy collector job
-        run: |
-          IMG="$AR_REPO/collector:$GITHUB_SHA"
-          if ! gcloud run jobs deploy acme-observatory-collector \
-            --image "$IMG" \
-            --update-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest \
-            --region "$REGION" --project "$PROJECT" --quiet; then
-            echo "::warning::Collector deploy with GITHUB_TOKEN secret failed; retrying image-only. The GitHub snapshot stays skipped until the acme-observatory-github-token PAT exists."
-            gcloud run jobs deploy acme-observatory-collector \
-              --image "$IMG" \
-              --region "$REGION" --project "$PROJECT" --quiet
-          fi
+        env:
+          IMG: ${{ vars.OBSERVATORY_AR_REPO }}/collector:${{ github.sha }}
+        run: observatory/deploy/deploy-collector.sh
 
-      - name: Verify deployed images
-        run: |
-          svc=$(gcloud run services describe acme-observatory \
-            --region "$REGION" --project "$PROJECT" \
-            --format='value(spec.template.spec.containers[0].image)')
-          job=$(gcloud run jobs describe acme-observatory-collector \
-            --region "$REGION" --project "$PROJECT" \
-            --format='value(spec.template.spec.template.spec.containers[0].image)')
-          echo "service: $svc"
-          echo "job:     $job"
-          test "$svc" = "$AR_REPO/dashboard:$GITHUB_SHA"
-          test "$job" = "$AR_REPO/collector:$GITHUB_SHA"
+      # Runs even if a deploy step failed, so a half-deployed state is reported; the job still fails.
+      - name: Verify deployed images and SCION_HUB_TOKEN mapping
+        if: always() && steps.build.outcome == 'success'
+        run: observatory/deploy/verify-deploy.sh
