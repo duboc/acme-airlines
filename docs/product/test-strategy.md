@@ -68,6 +68,25 @@ A real violation is filed as a bug and the test is `xfail(strict=True)` with the
 governance tests fail; remove the radar's status/acknowledgement guard → 4 fail; let `Offer`
 accept extra keys → 9 fail; drop the rule-6 origin check → 1 fails.
 
+## Governance suite (part 2, #29)
+
+`tests/governance/flow.py` drives the real Customer runtime, the real Sales radar (over the A2A
+wire), `FakeLlm` (spied) and a `FixedClock`; `Flow.interleave(server, tool, action)` injects a
+passenger/system action at an exact await point to reproduce time-of-check/time-of-use races.
+(`ScenarioDriver.passenger_tap` is not implemented yet, so this harness calls the runtime directly.)
+
+| File | What it proves |
+|------|----------------|
+| `test_outcome.py` | No offer message before the *final* resolution is acknowledged; none on AC1240; exactly one offer after 5 ticks and a "No thanks"; Sales text never appears in the transcript or any LLM input |
+| `test_races.py` | (a) change during proposal, (b) REPLANNING between approval and send, (c) accept after REPLANNING, (d) duplicate accepts, (e) 2A taken / inventory 0 / failure after charge, (f) concurrent proposals |
+
+Open finding: #88 (accept can charge if REPLANNING lands between its check and the charge),
+kept as `xfail(strict=True)`.
+
+**Mutation check** (local, not CI): disabling the send-time re-check in `_deliver` (#15) fails
+1 race test; disabling the accept-time re-check in `_convert` (#28) fails 2; replacing the
+per-journey lock with a fresh lock fails the duplicate-accept test.
+
 ## Fact → test traceability
 
 `test_harness.py` fails if a scenario test is missing from this table (or the table cites a
