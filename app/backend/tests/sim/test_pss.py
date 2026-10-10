@@ -44,3 +44,10 @@ async def test_flight_get_and_manifest(connect):
     assert f["origin"] == "SCL" and f["scheduled_departure"].startswith("2026-10-10T14:00")
     assert m["pnrs"] == [{"pnr": "MSLV42", "passenger_id": "P-MARIANA"}]
     assert empty["pnrs"] == []
+
+
+async def test_manifest_unknown_flight_is_a_clear_error(connect):
+    async with connect("pss") as s:
+        res = await s.call_tool("flight.manifest", {"flight": "ZZ999"})
+    assert res.isError
+    assert "ZZ999" in str(res.content)
