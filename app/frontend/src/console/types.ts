@@ -70,6 +70,7 @@ export const EVENT_TYPES = [
   'needs_human',
   'notification_sent',
   'nps_scheduled',
+  'offer_proposed',
   'offer_sent',
   'passenger_message',
   'profile_loaded',

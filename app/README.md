@@ -109,3 +109,22 @@ that #14-#16 will emit (`sales_opportunity`, `offer_sent`, ...) are provisional.
 change an event, update `acme.api.events`, regenerate the contract
 (`uv run python -m acme.api.openapi`), and update `EVENT_TYPES` in
 `app/frontend/src/console/types.ts`: the backend drift test and `contract.test.ts` fail otherwise.
+
+## Sales agent and Customer A2A skills (scenario 4a)
+
+The Sales agent is a separate ADK/A2A service: `ACME_SALES_TOKEN=<sales token> uv run acme-sales`
+(port `ACME_SALES_PORT`, default 8801; it refuses to start without the token). It is structurally
+unable to contact passengers: its only channels are the Customer A2A skills and the `inventory` MCP
+server with the `sales` credential (`acme.sales.config.sales_mcp_config` lists only that server;
+`acme-sim` answers 403 for every other server). `tests/sales` also asserts the package imports no
+Customer, API, WhatsApp, payments, CRM, PSS or DCS code.
+
+The Customer agent card (`/.well-known/agent-card.json`) lists three skills, served at `POST /a2a`
+(JSON-RPC `message/send`, exactly one data part `{skill, args}`; text parts, extra keys and unknown
+skills are rejected): `list_journeys`, `journey_status` (`{status, flight, resolution_acknowledged}`,
+no PII) and `propose_offer` (structured `Offer` only, `extra="forbid"`; recorded as `proposed`,
+guardrail evaluation is #15). When `journey_status` answers for an ineligible journey (not RESOLVED,
+or not acknowledged) the Customer side records `sales_suppressed`.
+
+The radar sends at most one proposal per (journey, flight) and prices with `margin_opt`. Sales is
+PII-free so it prices at the best courtesy tier (Diamond); the guardrail re-checks against the real tier.
