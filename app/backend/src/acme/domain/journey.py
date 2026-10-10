@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from acme.domain.clock import Clock, SystemClock
-from acme.domain.models import Offer
+from acme.domain.models import Offer, Tier
 
 
 class InvalidTransition(Exception):
@@ -58,8 +58,18 @@ class JourneyEvent(BaseModel):
 
 
 class JourneyState:
-    def __init__(self, journey_id: str, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        journey_id: str,
+        clock: Clock | None = None,
+        *,
+        passenger_tier: Tier | None = None,
+        current_flight: str | None = None,
+    ) -> None:
         self.journey_id = journey_id
+        # Facts the offer guardrail checks claims against; None fails closed.
+        self.passenger_tier = passenger_tier
+        self.current_flight = current_flight
         self._clock = clock or SystemClock()
         self.status = S.DETECTED
         self.open_requests: list[PassengerRequest] = []
