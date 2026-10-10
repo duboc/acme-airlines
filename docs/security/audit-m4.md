@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-10
 - **Auditor:** `acme-security-auditor`
-- **Target Commit:** `1c9f660` (`main` branch)
+- **Target Commit:** `76fd345` (`main` branch)
 - **Scope:** Complete audit of `app/backend` covering all governance layers of "Two Goals, One Guardrail", simulator isolation, A2A interfaces, prompt injection vectors, secret handling, payment safety, and Vertex AI compliance.
 - **Reference Issue:** [#34](https://github.com/duboc/acme-airlines/issues/34)
 
@@ -26,7 +26,7 @@
 - **High (P1):** 0
 - **Medium (P2):** 0
 - **Low / Info:** 0
-- **Resolved Issues:** 2 ([#83](https://github.com/duboc/acme-airlines/issues/83), [#88](https://github.com/duboc/acme-airlines/issues/88))
+- **Resolved Issues:** 3 ([#83](https://github.com/duboc/acme-airlines/issues/83), [#88](https://github.com/duboc/acme-airlines/issues/88), [#97](https://github.com/duboc/acme-airlines/issues/97))
 
 ---
 
@@ -144,6 +144,9 @@
 3. **[Issue #87](https://github.com/duboc/acme-airlines/issues/87) — Economy hold remained active in DCS upon upgrade**
    - *Impact:* Upgrading to 2A left the original 14A hold in DCS.
    - *Fix:* Resolved in PR #89. Added `seat.release` tool and automatic release upon seat assignment.
+4. **[Issue #97](https://github.com/duboc/acme-airlines/issues/97) — Duplicate proactive notification under concurrent `tick()`**
+   - *Impact:* Concurrent `tick()` executions (e.g. overlapping operator console and passenger chat polls) raced between the `notification_due()` check and `notify_resolution()`, delivering duplicate WhatsApp resolution notifications.
+   - *Fix:* Resolved in PR #99. Enforces atomic check-and-send with double-checked locking under `rt.journey_lock(journey_id)` within `CustomerRuntime.tick()`, guaranteeing exactly one consolidated WhatsApp notification.
 
 ---
 
