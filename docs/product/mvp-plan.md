@@ -26,24 +26,26 @@ is only meaningful after 1–3, and scenario 5 verifies the earlier ones.
 | # | Scenario | MVP behaviour | Notes |
 |---|----------|---------------|-------|
 | 1 | Silent ingestion & profile evaluation | OCC cancellation event → journey created, profile/PNR loaded, the SCL 14:00 connection constraint is derived, and no passenger contact happens during quiet hours. | Deterministic orchestration. |
-| 2 | Zero-touch journey rebuild | AC1240 08:15, seat 14A held, bag re-routed, duty of care (HT8842, transfer, dinner voucher), journey `RESOLVED`. Sales suppressed throughout. | Duty of care uses a **simplified EU261-style rule table**, documented, not legal advice. |
+| 2 | Zero-touch journey rebuild | AC1240 08:15, seat 14A held, bag re-routed, duty of care (HT8842, transfer, dinner voucher), journey `RESOLVED`. Sales suppressed throughout. | Duty of care follows **ANAC Resolution 400** (primary regime for GRU departure; simplified rule table per #31), documented, not legal advice. |
 | 3 | Proactive notification & replanning | One empathetic WhatsApp message with the full resolution. "After 10:00" → Change agent → AC1252 11:40, 14A kept, connection re-verified. | Gemini writes the wording and parses intent. Code validates every fact before sending, with a template fallback. |
 | 4 | Negotiation & guardrailed upsell | Sales (separate A2A service) proposes a structured $135 / std $290 / +$80 offer on AC1252. The Customer agent's `guardrail_offer` approves it only when the journey is `RESOLVED` **and** Mariana has acknowledged the final resolution ("customer positive"). The check is repeated at send and accept time. | Governance-critical. |
 | 5 | Conversion & closed-loop verification | One-tap accept → simulated payment → seat 2A → cross-system verification → journey stored → CRM log, NPS scheduled, analytics recorded → `CLOSED`. | Memory Bank is a local `JourneyStore` adapter. |
 
 ### Real vs simulated
 
+Every external system is mocked in the MVP: OCC event stream, PSS, DCS, CRM, Loyalty/FFP (#32), WorldTracer, WhatsApp Business, Payments, Memory Bank (`JourneyStore`), hotel/transfer booking, and boarding-pass/voucher issuing.
+
 | Component | MVP | Later |
 |-----------|-----|-------|
-| Gemini (Vertex AI, `global`, ADC) | **Real**: message composition, passenger intent parsing. A FakeLlm is used in CI. | Larger LLM role (e.g. sentiment, free-form Q&A). |
+| Gemini (Vertex AI, `global`, ADC) | **Real** (when configured): message composition, passenger intent parsing. Controlled by `LLM_MODE`: `fake` (the default for dev, tests and CI, $0) or `vertex` (live demo only, global endpoint, ADC). | Larger LLM role (e.g. sentiment, free-form Q&A). |
 | ADK agents, A2A (Customer ↔ Sales), MCP protocol | **Real** | Specialists behind A2A as well. |
 | OCC event stream | **Simulated** (MCP `flight_ops.subscribe` + in-process bus) | Pub/Sub / real OCC feed. |
-| PSS, DCS, CRM/Loyalty, WorldTracer | **Simulated** MCP servers over one seeded world | Real adapters behind the same tool names. |
+| PSS, DCS, CRM, Loyalty/FFP (#32), WorldTracer | **Simulated** MCP servers over one seeded world | Real adapters behind the same tool names. |
 | WhatsApp Business API | **Simulated** (transcript + web chat UI) | Real WhatsApp Business API. |
-| Payments, hotel/transfer partners | **Simulated** (idempotent) | Real PSPs / partner APIs. |
+| Payments, hotel/transfer booking, boarding-pass/voucher issuing | **Simulated** (idempotent MCP tools) | Real PSPs / partner APIs. |
 | Memory Bank | **Simulated** (`JourneyStore`: SQLite / in-memory) | Vertex AI Agent Engine Memory Bank, only if usable without regional endpoints (separate ADR + PO approval). |
 | NPS survey, analytics | **Simulated** records | Real CRM / analytics. |
-| Deployment | Containers + docker compose (real). Cloud Run is **documented**; it is deployed only if the PO approves (see ADR open question 1). | Cloud Run, one sandbox per customer. |
+| Deployment | Containers + docker compose (real). Cloud Run is **documented only** in the MVP (#24; no deployment and no deploy identity). | Cloud Run, one sandbox per customer. |
 
 ### Out of scope
 
@@ -211,11 +213,13 @@ The MVP is done when **all** of the following hold:
 | Shared GitHub identity: the reviewer cannot formally approve PRs (same account as author), and the token cannot read checks/statuses | **Decided by the PO (2026-10-09):** the reviewer posts a comment review whose first line is exactly `VERDICT: APPROVE` / `VERDICT: REQUEST CHANGES`. The lead merges only when the latest verdict is APPROVE and CI is green, verified through the Actions runs API (`gh run list --branch <b>`). There is no branch protection, so nobody pushes to `main`. |
 | CI cannot exercise Vertex | FakeLlm in CI, live smoke on the VM with output pasted in PRs. |
 
-## 9. Decisions requested from the product owner
+## 9. Decisions
 
-1. Approve the stack (ADR 0100) and this scope (all five scenarios, simulated enterprise systems).
-2. **Cloud Run:** deploy in the MVP (needs a deploy identity) or document only? The default is document only.
-3. **"Customer positive":** implemented as an explicit passenger acknowledgement, not LLM sentiment (ADR open question 2).
-4. **Simulated block times:** the brief's times can't hold with real GRU→SCL flight durations. The fixture uses fictional short block times (ADR open question 3).
-5. **Model:** Gemini Flash (default) or Pro for passenger messages?
-6. ~~Merge gate under a shared GitHub identity~~: **decided by the PO.** The merge gate is the latest `VERDICT: APPROVE` + green CI (see Risks).
+1. **Cloud Run:** document only in the MVP (#24). No deployment and no deploy identity.
+2. **"Customer positive":** an explicit, deterministic passenger acknowledgement, not LLM sentiment.
+3. **Fictional short block times** in the fixture (as pinned in #4), labelled as simulated.
+4. **Gemini model:** a Flash model on the global endpoint by default; the model ID is configuration.
+5. **`LLM_MODE`:** `fake` (the default for dev, tests and CI, $0) or `vertex` (live demo only, global endpoint, ADC).
+6. **Every external system is mocked.** List them: OCC event stream, PSS, DCS, CRM, Loyalty/FFP (#32), WorldTracer, WhatsApp Business, Payments, Memory Bank (`JourneyStore`), hotel/transfer booking, boarding-pass/voucher issuing.
+7. **Merge gate:** the latest review starting `VERDICT: APPROVE` + green CI; the lead merges autonomously.
+8. **Duty-of-care source:** ANAC Resolution 400 is the primary regime (GRU departure); rule table per #31.
