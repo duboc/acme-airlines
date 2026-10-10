@@ -79,3 +79,12 @@ hotel HT8842, airport<->hotel transfers, meal vouchers. Each `hotel_booked` / `t
 `voucher_issued` event carries its `entitlement` and the policy `reason`. The journey moves to
 `RESOLVED` only if flight, seat and bag are done and every step succeeded. A failed step records
 `needs_human` and leaves it `RESOLVING` (meal vouchers are still issued if only the hotel failed).
+
+### Specialists (scenario 2a)
+
+On a cancellation the Customer agent runs three specialists from `acme.customer.specialists`, each with
+a typed request/response and `handle(request, emit)` (timeline entries via `emit`):
+**IRROPS Rebooking** (earliest PSS flight whose arrival passes `connection_check`; rebooks the PNR),
+**Seat** (same seat via DCS, else nearest window seat as a tier courtesy; the timeline says why) and
+**Baggage** (`bag.reroute` via WorldTracer). If no flight is feasible, or no window seat is open, the
+journey stays `RESOLVING` and a `needs_human` timeline entry is written.

@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from pydantic import AwareDatetime, BaseModel
 
+from acme.customer.rebuild import rebuild_journey
 from acme.domain.clock import Clock, SystemClock
 from acme.domain.fixtures import World
 from acme.domain.journey import DisruptionStatus, JourneyState
@@ -135,6 +136,10 @@ class CustomerRuntime:
             state.append_event("occ", "cancellation_detected", {"flight": flight, "reason": reason})
             state.transition(DisruptionStatus.RESOLVING, actor="customer_agent")
             await self._load_context(rec, flight)
+            result = await rebuild_journey(self.client, rec, flight)
+            from acme.customer.specialists.duty import run_duty_of_care  # noqa: PLC0415 (cycle)
+
+            await run_duty_of_care(self, rec, result)
             opened.append(jid)
         return opened
 

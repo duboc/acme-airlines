@@ -7,19 +7,12 @@ duty-of-care step succeeded; any failed step leaves it RESOLVING with a `needs_h
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 
 from acme.customer.runtime import CustomerRuntime, JourneyRecord
 from acme.customer.specialists import concierge, rights
+from acme.customer.specialists.common import RebuildResult
 from acme.domain.journey import DisruptionStatus
-
-
-@dataclass(frozen=True)
-class RebuildResult:
-    new_flight: str | None
-    seat_done: bool
-    bag_done: bool
 
 
 def _missing(rebuild: RebuildResult) -> list[str]:
