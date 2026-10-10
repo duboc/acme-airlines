@@ -4,7 +4,8 @@ set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-export IMG=repo/collector:abc123 REGION=r PROJECT=p AR_REPO=repo GITHUB_SHA=abc123 CALLS="$work/calls"
+UUID=61b6ae3d-9335-4360-a259-5b306dc229f6
+export IMG=repo/collector:abc123 REGION=r PROJECT=p AR_REPO=repo GITHUB_SHA=abc123 CALLS="$work/calls" HUB_PROJECT=$UUID
 
 # Fake gcloud, driven by env: PROBE=denied|empty|enabled, FIRST=ok|notfound|other, JOB_JSON=file.
 cat >"$work/gcloud" <<'F'
@@ -44,9 +45,12 @@ run() { : >"$CALLS"; "$here/deploy-collector.sh" >"$work/out" 2>&1; echo $?; }
 
 PROBE=enabled FIRST=ok; export PROBE FIRST
 check "enabled version -> maps secret" 0 "$(run)"; has "uses update-secrets" "update-secrets=GITHUB_TOKEN"
+has "sets HUB_PROJECT to the UUID" "update-env-vars=HUB_PROJECT=$UUID"
+hasnt "never replaces all env vars" "set-env-vars"
 
 PROBE=empty; export PROBE
 check "empty version list -> remove" 0 "$(run)"; has "uses remove-secrets" "remove-secrets=GITHUB_TOKEN"
+has "HUB_PROJECT also set when the token is skipped" "update-env-vars=HUB_PROJECT=$UUID"
 hasnt "no update attempt" "update-secrets"; grep -q '::warning::' "$work/out" && echo "ok   warning" || { echo "FAIL warning"; fails=$((fails+1)); }
 
 PROBE=denied FIRST=ok; export PROBE FIRST
@@ -63,6 +67,9 @@ for f in denied image othersecret; do
 done
 
 
+# HUB_PROJECT is required: an unset value must fail the deploy, not deploy a wrong job.
+(unset HUB_PROJECT; PROBE=enabled FIRST=ok; : >"$CALLS"; "$here/deploy-collector.sh" >/dev/null 2>&1; check "unset HUB_PROJECT fails the deploy" 1 $?)
+
 # Static guard: the replace-all secret flags must never be used (comments excluded).
 if grep -v '^[[:space:]]*#' "$here"/*.sh ../../.github/workflows/observatory-deploy.yml 2>/dev/null \
   | grep -v 'test_deploy.sh' | grep -q -E -- '--(set|clear)-secrets'; then
@@ -72,12 +79,16 @@ else echo "ok   no --set-secrets/--clear-secrets"; fi
 # verify-deploy.sh
 export IMG_DASH="repo/dashboard:abc123"
 cat >"$work/good.json" <<J
-{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"image":"repo/collector:abc123","env":[{"name":"SCION_HUB_TOKEN","valueFrom":{"secretKeyRef":{"name":"x","key":"latest"}}}]}]}}}}}}
+{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"image":"repo/collector:abc123","env":[{"name":"HUB_PROJECT","value":"61b6ae3d-9335-4360-a259-5b306dc229f6"},{"name":"SCION_HUB_TOKEN","valueFrom":{"secretKeyRef":{"name":"x","key":"latest"}}}]}]}}}}}}
 J
 sed 's/SCION_HUB_TOKEN/OTHER/' "$work/good.json" >"$work/nohub.json"
 sed 's/collector:abc123/collector:old/' "$work/good.json" >"$work/oldimg.json"
+sed 's/"value":"61b6ae3d[^"]*"/"value":"duboc-acme-airlines"/' "$work/good.json" >"$work/slug.json"
+sed 's/"name":"HUB_PROJECT"/"name":"OTHER_VAR"/' "$work/good.json" >"$work/nohubproject.json"
 JOB_JSON=$work/good.json "$here/verify-deploy.sh" >/dev/null 2>&1; check "verify ok" 0 $?
 JOB_JSON=$work/nohub.json "$here/verify-deploy.sh" >/dev/null 2>&1; check "verify fails without SCION_HUB_TOKEN" 1 $?
+JOB_JSON=$work/slug.json "$here/verify-deploy.sh" >/dev/null 2>&1; check "verify fails when HUB_PROJECT is the slug" 1 $?
+JOB_JSON=$work/nohubproject.json "$here/verify-deploy.sh" >/dev/null 2>&1; check "verify fails without HUB_PROJECT" 1 $?
 JOB_JSON=$work/oldimg.json "$here/verify-deploy.sh" >/dev/null 2>&1; check "verify fails on old collector image" 1 $?
 IMG_DASH=repo/dashboard:old JOB_JSON=$work/good.json "$here/verify-deploy.sh" >/dev/null 2>&1; check "verify fails on old dashboard image" 1 $?
 

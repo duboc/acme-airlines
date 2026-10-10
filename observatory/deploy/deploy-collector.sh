@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Deploy the collector job image, mapping GITHUB_TOKEN only if its secret has a usable version.
-# Needs: IMG, REGION, PROJECT. Never uses --set-secrets/--clear-secrets (SCION_HUB_TOKEN must stay).
+# Needs: IMG, REGION, PROJECT, HUB_PROJECT (the hub project UUID: the hub REST API rejects the slug).
+# Env vars are only added/updated (--update-env-vars), never replaced. Never uses --set-secrets/--clear-secrets (SCION_HUB_TOKEN must stay).
 set -uo pipefail
 
 SECRET=acme-observatory-github-token
 MAP="GITHUB_TOKEN=${SECRET}:latest"
-common=(--image "$IMG" --region "$REGION" --project "$PROJECT" --quiet)
+: "${HUB_PROJECT:?set HUB_PROJECT to the hub project UUID}"
+common=(--image "$IMG" --region "$REGION" --project "$PROJECT" --quiet
+  --update-env-vars="HUB_PROJECT=${HUB_PROJECT}")
 
 deploy_without_token() {
   echo "::warning::Deploying the collector without GITHUB_TOKEN; the GitHub snapshot is skipped until ${SECRET} has an enabled version."
