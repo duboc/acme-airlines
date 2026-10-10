@@ -1,0 +1,105 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ChatView } from './ChatView';
+import type { WhatsAppMessage } from './api';
+
+const RESOLUTION =
+  'AC1234 is cancelled. You are rebooked on AC1250 at 06:40, hotel Aeroporto Inn is booked, and a meal voucher of $25 is in your wallet.';
+
+let transcript: WhatsAppMessage[];
+let calls: { url: string; method: string; body?: unknown }[];
+
+beforeEach(() => {
+  calls = [];
+  transcript = [
+    {
+      message_id: 'm1',
+      direction: 'outbound',
+      text: RESOLUTION,
+      timestamp: '2026-10-10T21:05:00Z',
+      buttons: [],
+    },
+    {
+      message_id: 'm2',
+      direction: 'outbound',
+      text: 'Optional: an upgrade is available if you would like it.',
+      timestamp: '2026-10-10T21:06:00Z',
+      buttons: ['Accept upgrade $135', 'No thanks'],
+    },
+  ];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ url, method, body });
+      if (method === 'POST' && url.endsWith('/messages')) {
+        const msg = {
+          message_id: `n${transcript.length}`,
+          direction: 'inbound' as const,
+          text: body.text,
+          timestamp: '2026-10-10T21:07:00Z',
+        };
+        transcript.push(msg);
+        return new Response(JSON.stringify(msg), { status: 201 });
+      }
+      if (method === 'POST') {
+        return new Response(JSON.stringify({ offer_status: 'accepted' }), { status: 200 });
+      }
+      return new Response(JSON.stringify(transcript), { status: 200 });
+    }),
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe('ChatView', () => {
+  it('renders the resolution message with all facts and timestamps', async () => {
+    render(<ChatView passengerId="P-MARIANA" />);
+    expect(await screen.findByText(RESOLUTION)).toBeInTheDocument();
+    expect(calls[0]?.url).toBe('/api/whatsapp/P-MARIANA/messages');
+    expect(screen.getAllByText(/UTC$/).length).toBe(2);
+  });
+
+  it('sends a typed reply and shows it in the transcript', async () => {
+    render(<ChatView passengerId="P-MARIANA" />);
+    await screen.findByText(RESOLUTION);
+    await userEvent.type(screen.getByLabelText('Message'), 'Can I leave after 10am?');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText('Can I leave after 10am?')).toBeInTheDocument();
+    const post = calls.find((c) => c.method === 'POST');
+    expect(post?.body).toEqual({ text: 'Can I leave after 10am?' });
+    expect(screen.getByLabelText('Message')).toHaveValue('');
+  });
+
+  it('posts an offer action once and disables the buttons', async () => {
+    render(<ChatView passengerId="P-MARIANA" />);
+    const accept = await screen.findByRole('button', { name: 'Accept upgrade $135' });
+    await userEvent.click(accept);
+    await userEvent.click(accept);
+    await waitFor(() => expect(accept).toBeDisabled());
+    expect(screen.getByRole('button', { name: 'No thanks' })).toBeDisabled();
+    const posts = calls.filter((c) => c.url.endsWith('/actions'));
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body).toEqual({ action: 'accept_offer' });
+  });
+
+  it('maps a decline button to decline_offer', async () => {
+    render(<ChatView passengerId="P-MARIANA" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'No thanks' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.url.endsWith('/actions'))?.body).toEqual({
+        action: 'decline_offer',
+      }),
+    );
+  });
+
+  it('shows an error when the service is unreachable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('x', { status: 500 })),
+    );
+    render(<ChatView passengerId="P-MARIANA" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/cannot reach/i);
+  });
+});
