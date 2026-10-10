@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, time, timedelta
 
 import pytest
@@ -151,3 +152,44 @@ async def test_inbound_before_resolved_is_recorded_only():
     assert rec.state.resolution_acknowledged is False and rec.state.status == S.RESOLVING
     await rt.handle_inbound(PID, "Can I leave after 10am?")
     assert rec.state.status == S.RESOLVING and len(rec.state.open_requests) == 1
+
+
+async def test_concurrent_ticks_send_exactly_one_notification():
+    rt = make()
+    rec = await resolved(rt)
+    rt.clock.advance(NOTIFIED_AT - rt.clock.now())
+    await asyncio.gather(rt.tick(), rt.tick(), rt.tick())
+    assert len(sent(rt)) == 1
+    assert len([e for e in rec.state.timeline if e.type == "notification_sent"]) == 1
+
+
+async def test_tick_does_not_deadlock_with_inbound_and_accept_on_the_same_journey():
+    rt = make()
+    rec = await resolved(rt)
+    rt.clock.advance(NOTIFIED_AT - rt.clock.now())
+    await asyncio.wait_for(
+        asyncio.gather(
+            rt.tick(),
+            rt.handle_inbound(PID, "Perfect, thanks!"),
+            rt.tick(),
+            rt.handle_inbound(PID, "Can I leave after 10am?"),
+            rt.tick(),
+        ),
+        timeout=30,
+    )
+    assert len(sent(rt)) >= 1
+    assert len([e for e in rec.state.timeline if e.type == "notification_sent"]) == 1
+
+
+async def test_tick_holds_the_journey_lock_while_sending():
+    rt = make()
+    rec = await resolved(rt)
+    rt.clock.advance(NOTIFIED_AT - rt.clock.now())
+    lock = rt.journey_lock(rec.state.journey_id)
+    await lock.acquire()
+    task = asyncio.create_task(rt.tick())
+    await asyncio.sleep(0.2)
+    assert not task.done() and sent(rt) == []  # waits for the lock, sends nothing yet
+    lock.release()
+    await asyncio.wait_for(task, timeout=30)
+    assert len(sent(rt)) == 1
