@@ -1,0 +1,278 @@
+{
+ "agents": [
+  {
+   "slug": "acme-obs-backend-2",
+   "name": "acme-obs-backend-2",
+   "template": "acme-backend",
+   "labels": {
+    "acme.team/tier": "ephemeral"
+   },
+   "phase": "running",
+   "activity": "executing",
+   "containerStatus": "Up 3 seconds",
+   "startedAt": "2026-10-10T06:32:09Z",
+   "lastActivityEvent": "2026-10-10T06:32:36.8649851Z",
+   "lastSeen": "2026-10-10T06:32:36.8649851Z",
+   "harnessConfig": "claude",
+   "toolName": "Bash",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-obs-backend-2"
+  },
+  {
+   "slug": "acme-obs-reviewer",
+   "name": "acme-obs-reviewer",
+   "template": "acme-reviewer",
+   "labels": {
+    "acme.team/tier": "ephemeral"
+   },
+   "phase": "running",
+   "activity": "completed",
+   "containerStatus": "Up 15 minutes",
+   "startedAt": "2026-10-10T06:16:36Z",
+   "lastActivityEvent": "2026-10-10T06:22:32.412272393Z",
+   "lastSeen": "2026-10-10T06:32:36.803446965Z",
+   "harnessConfig": "antigravity",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-obs-reviewer"
+  },
+  {
+   "slug": "acme-obs-backend",
+   "name": "acme-obs-backend",
+   "template": "acme-backend",
+   "labels": {
+    "acme.team/tier": "ephemeral"
+   },
+   "phase": "running",
+   "activity": "working",
+   "containerStatus": "Up 17 minutes",
+   "startedAt": "2026-10-10T06:14:33Z",
+   "lastActivityEvent": "2026-10-10T06:32:24.953195787Z",
+   "lastSeen": "2026-10-10T06:32:33.287332028Z",
+   "harnessConfig": "claude",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-obs-backend"
+  },
+  {
+   "slug": "acme-em-observatory",
+   "name": "acme-em-observatory",
+   "template": "acme-eng-manager",
+   "labels": {
+    "acme.team/role": "eng-manager",
+    "acme.team/tier": "ephemeral"
+   },
+   "phase": "running",
+   "activity": "blocked",
+   "containerStatus": "Up 21 minutes",
+   "startedAt": "2026-10-10T06:11:11Z",
+   "lastActivityEvent": "2026-10-10T06:32:11.236067904Z",
+   "lastSeen": "2026-10-10T06:32:15.887274957Z",
+   "harnessConfig": "claude",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-em-observatory"
+  },
+  {
+   "slug": "acme-frontend",
+   "name": "acme-frontend",
+   "template": "acme-frontend",
+   "labels": {
+    "acme.team/role": "frontend",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) 46 minutes ago",
+   "startedAt": "2026-10-10T05:25:43Z",
+   "lastActivityEvent": "2026-10-10T05:35:42.839792575Z",
+   "lastSeen": "2026-10-10T06:32:11.6283939Z",
+   "harnessConfig": "claude",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-frontend"
+  },
+  {
+   "slug": "acme-backend",
+   "name": "acme-backend",
+   "template": "acme-backend",
+   "labels": {
+    "acme.team/role": "backend",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) 58 minutes ago",
+   "startedAt": "2026-10-10T05:25:41Z",
+   "lastActivityEvent": "2026-10-10T05:32:33.745770076Z",
+   "lastSeen": "2026-10-10T06:32:11.632250006Z",
+   "harnessConfig": "claude",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-backend"
+  },
+  {
+   "slug": "acme-doc-writer",
+   "name": "acme-doc-writer",
+   "template": "acme-doc-writer",
+   "labels": {
+    "acme.team/role": "doc-writer",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) About an hour ago",
+   "startedAt": "2026-10-10T05:02:14Z",
+   "lastActivityEvent": "2026-10-10T05:19:50.83915335Z",
+   "lastSeen": "2026-10-10T06:32:11.635986972Z",
+   "harnessConfig": "antigravity",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-doc-writer"
+  },
+  {
+   "slug": "acme-researcher",
+   "name": "acme-researcher",
+   "template": "acme-researcher",
+   "labels": {
+    "acme.team/role": "researcher",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) 5 hours ago",
+   "startedAt": "2026-10-10T01:42:53Z",
+   "lastActivityEvent": "2026-10-10T01:49:12.322292213Z",
+   "lastSeen": "2026-10-10T06:32:11.647345985Z",
+   "harnessConfig": "antigravity",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-researcher"
+  },
+  {
+   "slug": "acme-release-notes",
+   "name": "acme-release-notes",
+   "template": "acme-release-notes",
+   "labels": {
+    "acme.team/role": "release-notes",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) 28 minutes ago",
+   "startedAt": "2026-10-10T06:02:34Z",
+   "lastActivityEvent": "2026-10-10T06:03:57.713169731Z",
+   "lastSeen": "2026-10-10T06:32:11.620862364Z",
+   "harnessConfig": "antigravity",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-release-notes"
+  },
+  {
+   "slug": "acme-investigator",
+   "name": "acme-investigator",
+   "template": "acme-investigator",
+   "labels": {
+    "acme.team/role": "investigator",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) 5 hours ago",
+   "startedAt": "2026-10-10T01:41:56Z",
+   "lastActivityEvent": "2026-10-10T01:42:10.189306645Z",
+   "lastSeen": "2026-10-10T06:32:11.650973375Z",
+   "harnessConfig": "antigravity",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-investigator"
+  },
+  {
+   "slug": "acme-security-auditor",
+   "name": "acme-security-auditor",
+   "template": "acme-security-auditor",
+   "labels": {
+    "acme.team/role": "security-auditor",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) 56 minutes ago",
+   "startedAt": "2026-10-10T05:33:33Z",
+   "lastActivityEvent": "2026-10-10T05:35:29.339945707Z",
+   "lastSeen": "2026-10-10T06:32:11.624484786Z",
+   "harnessConfig": "antigravity",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-security-auditor"
+  },
+  {
+   "slug": "acme-reviewer",
+   "name": "acme-reviewer",
+   "template": "acme-reviewer",
+   "labels": {
+    "acme.team/role": "reviewer",
+    "acme.team/tier": "standing"
+   },
+   "phase": "stopped",
+   "containerStatus": "Exited (255) 25 minutes ago",
+   "startedAt": "2026-10-10T06:04:02Z",
+   "lastActivityEvent": "2026-10-10T06:06:58.447399399Z",
+   "lastSeen": "2026-10-10T06:32:11.617107814Z",
+   "harnessConfig": "antigravity",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-reviewer",
+   "activity": "limits_exceeded"
+  },
+  {
+   "slug": "acme-qa-tester",
+   "name": "acme-qa-tester",
+   "template": "acme-qa-tester",
+   "labels": {
+    "acme.team/role": "qa-tester",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) About an hour ago",
+   "startedAt": "2026-10-10T05:02:09Z",
+   "lastActivityEvent": "2026-10-10T05:24:56.630044824Z",
+   "lastSeen": "2026-10-10T06:32:11.639485234Z",
+   "harnessConfig": "antigravity",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-qa-tester"
+  },
+  {
+   "slug": "acme-qa",
+   "name": "acme-qa",
+   "template": "acme-qa",
+   "labels": {
+    "acme.team/role": "qa",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) 2 hours ago",
+   "startedAt": "2026-10-10T04:28:39Z",
+   "lastActivityEvent": "2026-10-10T04:29:57.341234103Z",
+   "lastSeen": "2026-10-10T06:32:11.643513649Z",
+   "harnessConfig": "claude",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-qa"
+  },
+  {
+   "slug": "acme-architect",
+   "name": "acme-architect",
+   "template": "acme-architect",
+   "labels": {
+    "acme.team/role": "architect",
+    "acme.team/tier": "standing"
+   },
+   "phase": "suspended",
+   "containerStatus": "Exited (255) 5 hours ago",
+   "startedAt": "2026-10-10T01:41:25Z",
+   "lastActivityEvent": "2026-10-10T01:41:31.289473377Z",
+   "lastSeen": "2026-10-10T06:32:11.654185899Z",
+   "harnessConfig": "claude",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-architect"
+  },
+  {
+   "slug": "acme-lead",
+   "name": "acme-lead",
+   "template": "acme-lead",
+   "phase": "running",
+   "activity": "blocked",
+   "containerStatus": "Up 11 hours",
+   "startedAt": "2026-10-09T19:51:39Z",
+   "lastActivityEvent": "2026-10-10T06:31:33.390163679Z",
+   "lastSeen": "2026-10-10T06:32:11.657848747Z",
+   "harnessConfig": "claude",
+   "projectId": "00000000-0000-0000-0000-000000000000",
+   "id": "agent-acme-lead",
+   "message": "factory loop: Observatory workstream under acme-em-observatory"
+  }
+ ],
+ "totalCount": 16
+}

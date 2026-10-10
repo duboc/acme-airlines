@@ -5,6 +5,7 @@ description = "ACME Observatory collector: snapshots hub agents and GitHub flow 
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "google-cloud-bigquery>=3.25",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]
