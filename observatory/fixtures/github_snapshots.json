@@ -1,0 +1,13 @@
+[
+  {
+    "ts": "2026-10-10T12:00:00+00:00",
+    "issues_by_status": [{"status": "ready", "count": 3}, {"status": "in-progress", "count": 2}, {"status": "in-review", "count": 1}, {"status": "blocked", "count": 1}],
+    "issues_by_label": [{"label": "role:backend", "count": 4}, {"label": "role:frontend", "count": 2}, {"label": "priority:p1", "count": 5}],
+    "open_prs": [
+      {"number": 114, "title": "feat: collector skeleton", "author": "acme-obs-backend", "created_at": "2026-10-10T11:00:00+00:00", "latest_verdict": "APPROVE", "ci_conclusion": "success"},
+      {"number": 115, "title": "feat: hub snapshot", "author": "acme-obs-backend", "created_at": "2026-10-10T11:30:00+00:00", "latest_verdict": null, "ci_conclusion": "pending"}
+    ],
+    "merges_24h": 6,
+    "ci_conclusions": [{"conclusion": "success", "count": 14}, {"conclusion": "failure", "count": 2}]
+  }
+]

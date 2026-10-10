@@ -1,0 +1,1 @@
+"""ACME Observatory collector."""
