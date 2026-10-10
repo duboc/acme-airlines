@@ -1398,6 +1398,42 @@
         "title": "PassengerReply",
         "type": "object"
       },
+      "PresetView": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expectation": {
+            "title": "Expectation",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "steps",
+          "expectation"
+        ],
+        "title": "PresetView",
+        "type": "object"
+      },
       "ProfileLoadedEvent": {
         "properties": {
           "actor": {
@@ -1745,6 +1781,157 @@
           "reason"
         ],
         "title": "SalesSuppressedPayload",
+        "type": "object"
+      },
+      "ScenarioState": {
+        "properties": {
+          "charged": {
+            "title": "Charged",
+            "type": "string"
+          },
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          },
+          "flight": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flight"
+          },
+          "journey_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Id"
+          },
+          "journey_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journey Status"
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "last_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Step"
+          },
+          "needs_human": {
+            "title": "Needs Human",
+            "type": "boolean"
+          },
+          "next_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Step"
+          },
+          "offer_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offer Status"
+          },
+          "offers_sent": {
+            "title": "Offers Sent",
+            "type": "integer"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "seat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seat"
+          },
+          "seat_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seat Reason"
+          },
+          "step_index": {
+            "title": "Step Index",
+            "type": "integer"
+          },
+          "total_steps": {
+            "title": "Total Steps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "step_index",
+          "total_steps",
+          "done",
+          "last_step",
+          "next_step",
+          "journey_id",
+          "journey_status",
+          "flight",
+          "seat",
+          "seat_reason",
+          "offers_sent",
+          "offer_status",
+          "charged",
+          "needs_human",
+          "last_message"
+        ],
+        "title": "ScenarioState",
         "type": "object"
       },
       "SeatAssignment": {
@@ -2767,6 +2954,116 @@
         "summary": "Trigger Cancellation",
         "tags": [
           "scenario"
+        ]
+      }
+    },
+    "/scenarios": {
+      "get": {
+        "operationId": "list_scenarios_scenarios_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PresetView"
+                  },
+                  "title": "Response List Scenarios Scenarios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Scenarios",
+        "tags": [
+          "scenarios"
+        ]
+      }
+    },
+    "/scenarios/{scenario_id}/start": {
+      "post": {
+        "operationId": "start_scenario_scenarios__scenario_id__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Scenario",
+        "tags": [
+          "scenarios"
+        ]
+      }
+    },
+    "/scenarios/{scenario_id}/step": {
+      "post": {
+        "description": "Advance the next scripted passenger action; the response is the expected next state.",
+        "operationId": "step_scenario_scenarios__scenario_id__step_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Step Scenario",
+        "tags": [
+          "scenarios"
         ]
       }
     },

@@ -225,3 +225,11 @@ LLM_MODE=vertex docker compose -f app/compose.yaml up --build
 ```
 
 The services read `ACME_SIM_HOST`, `ACME_CUSTOMER_HOST` and `ACME_SALES_HOST` (default `127.0.0.1`; the containers set `0.0.0.0`). See `docs/product/deploy.md` for network/credential isolation, Vertex ADC configuration, and Cloud Run deployment documentation (target only, not deployed).
+
+## Demo scenario presets (fake mode only)
+
+`GET /scenarios` lists presets (happy path, declines upgrade, unsatisfiable request, seat 14A
+taken, hotel unavailable, upgrade race). `POST /scenarios/{id}/start` resets the world and seeds
+the variant; `POST /scenarios/{id}/step` performs the next scripted passenger action and returns
+the resulting state. With `LLM_MODE=vertex` these endpoints return 404. See
+`app/backend/src/acme/api/scenarios.py`.
