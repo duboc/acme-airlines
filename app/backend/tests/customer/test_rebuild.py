@@ -92,7 +92,22 @@ async def test_no_onward_connection_takes_earliest_flight_and_skips_check(rt):
         (["14B", "14C"], "14A", None),
         ([], "14A", None),
         (["13A", "15A"], "14A", "13A"),
+        (["14A", "15A"], "XX", None),
+        (["15A"], "", None),
+        (["15A"], "14", None),
+        (["15A"], "14a", None),
     ],
 )
 def test_nearest_window_seat(open_seats, want, expected):
     assert nearest_window_seat(open_seats, want) == expected
+
+
+async def test_malformed_seat_code_needs_human_instead_of_raising(rt):
+    from acme.customer.specialists.seat import SeatRequest, SeatSpecialist
+
+    emitted: list[tuple[str, dict]] = []
+    specialist = SeatSpecialist(rt.client)
+    req = SeatRequest(pnr="MSLV42", flight="AC1240", preferred_seat="??", tier="diamond")
+    resp = await specialist.handle(req, lambda t, p=None: emitted.append((t, p or {})))
+    assert resp.status == "unavailable"
+    assert [t for t, _ in emitted] == ["needs_human"]

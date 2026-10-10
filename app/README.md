@@ -75,7 +75,7 @@ Customer agent and in-process simulators. `POST /scenario/trigger-cancellation` 
 (#11). The Rights & Compensation specialist runs `policy.duty_of_care` (wait = original -> new
 departure, overnight = new departure on a later local day) and records `duty_of_care_assessed` with
 entitlements and rule citations. The Concierge specialist fulfils them through the concierge MCP:
-hotel HT8842, airport<->hotel transfers, meal vouchers. Each `hotel_booked` / `transfer_booked` /
+hotel HT8842, airport<->hotel transfers, meal vouchers. Each `hotel_booked` / `transfer_arranged` /
 `voucher_issued` event carries its `entitlement` and the policy `reason`. The journey moves to
 `RESOLVED` only if flight, seat and bag are done and every step succeeded. A failed step records
 `needs_human` and leaves it `RESOLVING` (meal vouchers are still issued if only the hotel failed).

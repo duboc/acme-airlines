@@ -119,11 +119,9 @@ class TransferArrangedPayload(Payload):
 
 
 class VoucherIssuedPayload(Payload):
-    """`kind` is the scenario-harness name (#77); `meal` is the legacy key until renamed."""
-
     voucher_id: str
-    kind: str | None = None
-    meal: str | None = None
+    kind: str
+    meal_type: str | None = None
     amount: str
     entitlement: str
     reason: str
@@ -208,8 +206,7 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "duty_of_care_assessed": DutyOfCareAssessedPayload,
     "duty_of_care_fulfilled": Empty,
     "hotel_booked": HotelBookedPayload,
-    "transfer_arranged": TransferArrangedPayload,  # scenario-harness name (#77)
-    "transfer_booked": TransferArrangedPayload,  # legacy alias until the #77 rename lands
+    "transfer_arranged": TransferArrangedPayload,
     "notification_sent": NotificationSentPayload,
     "resolution_acknowledged": Empty,
     "change_handoff": ChangeHandoffPayload,

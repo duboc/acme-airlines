@@ -42,12 +42,13 @@ async def test_books_hotel_transfers_and_vouchers_each_linked_to_reason(setup):
         hotel.payload["hotel_id"] == "HT8842" and hotel.payload["booking_ref"] in pm.hotel_bookings
     )
     assert hotel.payload["entitlement"] == "hotel" and hotel.payload["reason"]
-    legs = events(rec, "transfer_booked")
+    legs = events(rec, "transfer_arranged")
     assert [e.payload["leg"] for e in legs] == ["airport_to_hotel", "hotel_to_airport"]
     assert all(e.payload["entitlement"] == "ground_transfer" and e.payload["reason"] for e in legs)
     assert {e.payload["transfer_ref"] for e in legs} <= set(pm.transfers)
     vouchers = events(rec, "voucher_issued")
-    assert [e.payload["meal"] for e in vouchers] == ["dinner", "breakfast"]
+    assert [e.payload["meal_type"] for e in vouchers] == ["dinner", "breakfast"]
+    assert all(e.payload["kind"] == "meal" for e in vouchers)
     assert all(e.payload["entitlement"] == "meals" and e.payload["reason"] for e in vouchers)
     assert len(pm.vouchers) == 2
     assert rec.hotel.hotel_id == "HT8842" and len(rec.vouchers) == 2
@@ -90,7 +91,7 @@ async def test_hotel_failure_needs_human_and_not_resolved(setup):
     assert rec.state.status == S.RESOLVING
     (nh,) = events(rec, "needs_human")
     assert nh.payload["step"] == "hotel" and nh.payload["error"]
-    assert rec.hotel is None and not events(rec, "transfer_booked")
+    assert rec.hotel is None and not events(rec, "transfer_arranged")
     assert rt.sim.partners.transfers == {}
     assert len(events(rec, "voucher_issued")) == 2  # meals are not held hostage to the hotel
 

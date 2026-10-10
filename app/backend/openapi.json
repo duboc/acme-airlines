@@ -1739,35 +1739,6 @@
         "title": "TransferArrangedPayload",
         "type": "object"
       },
-      "TransferBookedEvent": {
-        "properties": {
-          "actor": {
-            "title": "Actor",
-            "type": "string"
-          },
-          "payload": {
-            "$ref": "#/components/schemas/TransferArrangedPayload"
-          },
-          "timestamp": {
-            "format": "date-time",
-            "title": "Timestamp",
-            "type": "string"
-          },
-          "type": {
-            "const": "transfer_booked",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "actor",
-          "timestamp",
-          "type",
-          "payload"
-        ],
-        "title": "TransferBookedEvent",
-        "type": "object"
-      },
       "TriggerCancellation": {
         "properties": {
           "flight": {
@@ -2015,7 +1986,6 @@
       },
       "VoucherIssuedPayload": {
         "additionalProperties": false,
-        "description": "`kind` is the scenario-harness name (#77); `meal` is the legacy key until renamed.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -2026,17 +1996,10 @@
             "type": "string"
           },
           "kind": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kind"
+            "title": "Kind",
+            "type": "string"
           },
-          "meal": {
+          "meal_type": {
             "anyOf": [
               {
                 "type": "string"
@@ -2045,7 +2008,7 @@
                 "type": "null"
               }
             ],
-            "title": "Meal"
+            "title": "Meal Type"
           },
           "reason": {
             "title": "Reason",
@@ -2058,6 +2021,7 @@
         },
         "required": [
           "voucher_id",
+          "kind",
           "amount",
           "entitlement",
           "reason"
@@ -2260,7 +2224,6 @@
                         "seat_held": "#/components/schemas/SeatHeldEvent",
                         "status_changed": "#/components/schemas/StatusChangedEvent",
                         "transfer_arranged": "#/components/schemas/TransferArrangedEvent",
-                        "transfer_booked": "#/components/schemas/TransferBookedEvent",
                         "upgrade_confirmed": "#/components/schemas/UpgradeConfirmedEvent",
                         "verification_passed": "#/components/schemas/VerificationPassedEvent",
                         "voucher_issued": "#/components/schemas/VoucherIssuedEvent"
@@ -2306,9 +2269,6 @@
                       },
                       {
                         "$ref": "#/components/schemas/TransferArrangedEvent"
-                      },
-                      {
-                        "$ref": "#/components/schemas/TransferBookedEvent"
                       },
                       {
                         "$ref": "#/components/schemas/NotificationSentEvent"

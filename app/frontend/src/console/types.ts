@@ -82,7 +82,6 @@ export const EVENT_TYPES = [
   'seat_held',
   'status_changed',
   'transfer_arranged',
-  'transfer_booked',
   'upgrade_confirmed',
   'verification_passed',
   'voucher_issued',

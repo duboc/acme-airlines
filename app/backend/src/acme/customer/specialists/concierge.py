@@ -64,7 +64,7 @@ async def book_transfers(
             _needs_human(rec, f"transfer:{leg}", exc)
             return False
         rec.state.append_event(
-            ACTOR, "transfer_booked",
+            ACTOR, "transfer_arranged",
             {"transfer_ref": r["transfer_ref"], "leg": leg, "entitlement": "ground_transfer",
              "reason": e.rule_reasons["ground_transfer"]},
         )  # fmt: skip
@@ -94,7 +94,7 @@ async def issue_meal_vouchers(
         )
         rec.state.append_event(
             ACTOR, "voucher_issued",
-            {"voucher_id": r["voucher_id"], "meal": meal, "amount": r["amount"],
-             "entitlement": "meals", "reason": e.rule_reasons["meals"]},
+            {"voucher_id": r["voucher_id"], "kind": "meal", "meal_type": meal,
+             "amount": r["amount"], "entitlement": "meals", "reason": e.rule_reasons["meals"]},
         )  # fmt: skip
     return ok

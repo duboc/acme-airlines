@@ -89,12 +89,10 @@ SAMPLES = {
                      "reason": "r"},
     "transfer_arranged": {"transfer_ref": "T1", "leg": "to_hotel", "entitlement": "t",
                           "reason": "r"},
-    "transfer_booked": {"transfer_ref": "T1", "leg": "to_hotel", "entitlement": "t",
-                        "reason": "r"},
     "notification_sent": {"message_id": "WM1", "source": "template"},
     "resolution_acknowledged": {},
     "change_handoff": {"request_id": "r1", "after": "10:00"},
-    "voucher_issued": {"voucher_id": "V1", "meal": "dinner", "amount": "25.00",
+    "voucher_issued": {"voucher_id": "V1", "kind": "meal", "meal_type": "dinner", "amount": "25.00",
                        "entitlement": "meals", "reason": "r"},
     "resolution_blocked": {"missing": ["seat"]},
     "passenger_message": {"text": "hi"},
@@ -123,7 +121,14 @@ def test_each_event_type_has_a_validating_sample(type_):
     ADAPTER.validate_python(event(type_, SAMPLES[type_]))
 
 
-def test_voucher_accepts_scenario_harness_kind_and_legacy_meal():
+def test_voucher_requires_kind_and_rejects_the_retired_meal_key():
     base = {"voucher_id": "V1", "amount": "25.00", "entitlement": "meals", "reason": "r"}
     assert ADAPTER.validate_python(event("voucher_issued", {**base, "kind": "meal"}))
-    assert ADAPTER.validate_python(event("voucher_issued", {**base, "meal": "dinner"}))
+    with pytest.raises(ValidationError):
+        ADAPTER.validate_python(event("voucher_issued", {**base, "meal": "dinner"}))
+
+
+def test_retired_transfer_booked_event_type_is_rejected():
+    payload = {"transfer_ref": "T1", "leg": "x", "entitlement": "t", "reason": "r"}
+    with pytest.raises(ValidationError):
+        ADAPTER.validate_python(event("transfer_booked", payload))
