@@ -29,7 +29,7 @@ def collect_facts(rec: JourneyRecord) -> dict[str, Any] | None:
     """Resolution facts from the journey timeline; None if the resolution is incomplete."""
     detected, rebooked = _last(rec, "cancellation_detected"), _last(rec, "rebooked")
     seat, hotel = _last(rec, "seat_held"), _last(rec, "hotel_booked")
-    transfer = _last(rec, "transfer_arranged") or _last(rec, "transfer_booked")  # #77 rename
+    transfer = _last(rec, "transfer_arranged")
     voucher = _last(rec, "voucher_issued")
     if not (detected and rebooked and seat and hotel and transfer and voucher):
         return None

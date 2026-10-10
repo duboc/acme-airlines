@@ -17,7 +17,10 @@ def nearest_window_seat(open_seats: list[str], wanted: str) -> str | None:
     same letter, then front-most). None if there is no window seat."""
     if wanted in open_seats:
         return wanted
-    row, letter = _SEAT.match(wanted).groups()  # type: ignore[union-attr]
+    parsed = _SEAT.match(wanted)
+    if parsed is None:  # malformed seat code: caller escalates to a human
+        return None
+    row, letter = parsed.groups()
     candidates = [s for s in open_seats if (m := _SEAT.match(s)) and m.group(2) in WINDOW_LETTERS]
     if not candidates:
         return None

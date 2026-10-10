@@ -5,7 +5,6 @@ from acme.domain.journey import DisruptionStatus
 
 from .driver import EventType, ScenarioDriver
 from .flows import AC1240_DEP, cancelled, events, sole
-from .marks import needs
 
 
 def test_rebooked_on_ac1240_nonstop_at_0815(driver: ScenarioDriver):
@@ -34,7 +33,6 @@ def test_santiago_connection_is_preserved_by_the_rebooking(driver: ScenarioDrive
     assert (check["flight"], check["connection_flight"]) == ("AC1240", "AC0800")
 
 
-@needs(12)
 def test_duty_of_care_books_ht8842_a_transfer_and_a_dinner_voucher(driver: ScenarioDriver):
     cancelled(driver)
     assert sole(driver, EventType.HOTEL_BOOKED).payload["hotel_id"] == PARTNER_HOTEL_ID
