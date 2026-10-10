@@ -98,7 +98,13 @@ class CustomerSkills:
         if any(r.offer.offer_id == offer.offer_id for r in state.offers):
             raise SkillError("duplicate offer_id")
         state.current_flight = self._current_flight(rec)  # Customer-owned fact
-        decision = evaluate(state, offer, inventory or self._world_inventory(offer))
+        inventory = inventory or self._world_inventory(offer)
+        state.append_event(
+            "customer_agent",
+            "sales_opportunity",
+            {"flight": offer.flight, "open_seats": inventory.open_seats},
+        )
+        decision = evaluate(state, offer, inventory)
         self._decision_event(state, offer, decision)
         if "disruption_not_resolved" in decision.reasons:
             raise SkillError("rejected: disruption_not_resolved")
