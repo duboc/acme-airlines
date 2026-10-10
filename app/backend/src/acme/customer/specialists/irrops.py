@@ -30,19 +30,29 @@ class IrropsRebooking:
     def __init__(self, client: SimClient) -> None:
         self._client = client
 
-    async def handle(self, req: RebookRequest, emit: Emit) -> RebookResponse:
+    async def search(self, req: RebookRequest) -> list[dict]:
         found = await self._client.call(
             "pss", "flights.search", origin=req.origin, dest=req.destination,
             after=req.after.isoformat(),
         )  # fmt: skip
-        for flight in found["flights"]:  # sorted by departure: first feasible is the earliest
+        return found["flights"]  # sorted by departure
+
+    @staticmethod
+    def feasible(req: RebookRequest, flight: dict) -> int | None:
+        """Connection margin in minutes if the flight protects the onward connection (0 when
+        there is none to protect), else None."""
+        if req.onward_departure is None:
+            return 0
+        arrival = datetime.fromisoformat(flight["scheduled_arrival"])
+        result = check_connection(req.destination, arrival, req.onward_departure)
+        return result.margin_minutes if result.feasible else None
+
+    async def handle(self, req: RebookRequest, emit: Emit) -> RebookResponse:
+        for flight in await self.search(req):  # first feasible is the earliest
+            margin = self.feasible(req, flight)
+            if margin is None:
+                continue
             arrival = datetime.fromisoformat(flight["scheduled_arrival"])
-            margin = None
-            if req.onward_departure is not None:
-                result = check_connection(req.destination, arrival, req.onward_departure)
-                if not result.feasible:
-                    continue
-                margin = result.margin_minutes
             await self._client.call("pss", "pnr.rebook", pnr=req.pnr, flight=flight["number"])
             departure = datetime.fromisoformat(flight["scheduled_departure"])
             emit(
@@ -55,7 +65,7 @@ class IrropsRebooking:
             )
             return RebookResponse(
                 status="rebooked", flight=flight["number"], departure=departure,
-                arrival=arrival, margin_minutes=margin,
+                arrival=arrival, margin_minutes=margin if req.onward_departure else None,
             )  # fmt: skip
         emit(
             "needs_human",

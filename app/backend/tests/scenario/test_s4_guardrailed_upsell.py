@@ -9,7 +9,6 @@ from .flows import ACK, acknowledged, events, offer_delivered, replanned, sole
 from .marks import needs
 
 
-@needs(15)
 def test_no_offer_before_the_passenger_acknowledges_the_final_resolution(
     driver: ScenarioDriver,
 ):
