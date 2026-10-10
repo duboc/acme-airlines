@@ -2,6 +2,7 @@ from datetime import datetime, time, timedelta
 
 import pytest
 
+from acme.customer.change import RecordingChangeAgent
 from acme.customer.runtime import CustomerRuntime
 from acme.domain.clock import FixedClock
 from acme.domain.fixtures import DISRUPTION_DETECTED_AT, GRU
@@ -25,7 +26,11 @@ class BoomLlm(FakeLlm):
 
 
 def make(llm=None):
-    return CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT), llm=llm or FakeLlm())
+    return CustomerRuntime(
+        FixedClock(DISRUPTION_DETECTED_AT),
+        llm=llm or FakeLlm(),
+        change_agent=RecordingChangeAgent(),
+    )
 
 
 async def resolved(rt):

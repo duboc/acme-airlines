@@ -137,6 +137,11 @@ class ChangeHandoffPayload(Payload):
     after: str
 
 
+class RequestClosedPayload(Payload):
+    request_id: str
+    outcome: Literal["satisfied", "unsatisfiable"]
+
+
 class ResolutionBlockedPayload(Payload):
     missing: list[str]
 
@@ -210,6 +215,7 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "notification_sent": NotificationSentPayload,
     "resolution_acknowledged": Empty,
     "change_handoff": ChangeHandoffPayload,
+    "request_closed": RequestClosedPayload,
     "voucher_issued": VoucherIssuedPayload,
     "resolution_blocked": ResolutionBlockedPayload,
     "passenger_message": PassengerMessagePayload,

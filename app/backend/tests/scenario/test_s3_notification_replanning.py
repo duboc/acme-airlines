@@ -6,7 +6,6 @@ from acme.domain.journey import DisruptionStatus
 
 from .driver import EventType, ScenarioDriver
 from .flows import AC1252_DEP, NEW_CONSTRAINT, NOTIFIED_AT, notified, replanned
-from .marks import needs
 
 
 def test_whatsapp_message_is_sent_at_2209(driver: ScenarioDriver):
@@ -30,7 +29,6 @@ def test_message_attaches_the_dinner_voucher_and_has_no_offer(driver: ScenarioDr
     assert first.offer_id is None
 
 
-@needs(30)
 def test_after_10am_request_moves_the_passenger_to_ac1252_at_1140(driver: ScenarioDriver):
     replanned(driver)
     assert driver.transcript()[1].text == NEW_CONSTRAINT
@@ -39,7 +37,6 @@ def test_after_10am_request_moves_the_passenger_to_ac1252_at_1140(driver: Scenar
     assert latest.payload["departure"] == AC1252_DEP.isoformat()
 
 
-@needs(30)
 def test_replanning_keeps_seat_14a_and_reverifies_the_connection(driver: ScenarioDriver):
     replanned(driver)
     seat = [e for e in driver.get_journey().timeline if e.type == EventType.SEAT_HELD][-1]
@@ -51,7 +48,6 @@ def test_replanning_keeps_seat_14a_and_reverifies_the_connection(driver: Scenari
     )
 
 
-@needs(30)
 def test_replanning_completes_in_seconds_and_returns_to_resolved(driver: ScenarioDriver):
     replanned(driver)
     reply_at = driver.transcript()[1].timestamp

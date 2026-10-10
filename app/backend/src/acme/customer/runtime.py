@@ -20,8 +20,9 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, BaseModel
 
 from acme.customer import outreach
-from acme.customer.change import ChangeAgent, RecordingChangeAgent
+from acme.customer.change import ChangeAgent
 from acme.customer.rebuild import rebuild_journey
+from acme.customer.specialists.change import ReplanningChangeAgent
 from acme.domain.clock import Clock, SystemClock
 from acme.domain.fixtures import World
 from acme.domain.journey import DisruptionStatus, JourneyState
@@ -75,9 +76,10 @@ class CustomerRuntime:
         auto_duty_of_care: bool = True,
         llm: LlmPort | None = None,
         notify_delay: timedelta = timedelta(minutes=6),
+        change_agent: ChangeAgent | None = None,
     ) -> None:
         self.llm = llm or build_llm()
-        self.change_agent: ChangeAgent = RecordingChangeAgent()
+        self.change_agent: ChangeAgent = change_agent or ReplanningChangeAgent()
         self.notify_delay = notify_delay  # settle time after RESOLVED before the one notification
         self.auto_duty_of_care = auto_duty_of_care  # False isolates the rebuild in tests
         self.clock = clock or SystemClock()
