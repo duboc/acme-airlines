@@ -68,7 +68,7 @@ jobs:
           for img in acme-backend:local acme-frontend:local; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy:0.57.1 image --scanners secret --severity HIGH,CRITICAL \
-              --skip-files /app/.venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc \\
+              --skip-files /app/.venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc \
               --exit-code 1 --no-progress "$img"
           done
 
