@@ -10,15 +10,54 @@ changes as pull requests.
 
 | Path | What |
 |------|------|
-| [`app/`](app/) | The acme-airlines application (to be built by the factory). |
+| [`app/`](app/) | The acme-airlines multi-agent application (see [`app/README.md`](app/README.md)). |
 | [`infra/`](infra/) | Scripts and config that create and operate the factory. |
 | [`docs/setup/`](docs/setup/) | How the factory was built, step by step, and how to run it. |
 | [`docs/decisions/`](docs/decisions/) | Architecture decision records (app stack: [ADR 0100](docs/decisions/0100-app-stack.md)). |
-| [`docs/product/`](docs/product/) | Product brief (IRROPS use case) and [MVP plan](docs/product/mvp-plan.md). |
+| [`docs/product/`](docs/product/) | Product brief (IRROPS use case), [MVP plan](docs/product/mvp-plan.md), and [demo script](docs/product/demo-script.md). |
 | [`docs/factory/`](docs/factory/) | How to work with the agent team; smoke-test records. |
 | [`factory/team/`](factory/team/) | Source for the agent team's role templates. |
 | [`factory/templates/`](factory/templates/) | Generated Scion role templates (`acme-*`). |
 | [`docs/superpowers/`](docs/superpowers/) | Design spec and implementation plan for the factory. |
+
+## Application quickstart
+
+Run the full multi-agent application locally with Docker Compose:
+
+```bash
+# Generate per-caller tokens and launch all services:
+export ACME_SIM_TOKENS="customer=$(openssl rand -hex 24),sales=$(openssl rand -hex 24),test-admin=$(openssl rand -hex 24)"
+export ACME_SALES_TOKEN=$(echo "$ACME_SIM_TOKENS" | sed -n 's/.*sales=\([^,]*\).*/\1/p')
+docker compose -f app/compose.yaml up --build
+```
+
+Then open:
+- **Operator Console:** `http://localhost:8080/console`
+- **WhatsApp Passenger Chat:** `http://localhost:8080/whatsapp`
+
+For the step-by-step narrative demo walkthrough, follow the [Demo Script](docs/product/demo-script.md).
+
+### LLM Mode (`LLM_MODE`)
+
+- **Offline (default, $0):** `LLM_MODE=fake` uses deterministic local fakes with zero cloud dependencies.
+- **Live Vertex AI:** `LLM_MODE=vertex docker compose -f app/compose.yaml up --build` uses Gemini on Vertex AI (`location=global`, ADC only, project `acme-airlines-factory`). See [`docs/product/deploy.md`](docs/product/deploy.md).
+
+### Running tests
+
+```bash
+# Backend lint and tests (pytest, ruff)
+cd app/backend
+uv sync --frozen
+uv run ruff check
+uv run pytest -m "not live"
+
+# Frontend lint, tests, and build (Vitest, ESLint)
+cd app/frontend
+npm ci
+npm run lint
+npm test
+npm run build
+```
 
 ## Start here
 

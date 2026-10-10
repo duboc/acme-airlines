@@ -2,6 +2,10 @@
 
 - `backend/` — Python 3.12 uv project `acme` (agents, MCP sim servers, policy code).
   - `uv run acme-sim` starts the simulated MCP systems; see `docs/product/simulators.md`.
+  - `uv run acme-customer` serves the Customer agent runtime and API.
+  - `uv run acme-sales` runs the autonomous Sales agent.
+- `frontend/` — TypeScript + React + Vite application (Operator console and simulated WhatsApp chat).
+- `compose.yaml` — Docker Compose configuration for the 4-service stack.
 
 ## Backend: lint and test locally
 
@@ -17,6 +21,24 @@ uv run pytest -m "not live"      # tests; `live` tests are deselected
 
 Tests marked `@pytest.mark.live` call real services (e.g. Vertex AI) and never run by
 default or in CI. Run them explicitly with `uv run pytest -m live`.
+
+## Frontend: lint, test, and build locally
+
+Prerequisite: [Node.js](https://nodejs.org/) (v20+).
+
+```bash
+cd app/frontend
+npm ci                           # install pinned dependencies
+npm run lint                     # lint (ESLint + Prettier check)
+npm test                         # unit and component tests (Vitest)
+npm run build                    # TypeScript build (tsc) and Vite bundle
+npm run dev                      # start local dev server (http://localhost:5173)
+```
+
+Playwright end-to-end tests:
+```bash
+npm run e2e                      # runs narrative e2e suite
+```
 
 ## LLM layer (`acme.llm`)
 
@@ -43,8 +65,7 @@ LLM_MODE=vertex uv run pytest -m live tests/live
 
 ## Runtime API (`acme.api`)
 
-FastAPI REST + SSE for the UI. Agent behaviour is stubbed (#17); the Customer agent work (#10-#16)
-wires in real agents without changing the contract.
+FastAPI REST + SSE for the UI, connecting the Customer agent runtime, in-process simulators, and timeline events.
 
 ```bash
 cd app/backend
@@ -60,8 +81,10 @@ Vite dev server (`http://localhost:5173`). `GET /journeys/{id}/events` is Server
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. The `backend`
-job runs the four commands above. A `frontend` job is added with the frontend scaffold.
+GitHub Actions workflows in `.github/workflows/`:
+- `ci.yml`: runs on every PR and push to `main` (backend ruff + pytest; frontend lint + vitest + build).
+- `containers.yml`: builds container images, runs non-root checks, and verifies no secrets/env files.
+- `e2e.yml`: runs the full Playwright narrative test suite across console and WhatsApp views.
 
 ## Customer agent
 
@@ -97,15 +120,14 @@ journey stays `RESOLVING` and a `needs_human` timeline entry is written.
 the cancelled and new flight, departure time, seat, hotel, transfer and voucher or a deterministic
 template is sent instead (`notification_sent.source` = `llm` | `template`). Inbound messages go through
 `handle_inbound`: `departure_after` -> open request, `REPLANNING`, hand-off to the `ChangeAgent`
-interface (`RecordingChangeAgent` stub until #30); `acknowledge` with no open request ->
+interface (`ReplanningChangeAgent`); `acknowledge` with no open request ->
 `resolution_acknowledged = True`; anything else -> `needs_human`, request stays open. The API
-transcript is read from the whatsapp simulator (`message.send` now takes `attachments`).
+transcript is read from the whatsapp simulator (`message.send` takes `attachments`).
 
 ## Timeline event contract
 
 `GET /journeys/{id}/events` is typed in `app/backend/openapi.json` as a `TimelineEvent` union
-discriminated by `type` (`acme.api.events`). Emitted events have strict payload schemas; events
-that #14-#16 will emit (`sales_opportunity`, `offer_sent`, ...) are provisional. When you add or
+discriminated by `type` (`acme.api.events`). Emitted events have strict payload schemas. When you add or
 change an event, update `acme.api.events`, regenerate the contract
 (`uv run python -m acme.api.openapi`), and update `EVENT_TYPES` in
 `app/frontend/src/console/types.ts`: the backend drift test and `contract.test.ts` fail otherwise.
@@ -184,7 +206,22 @@ after the charge and before `seat.assign`: if the journey changed meanwhile, the
 
 ## Containers
 
-`docker compose -f app/compose.yaml up --build` runs the full demo (fake LLM by default); see
-`docs/product/deploy.md` for the network/credential isolation, the Vertex (global, ADC) switch and the
-Cloud Run target (documented only). The services read `ACME_SIM_HOST`, `ACME_CUSTOMER_HOST` and
-`ACME_SALES_HOST` (default `127.0.0.1`; the containers set `0.0.0.0`).
+Run the full 4-service stack locally with Docker Compose:
+
+```bash
+export ACME_SIM_TOKENS="customer=$(openssl rand -hex 24),sales=$(openssl rand -hex 24),test-admin=$(openssl rand -hex 24)"
+export ACME_SALES_TOKEN=$(echo "$ACME_SIM_TOKENS" | sed -n 's/.*sales=\([^,]*\).*/\1/p')
+docker compose -f app/compose.yaml up --build
+```
+
+Then open:
+- Operator console: `http://localhost:8080/console`
+- Simulated WhatsApp: `http://localhost:8080/whatsapp`
+
+`LLM_MODE` defaults to `fake` (offline, $0, deterministic). For the live demo using Gemini on Vertex AI (`location=global`, ADC only), run:
+
+```bash
+LLM_MODE=vertex docker compose -f app/compose.yaml up --build
+```
+
+The services read `ACME_SIM_HOST`, `ACME_CUSTOMER_HOST` and `ACME_SALES_HOST` (default `127.0.0.1`; the containers set `0.0.0.0`). See `docs/product/deploy.md` for network/credential isolation, Vertex ADC configuration, and Cloud Run deployment documentation (target only, not deployed).

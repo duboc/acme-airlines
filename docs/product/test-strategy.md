@@ -11,7 +11,7 @@ Owner: `acme-qa`. Companion to the MVP plan ([mvp-plan](mvp-plan.md)) and the pr
 | 2. MCP contract | Each simulated system's tools, schemas and per-caller allowlist | `tests/mcp` | yes |
 | 3. Scenario | Brief scenarios 1–5 end to end through `ScenarioDriver` | `tests/scenario` | yes |
 | 4. Governance | Sales never reaches the passenger; no offer before resolution (architecture, structured offers, TOCTOU races) | `tests/governance` (#22 part 1, #29 part 2) | yes |
-| 5. UI E2E | Playwright narrative against the running stack (#23) | `app/frontend` | yes (M5) |
+| 5. UI E2E | Playwright narrative against the running stack (#23) | `app/frontend` | yes (`.github/workflows/e2e.yml`) |
 | 6. Live smoke | Real Gemini on Vertex AI `global` | `-m live` | **opt-in**, factory VM only |
 
 Test at the lowest layer that captures the behaviour. CI runs `pytest -m "not live"`; the
@@ -77,15 +77,14 @@ accept extra keys → 9 fail; drop the rule-6 origin check → 1 fails.
 `tests/governance/flow.py` drives the real Customer runtime, the real Sales radar (over the A2A
 wire), `FakeLlm` (spied) and a `FixedClock`; `Flow.interleave(server, tool, action)` injects a
 passenger/system action at an exact await point to reproduce time-of-check/time-of-use races.
-(`ScenarioDriver.passenger_tap` is not implemented yet, so this harness calls the runtime directly.)
+(Flow uses the Customer runtime directly to test fine-grained interleavings; `ScenarioDriver.passenger_tap` drives button taps in scenario tests.)
 
 | File | What it proves |
 |------|----------------|
 | `test_outcome.py` | No offer message before the *final* resolution is acknowledged; none on AC1240; exactly one offer after 5 ticks and a "No thanks"; Sales text never appears in the transcript or any LLM input |
 | `test_races.py` | (a) change during proposal, (b) REPLANNING between approval and send, (c) accept after REPLANNING, (d) duplicate accepts, (e) 2A taken / inventory 0 / failure after charge, (f) concurrent proposals |
 
-Open finding: #88 (accept can charge if REPLANNING lands between its check and the charge),
-kept as `xfail(strict=True)`.
+Finding #88 (accept re-checks guardrail after charge and before seat assignment; change requests take the journey lock) resolved and verified (0 xfail).
 
 **Mutation check** (local, not CI): disabling the send-time re-check in `_deliver` (#15) fails
 1 race test; disabling the accept-time re-check in `_convert` (#28) fails 2; replacing the
