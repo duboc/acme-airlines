@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - "app/**"
+      - "app/demo/**"
       - ".github/workflows/containers.yml"
   push:
     branches: [main]
     paths:
       - "app/**"
+      - "app/demo/**"
       - ".github/workflows/containers.yml"
 
 permissions:
@@ -114,9 +116,35 @@ jobs:
           print("sales: 403 on every non-inventory server, inventory allowed")
           PY
 
+      - name: Single-container demo image (build, non-root, smoke)
+        run: |
+          docker build -f app/demo/Dockerfile -t acme-demo:local app
+          user=$(docker image inspect -f '{{.Config.User}}' acme-demo:local)
+          echo "acme-demo:local -> user='$user'"
+          case "$user" in ""|root|0|0:*|root:*) echo "::error::demo image runs as root"; exit 1;; esac
+          docker run -d --name demo -p 127.0.0.1:8090:8080 acme-demo:local
+          for i in $(seq 1 90); do
+            curl -fsS http://127.0.0.1:8090/api/openapi.json > /dev/null && break; sleep 1
+          done
+          curl -fsS -X POST http://127.0.0.1:8090/api/scenario/trigger-cancellation \
+            -H 'content-type: application/json' \
+            -d '{"flight":"AC1234","reason":"unscheduled maintenance"}' > /tmp/demo-trigger.json
+          jid=$(jq -r '.journey_ids[0]' /tmp/demo-trigger.json)
+          test "$(curl -fsS "http://127.0.0.1:8090/api/journeys/$jid" | jq -r '.status')" = "RESOLVED"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8090/api/a2a)" = "404"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/mcp/pss/)" = "404"
+          curl -fsS http://127.0.0.1:8090/ | grep -qi '<html'
+          # tokens are generated at startup and must never reach the logs
+          ! docker logs demo 2>&1 | grep -E 'customer=[0-9a-f]{48}|sales=[0-9a-f]{48}'
+          docker rm -f demo
+
       - name: Logs on failure
         if: failure()
         run: $COMPOSE logs --no-color
+
+      - name: Demo logs on failure
+        if: failure()
+        run: docker logs demo 2>&1 || true
 
       - name: Tear down
         if: always()
