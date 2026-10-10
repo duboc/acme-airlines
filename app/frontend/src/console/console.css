@@ -152,3 +152,7 @@
     grid-column: 1 / -1;
   }
 }
+.console .hint {
+  color: var(--ink-soft);
+  margin: 0 0 1rem;
+}

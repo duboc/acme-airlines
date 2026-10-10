@@ -28,3 +28,13 @@ export function getJourney(id: string): Promise<JourneyDetail> {
 }
 
 export const eventsUrl = (id: string) => `${BASE}/journeys/${encodeURIComponent(id)}/events`;
+
+export interface JourneySummary {
+  journey_id: string;
+  passenger_id: string;
+  status: string;
+}
+
+export function listJourneys(): Promise<JourneySummary[]> {
+  return request('/journeys');
+}

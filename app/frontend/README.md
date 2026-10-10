@@ -39,3 +39,7 @@ SSE (`/api/journeys/{id}/events`); the card refetches `/api/journeys/{id}` on ea
 Guardrail decisions (`actor: guardrail`, `payload.approved`, `payload.reasons[]`) and
 `sales_suppressed` events render in distinct styles with their reasons. Reason codes are mapped
 to plain text in `labels.ts`; unknown codes are shown raw. Tests mock `fetch` and `EventSource`.
+
+On load, the console fetches `GET /journeys`, attaches to the first open journey and resubscribes
+to its SSE stream (which replays the timeline), so a refresh keeps context. Trigger is disabled
+while a journey is open; use Reset to start again.
