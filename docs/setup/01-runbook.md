@@ -270,6 +270,31 @@ infra/50-web-access.sh     # WEB_DOMAINS="google.com duboc.altostrat.com" DEFAUL
 Re-run after every `infra/10-deploy-hub.sh`, because deploy.sh rewrites
 `settings.yaml`. Risks and options are in [ADR 0011](../decisions/0011-full-role-catalog-and-domain-web-access.md).
 
+### 6.3 Custom IAP OAuth client (required for @google.com)
+
+The Google-managed OAuth client admits only `duboc.altostrat.com` users (see
+troubleshooting). One-time console steps (they can't be scripted), in project
+`acme-airlines-factory`:
+
+1. **Google Auth Platform → Branding:** app name `ACME Factory`, support email
+   and developer contact `admin@duboc.altostrat.com`.
+2. **Audience:** user type **External**, then **Publish app** (status **In
+   production**). With only the basic `openid`/`email`/`profile` scopes, no
+   verification is required. In *Testing* status, only listed test users get in.
+3. **Clients → Create client:** type **Web application**, name `acme-iap`.
+   Create it, then add this authorized redirect URI:
+   `https://iap.googleapis.com/v1/oauth/clientIds/<CLIENT_ID>:handleRedirect`.
+   Copy the client ID and secret.
+4. Apply the client to both IAP services. The secret goes over stdin and is
+   kept in Secret Manager:
+   ```bash
+   read -rs SECRET && printf '%s' "$SECRET" | \
+     IAP_CLIENT_ID=<CLIENT_ID> infra/55-iap-oauth-client.sh; unset SECRET
+   ```
+
+Check: `infra/verify.sh iap-oauth`. Re-apply after a hub re-deploy with
+`infra/55-iap-oauth-client.sh --reapply`.
+
 ### 6.2 Thirteen role templates
 
 ```bash
