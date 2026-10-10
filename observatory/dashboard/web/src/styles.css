@@ -249,3 +249,13 @@ details summary {
   margin: 0.75rem 0 0.25rem;
   font-size: 0.875rem;
 }
+.group {
+  padding-top: 0.5rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+.flag {
+  color: var(--bad);
+}

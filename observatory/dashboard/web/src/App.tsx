@@ -2,7 +2,9 @@ import { formatAsOf, Panel } from './Panel';
 import { BudgetBody } from './panels/BudgetPanel';
 import { ModelsPanel } from './panels/ModelsPanel';
 import { SpendBody } from './panels/SpendPanel';
-import { BILLING_EMPTY } from './format';
+import { BILLING_EMPTY, GITHUB_EMPTY } from './format';
+import { AgentsBody } from './panels/AgentsPanel';
+import { GithubBody } from './panels/GithubPanel';
 import { useApi } from './useApi';
 
 const MODE = import.meta.env.VITE_DATA_MODE as string | undefined;
@@ -34,8 +36,12 @@ export default function App() {
           {(d) => <SpendBody data={d} />}
         </Panel>
         <ModelsPanel />
-        <Panel id="agents" title="Agents" result={agents} />
-        <Panel id="github" title="GitHub" result={github} />
+        <Panel id="agents" title="Agents" result={agents} emptyMessage="No agent snapshots yet.">
+          {(d) => <AgentsBody data={d} />}
+        </Panel>
+        <Panel id="github" title="GitHub" result={github} emptyMessage={GITHUB_EMPTY}>
+          {(d) => <GithubBody data={d} />}
+        </Panel>
         <Panel id="budget" title="Budget" result={budget} emptyMessage={BILLING_EMPTY}>
           {(d) => <BudgetBody data={d} />}
         </Panel>

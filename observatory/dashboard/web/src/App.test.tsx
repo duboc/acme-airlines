@@ -17,6 +17,11 @@ const ok = {
   percent: 0,
   markers: [],
   guard_actions: [],
+  agents: [],
+  lead_last_activity: null,
+  limits_exceeded_count: 0,
+  snapshot: null,
+  merges_per_day: [],
 };
 
 function mockApi(overrides: Record<string, unknown> = {}) {
@@ -63,11 +68,11 @@ describe('App shell', () => {
   });
 
   it.each([
-    ['empty', 'No data yet', 'Collector has not run.'],
+    ['empty', 'No data yet', 'No agent snapshots yet.'],
     ['lagging', 'Delayed', 'Billing data is 3 days old.'],
     ['unavailable', 'Unavailable', 'Billing export is not enabled.'],
   ])('shows an explicit %s state', async (state, chip, message) => {
-    mockApi({ agents: { state, as_of: null, message } });
+    mockApi({ agents: { ...ok, state, as_of: null, message } });
     render(<App />);
     const panel = screen.getByRole('region', { name: 'Agents' });
     expect(await within(panel).findByText(chip)).toBeInTheDocument();
