@@ -13,8 +13,8 @@ changes as pull requests.
 | [`app/`](app/) | The acme-airlines application (to be built by the factory). |
 | [`infra/`](infra/) | Scripts and config that create and operate the factory. |
 | [`docs/setup/`](docs/setup/) | How the factory was built, step by step, and how to run it. |
-| [`docs/decisions/`](docs/decisions/) | Architecture decision records. |
-| [`docs/product/`](docs/product/) | Product brief (IRROPS use case) and MVP plan. |
+| [`docs/decisions/`](docs/decisions/) | Architecture decision records (app stack: [ADR 0100](docs/decisions/0100-app-stack.md)). |
+| [`docs/product/`](docs/product/) | Product brief (IRROPS use case) and [MVP plan](docs/product/mvp-plan.md). |
 | [`docs/factory/`](docs/factory/) | How to work with the agent team; smoke-test records. |
 | [`factory/team/`](factory/team/) | Source for the agent team's role templates. |
 | [`.scion/templates/`](.scion/templates/) | Generated Scion role templates (`acme-*`). |
