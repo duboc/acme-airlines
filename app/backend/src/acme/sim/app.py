@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from acme.sim import dcs, partners, servers
+from acme.sim import dcs, loyalty, partners, servers
 from acme.sim.world import SimWorld
 
 ServerFactory = Callable[[SimWorld], FastMCP]
@@ -24,6 +24,7 @@ DEFAULT_REGISTRY: dict[str, ServerFactory] = {
     "payments": partners.build_payments,
     "dcs": dcs.build_dcs,
     "worldtracer": dcs.build_worldtracer,
+    "loyalty": loyalty.build_loyalty,
 }
 
 
