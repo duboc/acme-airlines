@@ -1039,6 +1039,54 @@
         "title": "OfferActionPayload",
         "type": "object"
       },
+      "OfferProposedEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/OfferProposedPayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "offer_proposed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "OfferProposedEvent",
+        "type": "object"
+      },
+      "OfferProposedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "flight": {
+            "title": "Flight",
+            "type": "string"
+          },
+          "offer_id": {
+            "title": "Offer Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "offer_id",
+          "flight"
+        ],
+        "title": "OfferProposedPayload",
+        "type": "object"
+      },
       "OfferSentEvent": {
         "properties": {
           "actor": {
@@ -2164,6 +2212,7 @@
                         "needs_human": "#/components/schemas/NeedsHumanEvent",
                         "notification_sent": "#/components/schemas/NotificationSentEvent",
                         "nps_scheduled": "#/components/schemas/NpsScheduledEvent",
+                        "offer_proposed": "#/components/schemas/OfferProposedEvent",
                         "offer_sent": "#/components/schemas/OfferSentEvent",
                         "passenger_message": "#/components/schemas/PassengerMessageEvent",
                         "profile_loaded": "#/components/schemas/ProfileLoadedEvent",
@@ -2250,6 +2299,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/SalesSuppressedEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/OfferProposedEvent"
                       },
                       {
                         "$ref": "#/components/schemas/SalesOpportunityEvent"

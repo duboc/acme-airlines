@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from acme.api.events import TimelineEvent
 from acme.api.runtime import JourneyRecord, Runtime, WhatsAppMessage
 from acme.customer.adk_agent import CARD_PATH, customer_agent_card
+from acme.customer.skills import CustomerSkills
 from acme.domain.clock import Clock
 from acme.domain.journey import OfferRecord
 from acme.domain.models import PNR, Bag, HotelBooking, SeatAssignment, Segment, Voucher
@@ -102,6 +103,14 @@ def create_app(clock: Clock | None = None) -> FastAPI:
     async def agent_card(request: Request) -> dict:
         card = customer_agent_card(str(request.base_url))
         return card.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    @app.post("/a2a", include_in_schema=False)
+    async def a2a_endpoint(request: Request) -> dict:
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        return CustomerSkills(rt).handle_a2a(body if isinstance(body, dict) else {})
 
     @app.post("/scenario/reset", tags=["scenario"])
     async def reset() -> dict[str, str]:

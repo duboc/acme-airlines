@@ -84,11 +84,15 @@ async def test_base_agent_ingests_cancellation_via_runner(adk_runtime):
     assert "GOOGLE_GENAI_USE_VERTEXAI" not in os.environ  # no Vertex config in fake mode
 
 
-def test_agent_card_served_without_skills():
+def test_agent_card_served_with_sales_skills():
     client = TestClient(create_app())
     res = client.get("/.well-known/agent-card.json")
     assert res.status_code == 200
     card = res.json()
     assert card["name"] == "customer_agent"
-    assert card["skills"] == []
+    assert [x["id"] for x in card["skills"]] == [
+        "list_journeys",
+        "journey_status",
+        "propose_offer",
+    ]
     assert card["url"].startswith("http")

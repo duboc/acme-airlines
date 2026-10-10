@@ -100,6 +100,7 @@ SAMPLES = {
     "decline_offer": {"offer_id": "o1"},
     "guardrail_decision": {"approved": True, "reasons": [], "offer_id": "o1"},
     "sales_suppressed": {"journey_status": "RESOLVING", "reason": "disruption_not_resolved"},
+    "offer_proposed": {"offer_id": "o1", "flight": "AC1252"},
     "sales_opportunity": {"flight": "AC1252", "open_seats": 4},
     "offer_sent": {"offer_id": "o1"},
     "upgrade_confirmed": {"flight": "AC1252", "seat": "2A", "cabin": "premium_business",

@@ -160,6 +160,11 @@ class SalesSuppressedPayload(Payload):
     reason: str
 
 
+class OfferProposedPayload(Payload):
+    offer_id: str
+    flight: str
+
+
 class SalesOpportunityPayload(Provisional):
     flight: str
     open_seats: int
@@ -212,6 +217,7 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "decline_offer": OfferActionPayload,
     "guardrail_decision": GuardrailDecisionPayload,
     "sales_suppressed": SalesSuppressedPayload,
+    "offer_proposed": OfferProposedPayload,  # Sales proposal received (#14)
     # Provisional: emitted by #14-#16.
     "sales_opportunity": SalesOpportunityPayload,
     "offer_sent": OfferSentPayload,
