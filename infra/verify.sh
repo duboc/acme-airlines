@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verification harness for the acme-airlines factory.
 #
-# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|all>
+# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|all>
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
@@ -280,6 +280,30 @@ check_observatory() {
     || note=" (GitHub read token not yet added)"
   pass "observatory platform${note}"
 }
+check_irrops_demo() {
+  # IRROPS demo platform (infra/90-irrops-demo-platform.sh): IAP-protected, single instance, fake LLM.
+  local p="${PROJECT_ID}" r="${REGION}" svc=acme-irrops-demo missing="" d ann scaling
+  gcloud iam service-accounts describe "${svc}@${p}.iam.gserviceaccount.com" --project="${p}" >/dev/null 2>&1 || missing+=" sa:${svc}"
+  gcloud artifacts repositories describe irrops --location="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" ar:irrops"
+  d="$(gcloud run services describe "${svc}" --region="${r}" --project="${p}" --format=json 2>/dev/null)" || missing+=" run:${svc}"
+  gh variable list -R duboc/acme-airlines 2>/dev/null | grep -q '^IRROPS_DEMO_SERVICE' || missing+=" gh-var:IRROPS_DEMO_SERVICE"
+  [[ -z "${missing}" ]] || { fail irrops-demo "missing:${missing}"; return 1; }
+  ann="$(jq -r '.metadata.annotations["run.googleapis.com/iap-enabled"] // "false"' <<<"${d}")"
+  scaling="$(jq -r '.spec.template.metadata.annotations["autoscaling.knative.dev/maxScale"] // ""' <<<"${d}")"
+  [[ "${ann}" == "true" ]] || { fail irrops-demo "IAP is not enabled on ${svc}"; return 1; }
+  [[ "${scaling}" == "1" ]] || { fail irrops-demo "max instances is '${scaling}', want 1 (in-memory demo state)"; return 1; }
+  # Never public: allUsers/allAuthenticatedUsers must not hold run.invoker.
+  if gcloud run services get-iam-policy "${svc}" --region="${r}" --project="${p}" --format=json 2>/dev/null \
+       | jq -e '[.bindings[]?.members[]?] | any(. == "allUsers" or . == "allAuthenticatedUsers")' >/dev/null; then
+    fail irrops-demo "${svc} is publicly invokable"; return 1
+  fi
+  # The runtime SA must hold no project role.
+  if gcloud projects get-iam-policy "${p}" --format=json 2>/dev/null \
+       | jq -e --arg m "serviceAccount:${svc}@${p}.iam.gserviceaccount.com" '[.bindings[]? | select(.members | index($m))] | length > 0' >/dev/null; then
+    fail irrops-demo "${svc} SA holds a project role"; return 1
+  fi
+  pass "irrops-demo ($(jq -r '.status.url' <<<"${d}"))"
+}
 check_iap_oauth() {
   # External domains (google.com) need a CUSTOM OAuth client on IAP; the
   # Google-managed client only admits users inside the project's organization.
@@ -315,12 +339,13 @@ run() {
     loop)         check_loop ;;
     budget)       check_budget ;;
     observatory)  check_observatory ;;
+    irrops-demo)  check_irrops_demo ;;
     iap-oauth)    check_iap_oauth ;;
     all)
       local rc=0
       for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth; do run "$c" || rc=1; done
       return "$rc" ;;
-    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|all>" >&2; return 2 ;;
+    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|all>" >&2; return 2 ;;
   esac
 }
 
