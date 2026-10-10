@@ -70,14 +70,24 @@ class PartnerState:
         return rec
 
     # --- whatsapp ---
-    def _log(self, passenger_id: str, direction: str, body: str, buttons: list[str]) -> dict:
+    def _log(
+        self,
+        passenger_id: str,
+        direction: str,
+        body: str,
+        buttons: list[str],
+        attachments: list[str] | None = None,
+    ) -> dict:
         msg = {"message_id": _ref("WM"), "passenger_id": passenger_id, "direction": direction,
-               "body": body, "buttons": buttons, "at": self._now()}  # fmt: skip
+               "body": body, "buttons": buttons, "attachments": list(attachments or []),
+               "at": self._now()}  # fmt: skip
         self.transcripts.setdefault(passenger_id, []).append(msg)
         return msg
 
-    def send(self, to: str, body: str, buttons: list[str] | None) -> dict:
-        return self._log(to, "outbound", body, list(buttons or []))
+    def send(
+        self, to: str, body: str, buttons: list[str] | None, attachments: list[str] | None = None
+    ) -> dict:
+        return self._log(to, "outbound", body, list(buttons or []), attachments)
 
     def add_inbound_listener(self, listener: Callable[[dict[str, Any]], None]) -> None:
         self._listeners.append(listener)
@@ -147,9 +157,15 @@ def build_whatsapp(sim: SimWorld) -> FastMCP:
     p = sim.partners
 
     @mcp.tool(name="message.send")
-    def message_send(to: str, body: str, buttons: list[str] | None = None) -> dict[str, Any]:
-        """Send a WhatsApp message to a passenger, optionally with quick-reply buttons."""
-        return p.send(to, body, buttons)
+    def message_send(
+        to: str,
+        body: str,
+        buttons: list[str] | None = None,
+        attachments: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Send a WhatsApp message, optionally with quick-reply buttons and attachment kinds
+        (e.g. `meal_voucher`, `hotel_voucher`, `boarding_pass`)."""
+        return p.send(to, body, buttons, attachments)
 
     @mcp.tool(name="message.transcript")
     def message_transcript(to: str) -> dict[str, Any]:

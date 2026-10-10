@@ -9,7 +9,6 @@ from .flows import AC1252_DEP, NEW_CONSTRAINT, NOTIFIED_AT, notified, replanned
 from .marks import needs
 
 
-@needs(13)
 def test_whatsapp_message_is_sent_at_2209(driver: ScenarioDriver):
     notified(driver)
     first = driver.transcript()[0]
@@ -17,7 +16,6 @@ def test_whatsapp_message_is_sent_at_2209(driver: ScenarioDriver):
     assert first.timestamp == NOTIFIED_AT
 
 
-@needs(13)
 def test_message_states_cancellation_and_the_completed_resolution(driver: ScenarioDriver):
     notified(driver)
     text = driver.transcript()[0].text
@@ -25,7 +23,6 @@ def test_message_states_cancellation_and_the_completed_resolution(driver: Scenar
         assert fact in text, f"{fact} missing from notification"
 
 
-@needs(13)
 def test_message_attaches_the_dinner_voucher_and_has_no_offer(driver: ScenarioDriver):
     notified(driver)
     first = driver.transcript()[0]

@@ -122,6 +122,7 @@ def create_app(clock: Clock | None = None) -> FastAPI:
 
     @app.get("/journeys/{journey_id}", tags=["journeys"])
     async def journey_detail(journey_id: str) -> JourneyDetail:
+        await rt.tick()
         rec = get_journey(journey_id)
         pnr: PNR = rt.world.pnrs[rec.pnr_locator]
         offers = [o for o in rec.state.offers if o.status != "invalidated"]
@@ -167,17 +168,13 @@ def create_app(clock: Clock | None = None) -> FastAPI:
     @app.get("/whatsapp/{passenger_id}/messages", tags=["whatsapp"])
     async def whatsapp_messages(passenger_id: str) -> list[WhatsAppMessage]:
         require_passenger(passenger_id)
+        await rt.tick()
         return rt.messages.get(passenger_id, [])
 
     @app.post("/whatsapp/{passenger_id}/messages", status_code=201, tags=["whatsapp"])
     async def whatsapp_reply(passenger_id: str, body: PassengerReply) -> WhatsAppMessage:
         require_passenger(passenger_id)
-        msg = rt.say(passenger_id, "inbound", body.text)
-        if rec := rt.journey_for_passenger(passenger_id):
-            rec.state.append_event("passenger", "passenger_message", {"text": body.text})
-        # STUB: replaced by the Customer/Change agents (#10, #16).
-        rt.say(passenger_id, "outbound", "Thanks, we received your message.")
-        return msg
+        return await rt.handle_inbound(passenger_id, body.text)
 
     @app.post("/whatsapp/{passenger_id}/actions", tags=["whatsapp"])
     async def whatsapp_action(passenger_id: str, body: PassengerAction) -> ActionResult:

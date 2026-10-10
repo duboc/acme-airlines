@@ -179,3 +179,24 @@ async def test_journey_detail_reflects_rebuilt_flight_seat_and_bag(client):
     assert [s["flight_number"] for s in d["itinerary"]] == ["AC1240", "AC0800"]
     assert (d["seat"]["flight_number"], d["seat"]["seat"]) == ("AC1240", "14A")
     assert d["status"] == "RESOLVED"
+
+
+async def test_notification_and_acknowledgement_through_the_api():
+    from datetime import timedelta
+
+    from acme.domain.clock import FixedClock
+    from acme.domain.fixtures import DISRUPTION_DETECTED_AT
+
+    clock = FixedClock(DISRUPTION_DETECTED_AT)
+    transport = httpx.ASGITransport(app=create_app(clock))
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        (jid,) = await trigger(c)
+        assert (await c.get(f"/whatsapp/{PID}/messages")).json() == []  # 22:03, quiet
+        clock.advance(timedelta(minutes=6))  # 22:09
+        msgs = (await c.get(f"/whatsapp/{PID}/messages")).json()
+        assert len(msgs) == 1 and "AC1240" in msgs[0]["text"]
+        assert "meal_voucher" in msgs[0]["attachments"]
+        assert len((await c.get(f"/whatsapp/{PID}/messages")).json()) == 1  # exactly one
+        r = await c.post(f"/whatsapp/{PID}/messages", json={"text": "Perfect, thanks!"})
+        assert r.status_code == 201
+        assert (await c.get(f"/journeys/{jid}")).json()["resolution_acknowledged"] is True
