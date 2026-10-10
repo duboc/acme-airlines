@@ -1,6 +1,6 @@
 # ADR 0100 — Application stack for the IRROPS MVP
 
-- **Status:** Proposed (needs product owner approval in the planning PR)
+- **Status:** Accepted (2026-10-10)
 - **Date:** 2026-10-09
 - **Deciders:** acme-lead (proposer), product owner `admin@duboc.altostrat.com` (approver)
 - **Context doc:** [`docs/product/irrops-use-case.md`](../product/irrops-use-case.md)
@@ -43,15 +43,15 @@ Constraints that shape the choice:
 |---------|--------|
 | Backend language | **Python 3.12**, managed with **uv**. Lint/format with **ruff**, tests with **pytest** (+ `pytest-asyncio`). |
 | Agent framework | **Google Agent Development Kit (ADK, Python)**. Workflow agents and custom `BaseAgent`s for the deterministic orchestration; `LlmAgent` only where language is needed. |
-| Model | **Gemini on Vertex AI, `location=global`**, through `google-genai`/ADK with `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, `GOOGLE_CLOUD_PROJECT=acme-airlines-factory`, `GOOGLE_CLOUD_LOCATION=global`, ADC. The model ID is configuration (default: a GA Gemini Flash model that the live smoke test confirms on `global`). |
+| Model | **Gemini on Vertex AI, `location=global`**, through `google-genai`/ADK with `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, `GOOGLE_CLOUD_PROJECT=acme-airlines-factory`, `GOOGLE_CLOUD_LOCATION=global`, ADC. The model ID is configuration (default: a GA Gemini Flash model that the live smoke test confirms on `global`). Controlled by `LLM_MODE`: `fake` (the default for dev, tests and CI, $0) or `vertex` (live demo only, global endpoint, ADC). |
 | Inter-agent protocol | **A2A**. The **Sales agent is a separate A2A service**, and its only outbound channel is an A2A client to three PII-free Customer agent skills: `list_journeys`, `journey_status` and `propose_offer` (structured `Offer` only). The Customer agent's specialists (IRROPS, Seat, Rights, Concierge, Change) are ADK sub-agents inside the Customer runtime in the MVP; each exposes a typed interface so it can be moved behind A2A later. |
-| Enterprise integrations | **MCP tool servers** built with the official Python `mcp` SDK (FastMCP), over streamable HTTP. There is one MCP server per simulated system (`occ`, `pss`, `dcs`, `crm`, `worldtracer`, `concierge`, `whatsapp`, `payments`, plus a PII-free `inventory` server for Sales), all mounted in one `acme-sim` process and sharing one seeded world state. `acme-sim` enforces **per-caller bearer tokens with a server allowlist** (Sales → `inventory` only). |
+| Enterprise integrations | **MCP tool servers** built with the official Python `mcp` SDK (FastMCP), over streamable HTTP. Every external system is mocked (`occ`, `pss`, `dcs`, `crm`, loyalty/FFP #32, `worldtracer`, `concierge`, `whatsapp`, `payments`, plus a PII-free `inventory` server for Sales), all mounted in one `acme-sim` process and sharing one seeded world state. `acme-sim` enforces **per-caller bearer tokens with a server allowlist** (Sales → `inventory` only). |
 | Event stream | The OCC simulator exposes `flight_ops.subscribe` / `flight_ops.publish_cancellation` as MCP tools, with an in-process async event bus behind them. Pub/Sub comes after the MVP. |
-| Policy code | Plain, pure Python modules with full unit tests: `margin_opt`, `guardrail_offer`, `duty_of_care` (EU261-style rules), `connection_check` (minimum connection time). No LLM is involved in any policy decision. |
+| Policy code | Plain, pure Python modules with full unit tests: `margin_opt`, `guardrail_offer`, `duty_of_care` (ANAC Resolution 400 primary regime, rule table per #31), `connection_check` (minimum connection time). No LLM is involved in any policy decision. |
 | Journey memory ("Memory Bank") | A `JourneyStore` port with an in-memory/SQLite adapter for the MVP. Vertex AI Agent Engine Memory Bank is a later adapter behind the same port. |
 | Runtime API | **FastAPI**: REST for commands, plus **Server-Sent Events** for the live agent timeline. |
 | Frontend | **TypeScript + React + Vite**. Lint with **ESLint**, unit tests with **Vitest** + Testing Library, end-to-end tests with **Playwright**. Two views: an **operator console** (timeline, journey state, guardrail decisions) and a **simulated WhatsApp passenger chat**. |
-| Packaging / deploy target | One container image per service (`customer-runtime`, `sales-agent`, `acme-sim`, `frontend`). **docker compose** for local runs, and **Cloud Run** as the deployment target (one service per container; per-customer sandboxing comes after the MVP). |
+| Packaging / deploy target | One container image per service (`customer-runtime`, `sales-agent`, `acme-sim`, `frontend`). **docker compose** for local runs; **Cloud Run** is documented only in the MVP (#24; no deployment and no deploy identity; per-customer sandboxing comes after the MVP). |
 | CI | **GitHub Actions** on every PR: ruff + pytest for the backend, ESLint + Vitest for the frontend, and Playwright end-to-end once the UI exists. Live-Vertex tests are marked `live` and skipped in CI. |
 
 ### Repository layout
@@ -200,20 +200,13 @@ Governance tests attack each layer separately, including the time-of-check/time-
   - per-customer sandboxes on Cloud Run
   - real WhatsApp Business API
 
-## Open questions for the product owner
+## Decisions
 
-1. **Cloud Run deployment in the MVP.** Should the MVP actually deploy to Cloud Run
-   in `acme-airlines-factory`? If yes, the factory needs a deploy identity with
-   `run.admin` + `iam.serviceAccountUser` + Artifact Registry write. If not, the
-   MVP ends at "containerised + documented deploy", which is our default.
-2. **"Customer positive" = explicit acknowledgement.** The brief says the offer
-   comes "with the issue resolved and the customer positive". We implement this
-   deterministically: the passenger has acknowledged the final resolution (for
-   example "Perfect, thanks!", parsed as `acknowledge`). We don't use LLM
-   sentiment scoring. Do you agree?
-3. **Simulated block times.** Realistic GRU→SCL flights take about 4 h, and with
-   those times AC1252 (11:40) could not make a 14:00 Santiago connection. The
-   fixture therefore uses fictional short block times (AC1240 08:15→10:15,
-   AC1252 11:40→12:20, MCT 90 min, onward AC0800 14:00), documented as simulated.
-4. **Default Gemini model.** The plan defaults to a GA Flash model on `global`.
-   Do you prefer Pro for message quality, at higher latency and cost?
+1. **Cloud Run:** document only in the MVP (#24). No deployment and no deploy identity.
+2. **"Customer positive":** an explicit, deterministic passenger acknowledgement, not LLM sentiment.
+3. **Fictional short block times** in the fixture (as pinned in #4), labelled as simulated.
+4. **Gemini model:** a Flash model on the global endpoint by default; the model ID is configuration.
+5. **`LLM_MODE`:** `fake` (the default for dev, tests and CI, $0) or `vertex` (live demo only, global endpoint, ADC).
+6. **Every external system is mocked.** List them: OCC event stream, PSS, DCS, CRM, Loyalty/FFP (#32), WorldTracer, WhatsApp Business, Payments, Memory Bank (`JourneyStore`), hotel/transfer booking, boarding-pass/voucher issuing.
+7. **Merge gate:** the latest review starting `VERDICT: APPROVE` + green CI; the lead merges autonomously.
+8. **Duty-of-care source:** ANAC Resolution 400 is the primary regime (GRU departure); rule table per #31.
