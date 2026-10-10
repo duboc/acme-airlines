@@ -62,7 +62,8 @@ the flight's open seats. Holds live in `acme.sim.dcs.DcsState` (`dcs_state(sim)`
 |---|---|---|
 | `seatmap.get` | `flight` | `{flight, seats: {cabin: [open seats, holds excluded]}, held: {seat: pnr}}`. |
 | `seat.hold` | `flight`, `seat`, `pnr` | `{flight, seat, pnr, status: "held"}`. Re-holding by the same PNR is idempotent; a hold by another PNR, or of a seat that is not open, is a tool error. |
-| `seat.assign` | `flight`, `seat`, `pnr`, `cabin` | `{flight, seat, pnr, cabin, status: "assigned"}`. The seat must be open in that cabin and free or held by the same PNR. Clears the hold; replaces the PNR's seat on that flight. |
+| `seat.assign` | `flight`, `seat`, `pnr`, `cabin` | `{flight, seat, pnr, cabin, status: "assigned"}`. The seat must be open in that cabin and free or held by the same PNR. Clears the hold; replaces the PNR's seat on that flight. A replaced seat stays blocked until `seat.release`. |
+| `seat.release` | `flight`, `seat`, `pnr` | `{flight, seat, pnr, status: "released"}`. Frees a seat this PNR holds or was assigned (including one replaced by a later `seat.assign`) back to the cabin's open seats. Idempotent (an already-free seat is fine); releasing another booking's hold/seat, or an unknown seat, is a tool error. |
 | `boarding_pass.issue` | `pnr`, `flight` | `{boarding_pass_id, pnr, passenger_name, flight, origin, destination, departure, seat, cabin}`. The PNR must have a segment on `flight` (rebook first) and an assigned seat there. |
 
 ## worldtracer — `/mcp/worldtracer/` (baggage)
