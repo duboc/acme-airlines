@@ -60,22 +60,12 @@ jobs:
           done
 
       - name: Secrets scan (trivy, fail on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: image
-          image-ref: acme-backend:local
-          scanners: secret
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-
-      - name: Secrets scan frontend image (trivy)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: image
-          image-ref: acme-frontend:local
-          scanners: secret
-          severity: HIGH,CRITICAL
-          exit-code: "1"
+        run: |
+          for img in acme-backend:local acme-frontend:local; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:0.57.1 image --scanners secret --severity HIGH,CRITICAL \
+              --exit-code 1 --no-progress "$img"
+          done
 
       - name: Bring the stack up (fake LLM) and wait for health
         run: |
