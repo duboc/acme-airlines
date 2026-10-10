@@ -117,7 +117,6 @@ async def test_a_failure_after_the_charge_leaves_no_net_charge_and_seat_14a(flow
     assert "payment was reversed" in flow.outbound()[-1]["body"]
 
 
-@pytest.mark.xfail(strict=True, reason="bug #88: accept checks once, then holds/charges unguarded")
 async def test_replanning_between_the_accept_check_and_the_charge_charges_nothing(flow):
     await flow.sent_offer_ready()
     flow.interleave("payments", "charge", flow.to_replanning)

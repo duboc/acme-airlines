@@ -176,3 +176,8 @@ segment), records `analytics_recorded` (`offer_accepted` with the net margin, or
 the journey to `CLOSED`, appends `memory_committed` and saves the journey to the `JourneyStore`
 (`acme.memory`; SQLite, `ACME_JOURNEY_DB` for a file path, in-memory by default). A saved journey reloads
 with an identical timeline. `GET /journeys/{id}` includes `verification`; the events stream over SSE.
+
+Race safety (#88): change requests (`handle_inbound`, which can move RESOLVED -> REPLANNING) take the
+same per-journey lock as offer delivery and acceptance, and `accept_offer` re-evaluates the guardrail
+after the charge and before `seat.assign`: if the journey changed meanwhile, the charge is voided
+(`charge_voided`, reason `journey_changed`), the seat is untouched and the passenger is told why.
