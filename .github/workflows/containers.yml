@@ -53,7 +53,9 @@ jobs:
             id=$(docker create "$img")
             docker export "$id" | tar -tf - > /tmp/files.txt
             docker rm "$id" > /dev/null
-            if grep -E '(^|/)\.env($|\.)|\.pem$|\.key$|credentials\.json$' /tmp/files.txt; then
+            # public CA bundles (system and certifi) are expected; anything else is a finding
+            if grep -E '(^|/)\.env($|\.)|\.pem$|\.key$|id_rsa|-sa-key\.json$|credentials\.json$' /tmp/files.txt \
+               | grep -Ev '^(etc/ssl/|usr/lib/ssl/|usr/share/ca-certificates/)|/certifi/cacert\.pem$'; then
               echo "::error::$img contains env/key files"; exit 1
             fi
             echo "$img: clean ($(wc -l < /tmp/files.txt) files)"
