@@ -37,7 +37,7 @@ reviewer runs on Opus for Sonnet-authored PRs.
 
 ## 3. Design
 
-- **Templates live in this repo** under `.scion/templates/acme-<role>/`, as project
+- **Templates live in this repo** under `factory/templates/acme-<role>/`, as project
   templates. Each has `scion-agent.yaml`, `system-prompt.md` and `agents.md`.
   They reuse the upstream `scion-frontiers/agent-team` skills by URI
   (`software-engineering-process`, `code-review`, `artifact-durability`,
@@ -97,7 +97,7 @@ reviewer runs on Opus for Sonnet-authored PRs.
    open a smoke PR. Expect `smoke` → PASS. Confirm the Claude env has
    `CLOUD_ML_REGION=global` and the haiku override.
 4. **Team templates:**
-   - write `.scion/templates/acme-*` and merge them to `main`
+   - write `factory/templates/acme-*` and merge them to `main`
    - check: `scion templates list --project acme-airlines` shows all 5
    - add `verify.sh team` (templates resolvable)
 5. **Launch the lead** with a kickoff prompt: read the brief, open a planning PR

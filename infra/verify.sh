@@ -205,18 +205,20 @@ check_topology() {
 check_cost() {
   # Committed templates follow the model mapping and carry caps.
   local m c
-  m="$(models_ok "${REPO_ROOT}/.scion/templates")" || { fail cost "${m}"; return 1; }
-  c="$(caps_ok "${REPO_ROOT}/.scion/templates")" || { fail cost "${c}"; return 1; }
+  m="$(models_ok "${REPO_ROOT}/factory/templates")" || { fail cost "${m}"; return 1; }
+  c="$(caps_ok "${REPO_ROOT}/factory/templates")" || { fail cost "${c}"; return 1; }
   pass "cost (${m}; ${c})"
 }
 check_skills() {
-  # The frontend template stored BY THE HUB (local template storage on the VM)
-  # references the pinned impeccable skill.
-  if vm_ssh "sudo grep -rqs 'pbakaus/impeccable/.claude/skills/impeccable@d631a88' /home/scion/.scion --include=scion-agent.yaml" >/dev/null 2>&1; then
-    pass skills
-  else
-    fail skills "impeccable skill not found in a hub-stored template"
-  fi
+  # The hub-stored acme-frontend template carries a template-mounted impeccable
+  # skill (skills/impeccable/SKILL.md with "name: impeccable"), and no
+  # unresolvable gh:// nested-path URI. (A URI string alone is not proof: the
+  # hub rejected gh://owner/repo/.claude/skills/impeccable at provision time.)
+  local out
+  out="$(vm_ssh "sudo grep -rls '^name: impeccable' /home/scion/.scion --include=SKILL.md | grep '/acme-frontend/' | head -1; \
+                 sudo grep -rls 'gh://pbakaus/impeccable/' /home/scion/.scion --include=scion-agent.yaml | grep '/acme-frontend/' | head -1 | sed 's/^/BADURI:/'" 2>/dev/null)"
+  if grep -q '^BADURI:' <<<"${out}"; then fail skills "hub acme-frontend still references a nested gh:// impeccable URI"; return 1; fi
+  if grep -q 'SKILL.md' <<<"${out}"; then pass skills; else fail skills "impeccable SKILL.md not mounted in hub-stored acme-frontend template"; fi
 }
 check_loop() {
   # The recurring TICK schedule exists, targets acme-lead, is active, and fires at most every 30 min.
@@ -241,9 +243,17 @@ check_budget() {
     || { fail budget "no 100% threshold"; return 1; }
   jq -e '.[0].notificationsRule.pubsubTopic | endswith("/topics/acme-budget-alerts")' <<<"${b}" >/dev/null \
     || { fail budget "budget not wired to topic acme-budget-alerts"; return 1; }
-  gcloud run services describe acme-budget-guard --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1 \
-    || { fail budget "Cloud Run acme-budget-guard missing"; return 1; }
-  pass "budget ($(jq -r '.[0].amount.specifiedAmount.units' <<<"${b}") USD, 50/90/100%, auto-stop guard)"
+  local svc
+  svc="$(gcloud run services describe acme-budget-guard --region="${REGION}" --project="${PROJECT_ID}" --format=json 2>/dev/null)"
+  [[ -n "${svc}" ]] || { fail budget "Cloud Run acme-budget-guard missing"; return 1; }
+  jq -e '[.spec.template.spec.containers[0].env[]? | select(.name=="SCION_HUB_TOKEN") | .valueFrom.secretKeyRef.name] | index("acme-guard-hub-token")' <<<"${svc}" >/dev/null \
+    || { fail budget "guard has no hub token secret (old VM-stopping guard?)"; return 1; }
+  # Product-owner rule: never stop the VM -> the guard SA must hold no role on the instance.
+  if gcloud compute instances get-iam-policy "${VM_NAME}" --zone="$(resolve_zone)" --project="${PROJECT_ID}" --format=json 2>/dev/null \
+       | jq -e '[.bindings[]?.members[]?] | index("serviceAccount:acme-budget-guard@'"${PROJECT_ID}"'.iam.gserviceaccount.com")' >/dev/null; then
+    fail budget "guard SA still has a role on the VM"; return 1
+  fi
+  pass "budget ($(jq -r '.[0].amount.specifiedAmount.units' <<<"${b}") USD, 50/90/100%, guard suspends agents, never stops VM)"
 }
 check_lead() {
   # The lead agent's container is running on the VM.

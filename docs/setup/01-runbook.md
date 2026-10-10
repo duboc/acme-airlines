@@ -223,9 +223,9 @@ Verify: `infra/verify.sh smoke` → `PASS smoke`.
 ### 5.4 Team templates
 
 ```bash
-infra/40-build-team-templates.sh     # factory/team/* + upstream agent-team@3650f1b → .scion/templates/acme-*
+infra/40-build-team-templates.sh     # factory/team/* + upstream agent-team@3650f1b → factory/templates/acme-*
 # upload to the hub at global scope (admin access enabled):
-gcloud compute scp --recurse .scion/templates/acme-* scion-hub-acme:~/.scion/templates/ \
+gcloud compute scp --recurse factory/templates/acme-* scion-hub-acme:~/factory/templates/ \
   --zone=us-central1-a --project=acme-airlines-factory --tunnel-through-iap
 for t in acme-lead acme-backend acme-frontend acme-qa acme-reviewer; do
   bash -c "source infra/lib.sh; hub_cli --global templates push $t"
@@ -273,12 +273,65 @@ Re-run after every `infra/10-deploy-hub.sh`, because deploy.sh rewrites
 ### 6.2 Thirteen role templates
 
 ```bash
-infra/40-build-team-templates.sh       # 13 roles → .scion/templates/acme-*
+infra/40-build-team-templates.sh       # 13 roles → factory/templates/acme-*
 infra/30-hub-admin-access.sh enable
-gcloud compute scp --recurse .scion/templates/acme-* scion-hub-acme:~/.scion/templates/ \
+gcloud compute scp --recurse factory/templates/acme-* scion-hub-acme:~/factory/templates/ \
   --zone=us-central1-a --project=acme-airlines-factory --tunnel-through-iap
-for d in .scion/templates/acme-*; do bash -c "source infra/lib.sh; hub_cli --global templates push $(basename "$d")"; done
+for d in factory/templates/acme-*; do bash -c "source infra/lib.sh; hub_cli --global templates push $(basename "$d")"; done
 infra/30-hub-admin-access.sh disable
 ```
 
 Verify: `infra/verify.sh team` → `PASS team` (all 13 registered).
+
+## 7. Autonomous loop, cost controls, budget guard (addendum B)
+
+Spec: [addendum B](../superpowers/specs/2026-10-09-addendum-b-autonomous-loop.md).
+
+### 7.1 Templates: models, caps, impeccable
+`infra/40-build-team-templates.sh`:
+- Opus: lead, eng-manager, architect
+- Sonnet: backend, frontend, qa
+- Gemini Flash (antigravity `medium`): everything else
+- `max_duration`/`max_turns` caps on every non-lead role
+- `acme-frontend` gets
+  `gh://pbakaus/impeccable/.claude/skills/impeccable@d631a8827f99414d2b6daba4ef08b7f8701751d7`
+
+Checks:
+- `infra/verify.sh cost`: committed templates match the mapping and have caps.
+- `infra/verify.sh skills`: impeccable is in the hub-stored template.
+
+### 7.2 Budget guard
+```bash
+infra/70-budget-guard.sh      # BUDGET_USD=1000 by default
+```
+What it creates:
+- service accounts `acme-budget-guard` (no Compute roles) and `acme-builder`
+  (Cloud Build)
+- a project-scoped hub user access token (`agent:list`, `agent:lifecycle`), piped
+  straight into Secret Manager `acme-guard-hub-token`
+- Cloud Run `acme-budget-guard` (Python plus the pinned, checksum-verified
+  scion CLI; Direct VPC egress to the hub; tests in `infra/budget-guard/`). At
+  100% actual spend it suspends all agents. **It never stops the VM.**
+- Pub/Sub topic `acme-budget-alerts` with an authenticated push subscription
+- the budget, with 50/90/100% thresholds
+
+Two problems hit here are in troubleshooting.
+
+Check: `infra/verify.sh budget`. Plus the end-to-end wiring test in
+[operations](02-operations.md#budget-guardrail-infra70-budget-guardsh).
+
+### 7.3 Loop and rollout
+In one admin-access window:
+1. Push the 13 templates.
+2. Create the schedule (or run `infra/60-factory.sh tick-install`):
+   ```bash
+   hub_cli --project duboc-acme-airlines schedule create-recurring --name acme-factory-tick \
+     --cron "*/30 * * * *" --type message --agent acme-lead --message "TICK: …"
+   ```
+3. Message `acme-lead` with the new operating model. Its first pass: merge PR
+   #25, align the backlog to the full brief, recreate the standing roster
+   under the new models, create the pinned **🏭 Factory status** issue, and
+   start the loop.
+
+Check: `infra/verify.sh loop` (schedule active, targets acme-lead, at most one
+tick per 30 minutes; `cron_interval_ok` is unit-tested).

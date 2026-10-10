@@ -1,0 +1,2 @@
+Vendored from https://github.com/pbakaus/impeccable/tree/d631a8827f99414d2b6daba4ef08b7f8701751d7/.claude/skills/impeccable (Apache-2.0)
+by infra/40-build-team-templates.sh. Do not edit.

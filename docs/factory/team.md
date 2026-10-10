@@ -1,26 +1,26 @@
 # The factory crew — how to work with the agent team
 
 The team is thirteen Scion role templates, generated from `factory/team/` by
-`infra/40-build-team-templates.sh` into `.scion/templates/acme-*` and pushed to
+`infra/40-build-team-templates.sh` into `factory/templates/acme-*` and pushed to
 the hub at **global** scope. Design: [addendum A](../superpowers/specs/2026-10-09-addendum-a-agent-team.md).
 
-| Role | Template | Harness / model | Hub agent role |
-|------|----------|-----------------|----------------|
-| Lead / tech lead | `acme-lead` | claude / Opus 5.5 (`large`) | `full` (spawns and manages agents, merges) |
-| Engineering manager | `acme-eng-manager` | claude / Opus 5.5 | `full` (one workstream, within the lead's worker budget; never merges) |
-| Architect | `acme-architect` | claude / Opus 5.5 | `baseline` |
-| Backend developer | `acme-backend` | claude / Sonnet 5.5 (`medium`) | `baseline` |
-| Frontend developer | `acme-frontend` | antigravity / Gemini Pro (`large`) | `baseline` |
-| QA / test engineer (automated) | `acme-qa` | antigravity / Gemini Pro | `baseline` |
-| QA tester (exploratory, Playwright) | `acme-qa-tester` | antigravity / Gemini Pro | `baseline` |
-| Code reviewer | `acme-reviewer` | claude / Opus 5.5 | `baseline` |
-| Security auditor | `acme-security-auditor` | claude / Opus 5.5 | `baseline` |
-| Investigator | `acme-investigator` | antigravity / Gemini Pro | `baseline` |
-| Researcher | `acme-researcher` | antigravity / Gemini Pro | `baseline` |
-| Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash (`medium`) | `baseline` |
-| Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `baseline` |
+| Role | Template | Harness / model | Hub agent role | Cap |
+|------|----------|-----------------|----------------|-----|
+| Lead / tech lead | `acme-lead` | claude / **Opus 5.5** | `full` | — |
+| Engineering manager | `acme-eng-manager` | claude / **Opus 5.5** | `full` | 4h |
+| Architect | `acme-architect` | claude / **Opus 5.5** | `baseline` | 1h |
+| Backend developer | `acme-backend` | claude / **Sonnet 5.5** | `baseline` | 2h |
+| Frontend developer (+ **impeccable**) | `acme-frontend` | claude / **Sonnet 5.5** | `baseline` | 2h |
+| QA / test engineer | `acme-qa` | claude / **Sonnet 5.5** | `baseline` | 2h |
+| Code reviewer | `acme-reviewer` | antigravity / **Gemini Flash** | `baseline` | 45m |
+| Security auditor | `acme-security-auditor` | antigravity / **Gemini Flash** | `baseline` | 45m |
+| QA tester (Playwright) | `acme-qa-tester` | antigravity / **Gemini Flash** | `baseline` | 45m |
+| Investigator | `acme-investigator` | antigravity / **Gemini Flash** | `baseline` | 30m |
+| Researcher | `acme-researcher` | antigravity / **Gemini Flash** | `baseline` | 30m |
+| Documentation writer | `acme-doc-writer` | antigravity / **Gemini Flash** | `baseline` | 30m |
+| Release engineer | `acme-release-notes` | antigravity / **Gemini Flash** | `baseline` | 30m |
 
-The lead runs at most **6 agents** at once besides itself, counting
+The lead runs at most **4 agents** at once besides itself, counting
 eng-managers and their workers. When to use which role is in
 `factory/team/roles/lead.md`.
 
@@ -62,6 +62,22 @@ flowchart LR
    - The lead runs at most 4 workers at once.
    - Each issue gets one branch and one PR, reviewed by `acme-reviewer`.
    - The lead merges only with reviewer approval **and** green CI.
+
+## The autonomous loop
+
+- **Work bus.** Everything happens in **GitHub Issues**. Read the pinned
+  issue **🏭 Factory status** for the live picture.
+- **Labels.** `status:*`, `agent:*`, `priority:*` and `role:*` track each
+  issue.
+- **Comments.** Agents write structured `[agent] STATUS/DONE/NEXT/BLOCKER`
+  comments, and file new work as `status:triage`.
+- **Wake-ups.** The lead wakes on worker events and on the 30-minute
+  `acme-factory-tick`. Each pass, it merges what's approved and green,
+  triages, and dispatches.
+- **Your inbox.** The lead messages you **only** when the backlog is empty.
+  Send more backlog by filing issues or messaging `acme-lead`.
+- **Cost.** `infra/60-factory.sh pause|resume` (the VM is never stopped), plus the $1000
+  budget guard (see [operations](../setup/02-operations.md)).
 
 ## Seeing the topology in the UI
 
@@ -128,9 +144,9 @@ infra/30-hub-admin-access.sh disable
 1. Edit `factory/team/team-rules.md` or `factory/team/roles/<role>.md`, or
    change the role table in `infra/40-build-team-templates.sh`.
 2. Run `infra/40-build-team-templates.sh` and commit the regenerated
-   `.scion/templates/acme-*`.
+   `factory/templates/acme-*`.
 3. Push to the hub. With admin access enabled, copy the templates into the
-   VM's `~/.scion/templates/`, then run `hub_cli --global templates push acme-<role>`
+   VM's `~/factory/templates/`, then run `hub_cli --global templates push acme-<role>`
    for each role. See runbook §5.
 4. New agents pick up the change. Running agents keep their old instructions;
    ask the lead to recycle them.
@@ -139,4 +155,4 @@ infra/30-hub-admin-access.sh disable
 
 Ask the lead to stop all workers. Or, as operator:
 `hub_cli stop <agent> --project duboc-acme-airlines` / `hub_cli delete <agent> …`.
-To stop all compute, stop the VM (see [operations](../setup/02-operations.md)).
+To stop all token spend, run `infra/60-factory.sh pause`; the VM and hub stay up (see [operations](../setup/02-operations.md)).

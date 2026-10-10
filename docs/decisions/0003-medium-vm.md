@@ -13,4 +13,4 @@ deploy.sh `machine_size: medium`, `disk_size_gb: 500`.
 
 ## Consequences
 
-About $570/month if left running 24/7; stop the VM when idle. Can hit zone stockouts (ADR 0007).
+About $570/month, running 24/7 by product-owner rule (cost control means pausing agents, ADR 0013). Can hit zone stockouts (ADR 0007).

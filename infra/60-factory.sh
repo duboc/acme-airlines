@@ -5,8 +5,8 @@
 #   infra/60-factory.sh tick-install    # create the recurring TICK schedule (idempotent)
 #   infra/60-factory.sh pause           # pause TICK + suspend all agents (sessions/roster/graph kept)
 #   infra/60-factory.sh resume          # resume TICK + wake acme-lead
-#   infra/60-factory.sh stop-vm         # pause, then stop the VM (only disk cost remains)
-#   infra/60-factory.sh start-vm        # start the VM, wait for the hub, then resume
+#
+# Product-owner rule: the VM is never stopped by tooling; cost control = pausing agents.
 #
 # Hub operations temporarily enable operator admin access
 # (infra/30-hub-admin-access.sh) and always disable it again on exit.
@@ -29,15 +29,6 @@ tick_id() {  # prints the schedule id for TICK_NAME, or nothing
   printf '%s\n' "SELECT id FROM schedules WHERE name='${TICK_NAME}';" | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
       --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null | head -1
-}
-
-wait_hub() {
-  local _
-  for _ in $(seq 1 60); do
-    vm_ssh "curl -sf http://localhost:8080/healthz >/dev/null" >/dev/null 2>&1 && return 0
-    sleep 5
-  done
-  echo "hub did not become healthy" >&2; return 1
 }
 
 case "${1:-status}" in
@@ -66,13 +57,5 @@ case "${1:-status}" in
     hub resume acme-lead "Factory resumed by the operator. Run a full factory loop pass now." 2>/dev/null \
       || hub message acme-lead "Factory resumed by the operator. Run a full factory loop pass now."
     echo "resumed: tick schedule active, acme-lead woken" ;;
-  stop-vm)
-    "$0" pause
-    gcloud compute instances stop "${VM_NAME}" --zone="$(resolve_zone)" --project="${PROJECT_ID}"
-    echo "VM stopped. Only disk cost remains. Restart with: $0 start-vm" ;;
-  start-vm)
-    gcloud compute instances start "${VM_NAME}" --zone="$(resolve_zone)" --project="${PROJECT_ID}"
-    wait_hub
-    "$0" resume ;;
-  *) sed -n '2,12p' "$0"; exit 2 ;;
+  *) sed -n '2,13p' "$0"; exit 2 ;;
 esac

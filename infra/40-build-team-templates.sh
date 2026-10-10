@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Addendum A, Task 4: build the acme-* Scion role templates into .scion/templates/.
+# Addendum A, Task 4: build the acme-* Scion role templates into factory/templates/.
+# (Not .scion/templates/: a repo's .scion/templates are project-scope templates
+#  that shadow the hub's global ones inside agent workspaces; issue #38 thread.)
 #
 # Each template has three parts:
 #   - agents.md        = factory/team/roles/<role>.md + factory/team/team-rules.md
@@ -14,13 +16,17 @@ source "$(dirname "$0")/lib.sh"
 
 AGENT_TEAM_SHA="${AGENT_TEAM_SHA:-3650f1b03411116fcbf37852bfec6911db64b569}"
 UP="${REPO_ROOT}/.cache/agent-team-${AGENT_TEAM_SHA:0:7}"
-OUT="${REPO_ROOT}/.scion/templates"
+OUT="${REPO_ROOT}/factory/templates"
 TEAM="${REPO_ROOT}/factory/team"
 
 # role | upstream template | harness-config | model alias | description
 # role | upstream | harness | model | max_duration | max_turns | extra skill URI | description
 # Addendum B: Opus = coordination/planning, Sonnet = coding, Antigravity Flash = everything else.
-IMPECCABLE="gh://pbakaus/impeccable/.claude/skills/impeccable@d631a8827f99414d2b6daba4ef08b7f8701751d7"
+# impeccable is vendored as a TEMPLATE-MOUNTED skill (skills/impeccable/ inside the
+# template): the hub's gh:// shorthand only resolves gh://owner/repo/<name> -> skills/<name>,
+# and impeccable's built skill lives at .claude/skills/impeccable (issue #38).
+IMPECCABLE_SHA="d631a8827f99414d2b6daba4ef08b7f8701751d7"
+IMPECCABLE="mount:impeccable"
 ROLES=(
   "lead|coordinator|claude|large|||-|ACME lead / tech lead — runs the factory loop, owns the backlog, merges autonomously"
   "eng-manager|eng-manager|claude|large|4h|800|-|ACME engineering manager — runs one workstream under the lead; never merges"
@@ -43,6 +49,25 @@ fetch() {  # fetch <upstream-template> <file>
   mkdir -p "${UP}/$1"
   gh api "repos/scion-frontiers/agent-team/contents/templates/$1/$2?ref=${AGENT_TEAM_SHA}" -q .content \
     | base64 -d > "${dest}"
+}
+
+# vendor_skill impeccable <dest-skills-dir>: copy pbakaus/impeccable@IMPECCABLE_SHA's
+# built Claude skill (+ LICENSE/NOTICE, Apache-2.0) into <dest>/impeccable.
+vendor_skill() {
+  local name="$1" dest="$2" cache="${REPO_ROOT}/.cache/impeccable-${IMPECCABLE_SHA:0:7}"
+  [[ "${name}" == impeccable ]] || { echo "unknown mounted skill ${name}" >&2; return 1; }
+  if [[ ! -f "${cache}/.claude/skills/impeccable/SKILL.md" ]]; then
+    rm -rf "${cache}"; git init -q "${cache}"
+    git -C "${cache}" remote add origin https://github.com/pbakaus/impeccable.git
+    git -C "${cache}" sparse-checkout set --no-cone .claude/skills/impeccable LICENSE NOTICE.md
+    git -C "${cache}" fetch -q --depth 1 origin "${IMPECCABLE_SHA}"
+    git -C "${cache}" checkout -q FETCH_HEAD
+  fi
+  rm -rf "${dest:?}/impeccable"; mkdir -p "${dest}"
+  cp -R "${cache}/.claude/skills/impeccable" "${dest}/impeccable"
+  cp "${cache}/LICENSE" "${dest}/impeccable/LICENSE"
+  cp "${cache}/NOTICE.md" "${dest}/impeccable/NOTICE.md"
+  printf 'Vendored from https://github.com/pbakaus/impeccable/tree/%s/.claude/skills/impeccable (Apache-2.0)\nby infra/40-build-team-templates.sh. Do not edit.\n' "${IMPECCABLE_SHA}" > "${dest}/impeccable/VENDORED.txt"
 }
 
 for spec in "${ROLES[@]}"; do
@@ -79,8 +104,8 @@ Upstream: https://github.com/scion-frontiers/agent-team/tree/${AGENT_TEAM_SHA}/t
     fi
     # Upstream skills list verbatim (from 'skills:' to EOF), plus an optional extra skill.
     up_skills="$(sed -n '/^skills:/,$p' "${UP}/${upstream}/scion-agent.yaml")"
-    if [[ -n "${up_skills}" ]]; then echo "${up_skills}"; elif [[ "${extraskill}" != "-" ]]; then echo "skills:"; fi
-    if [[ "${extraskill}" != "-" ]]; then echo "  - uri: \"${extraskill}\""; fi
+    if [[ -n "${up_skills}" ]]; then echo "${up_skills}"; fi
   } > "${dir}/scion-agent.yaml"
+  if [[ "${extraskill}" == mount:* ]]; then vendor_skill "${extraskill#mount:}" "${dir}/skills"; fi
   echo "built ${dir#"${REPO_ROOT}/"} (${harness}/${model}, upstream ${upstream})"
 done

@@ -9,7 +9,7 @@ The product owner wants a normal dev team (lead, backend, frontend, QA, reviewer
 
 ## Decision
 
-Role templates are generated from `factory/team/*` plus upstream agent-team@3650f1b (Apache-2.0) into `.scion/templates/acme-*`, then pushed to the hub at global scope. Lead: Claude Opus with `--role full`. Workers: `--role baseline`. GitHub Issues hold the backlog; the lead merges after reviewer approval and green CI.
+Role templates are generated from `factory/team/*` plus upstream agent-team@3650f1b (Apache-2.0) into `factory/templates/acme-*`, then pushed to the hub at global scope. Lead: Claude Opus with `--role full`. Workers: `--role baseline`. GitHub Issues hold the backlog; the lead merges after reviewer approval and green CI.
 
 ## Consequences
 

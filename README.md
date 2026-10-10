@@ -17,7 +17,7 @@ changes as pull requests.
 | [`docs/product/`](docs/product/) | Product brief (IRROPS use case) and [MVP plan](docs/product/mvp-plan.md). |
 | [`docs/factory/`](docs/factory/) | How to work with the agent team; smoke-test records. |
 | [`factory/team/`](factory/team/) | Source for the agent team's role templates. |
-| [`.scion/templates/`](.scion/templates/) | Generated Scion role templates (`acme-*`). |
+| [`factory/templates/`](factory/templates/) | Generated Scion role templates (`acme-*`). |
 | [`docs/superpowers/`](docs/superpowers/) | Design spec and implementation plan for the factory. |
 
 ## Start here

@@ -21,7 +21,53 @@ gcloud iap web add-iam-policy-binding --resource-type=cloud-run \
   --member=user:colleague@duboc.altostrat.com --role=roles/iap.httpsResourceAccessor
 ```
 
-## Stop / start (save money)
+## Factory on/off switch (`infra/60-factory.sh`)
+
+> [!IMPORTANT]
+> **Product-owner rule: the VM is never stopped.** The budget is mostly token
+> consumption, so cost control means pausing *agents*. The hub and UI stay up.
+
+| Command | Effect | What keeps working |
+|---|---|---|
+| `status` | VM state, tick schedule, agents grouped by phase | — |
+| `pause` | Pauses the `acme-factory-tick` schedule and suspends every agent | Hub, UI, roster, lineage graph and sessions. Model spend drops to ~0. |
+| `resume` | Resumes the schedule and wakes `acme-lead` (full loop pass) | Everything resumes where it left off |
+| `tick-install` | Create the 30-minute TICK schedule (idempotent) | — |
+
+## Budget guardrail (`infra/70-budget-guard.sh`)
+
+- **Budget:** `acme-airlines-factory-monthly` is **$1000/month** on this
+  project. Billing admins get email at **50%, 90% and 100%** of actual spend.
+- **How the auto-pause works:** each notification goes to Pub/Sub topic
+  `acme-budget-alerts`, which pushes it (OIDC, audience = the service URL) to
+  the Cloud Run service `acme-budget-guard`.
+  - When **actual** cost is at or above the budget, the guard runs
+    `scion suspend --all --project duboc-acme-airlines` against the hub, over
+    the VPC.
+  - Token spend stops. Sessions, roster and lineage graph are kept, and the
+    **VM, hub and UI keep running**.
+  - It acts on actual cost only, never on forecasts.
+- **Guard credentials:**
+  - A hub user access token (scopes `agent:list`, `agent:lifecycle`, project
+    `duboc-acme-airlines`, 90-day expiry) in Secret Manager
+    `acme-guard-hub-token`. Only the guard service account can read it.
+  - The guard has **no Compute permissions**.
+- **Rotate the token** before it expires (90 days):
+  `ROTATE_TOKEN=1 infra/70-budget-guard.sh`.
+- **Resume after an auto-pause:** `infra/60-factory.sh resume`. If spend is
+  still at or above budget in the same month, the next notification (Billing
+  sends several a day) pauses again. Raise the budget first with
+  `BUDGET_USD=<n> infra/70-budget-guard.sh`.
+- **Wiring test (no stop):**
+  ```bash
+  gcloud pubsub topics publish acme-budget-alerts --project=acme-airlines-factory \
+    --message='{"costAmount":1.23,"budgetAmount":1000.0}'
+  # guard log: "cost=1.23 budget=1000.0 -> no action", HTTP 204
+  ```
+
+## Stop / start the VM (manual, infrastructure maintenance only)
+
+Not part of cost control (see the rule above).
 
 Agents and the hub stop with the VM; state (SQLite, workspaces) is on the disk.
 

@@ -16,7 +16,8 @@
    - **Opus** for coordination and planning
    - **Sonnet** for coding
    - **Antigravity Flash** for everything else
-6. Budget: **$1000/month**, email alerts at 50/90/100%, **auto-pause at 100%**.
+6. Budget: **$1000/month**, email alerts at 50/90/100%, **auto-pause of agents
+   at 100%**. **Never stop the VM**; the budget is mostly token consumption.
 
 ## Design
 
@@ -94,15 +95,16 @@
   - architect: `1h` / 200
   - eng-manager: `4h`
 - **Concurrency:** at most 4 running agents besides the lead.
-- **Operator switch:** `infra/60-factory.sh pause|resume|status|stop-vm|start-vm`.
+- **Operator switch:** `infra/60-factory.sh pause|resume|status`. Product-owner
+  rule: **never stop the VM**.
   - `pause` pauses the tick schedule and suspends all agents; sessions,
     roster and graph are kept.
   - `resume` reverses it.
 - **Budget:** $1000/month on the project, with email alerts at 50/90/100%.
-  - At 100%, a Pub/Sub notification triggers the Cloud Run function
-    `acme-budget-guard`, which **stops the VM**.
-  - All state stays on disk. That stops agent compute and Vertex spend.
-  - Resume with `infra/60-factory.sh start-vm`.
+  - At 100%, a Pub/Sub notification triggers the Cloud Run service
+    `acme-budget-guard`, which **suspends all agents** through the hub.
+    Token spend stops; the VM, hub and UI keep running.
+  - Resume with `infra/60-factory.sh resume`.
 
 ## Tasks
 1. **Templates:**

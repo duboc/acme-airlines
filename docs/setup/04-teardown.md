@@ -5,9 +5,9 @@
 > and any unpushed agent work. Make sure everything you care about is pushed to
 > GitHub first.
 
-## Option A — stop paying for compute, keep everything
+## Option A — stop token spend, keep everything running
 
-Stop the VM (see [operations](02-operations.md#stop--start-save-money)).
+`infra/60-factory.sh pause` (agents suspended; hub, UI and VM keep running). The VM is never stopped as a cost measure.
 
 ## Option B — remove the factory, keep the project
 
