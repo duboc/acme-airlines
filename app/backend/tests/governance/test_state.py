@@ -43,7 +43,6 @@ async def test_the_radar_emits_nothing_after_a_replan_reopens_the_journey(stack)
     assert [r.status for r in state.offers] == ["invalidated"]
 
 
-@pytest.mark.xfail(strict=True, reason="bug #83: propose_offer records proposals in any status")
 @pytest.mark.parametrize("status", [S.RESOLVING, S.REPLANNING])
 async def test_a_proposal_in_a_non_resolved_status_is_rejected(stack, status):
     state = stack.rt.journeys[stack.jid].state

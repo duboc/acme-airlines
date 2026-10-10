@@ -99,12 +99,21 @@ async def test_eligible_journey_is_not_suppressed(skills_and_jid):
     assert not [e for e in rt.journeys[jid].state.timeline if e.type == "sales_suppressed"]
 
 
-async def test_propose_offer_records_proposed(skills_and_jid):
+def make_eligible(rt, jid):
+    state = rt.journeys[jid].state
+    state.transition(S.RESOLVED)
+    state.resolution_acknowledged = True
+    state.passenger_tier = "diamond"  # normally loaded from the loyalty system (#15)
+
+
+async def test_propose_offer_records_the_guardrail_decision(skills_and_jid):
     skills, jid, rt = skills_and_jid
+    await rt.sim.rebook("MSLV42", "AC1252")
+    make_eligible(rt, jid)
     out = skills.propose_offer(offer_dict(jid))
-    assert out["status"] == "proposed"
+    assert out["status"] == "approved" and out["reasons"]
     (rec,) = rt.journeys[jid].state.offers
-    assert rec.status == "proposed" and str(rec.offer.offer_id) == out["offer_id"]
+    assert rec.status == "approved" and str(rec.offer.offer_id) == out["offer_id"]
     assert any(e.type == "offer_proposed" for e in rt.journeys[jid].state.timeline)
 
 
@@ -126,9 +135,11 @@ async def test_propose_offer_rejects_extras_and_bad_values(skills_and_jid, bad):
 
 
 async def test_propose_offer_unknown_journey_and_duplicate_id(skills_and_jid):
-    skills, jid, _ = skills_and_jid
+    skills, jid, rt = skills_and_jid
     with pytest.raises(SkillError):
         skills.propose_offer(offer_dict("J-00000000"))
+    await rt.sim.rebook("MSLV42", "AC1252")
+    make_eligible(rt, jid)
     o = offer_dict(jid)
     skills.propose_offer(o)
     with pytest.raises(SkillError):
@@ -144,8 +155,11 @@ async def test_a2a_endpoint_round_trip(app, skills_and_jid):
         "flight",
         "resolution_acknowledged",
     }
+    rt = app.state.runtime
+    await rt.sim.rebook("MSLV42", "AC1252")
+    make_eligible(rt, jid)
     ok = await post(app, a2a("propose_offer", {"offer": offer_dict(jid)}))
-    assert result_data(ok)["status"] == "proposed"
+    assert result_data(ok)["status"] == "approved"
 
 
 async def test_a2a_rejects_pitch_field_text_parts_and_unknown_skills(app, skills_and_jid):
@@ -184,7 +198,9 @@ async def test_sales_events_conform_to_the_typed_timeline_union(skills_and_jid):
 
     skills, jid, rt = skills_and_jid
     skills.journey_status(jid)  # -> sales_suppressed
-    skills.propose_offer(offer_dict(jid))  # -> offer_proposed
+    await rt.sim.rebook("MSLV42", "AC1252")
+    make_eligible(rt, jid)
+    skills.propose_offer(offer_dict(jid))  # -> guardrail_decision + offer_proposed
     adapter = TypeAdapter(TimelineEvent)
     types_seen = set()
     for e in rt.journeys[jid].state.timeline:

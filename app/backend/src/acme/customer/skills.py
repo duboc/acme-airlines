@@ -13,14 +13,18 @@ Transport: a minimal A2A JSON-RPC `message/send` handler. The message must conta
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from a2a.types import DataPart, Message, MessageSendParams, Role, TextPart
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from acme.customer.runtime import CustomerRuntime, JourneyRecord
-from acme.domain.journey import DisruptionStatus
-from acme.domain.models import Offer
+from acme.domain.journey import DisruptionStatus, OfferRecord
+from acme.domain.models import CabinInventory, Offer
+from acme.policy.guardrail_offer import evaluate
+from acme.sim.client import ToolError
+from acme.sim.world import SimError
 
 SKILLS = ("list_journeys", "journey_status", "propose_offer")
 
@@ -69,41 +73,187 @@ class CustomerSkills:
             last = state.timeline[-1] if state.timeline else None
             if not (last and last.type == "sales_suppressed" and last.payload == payload):
                 state.append_event("customer_agent", "sales_suppressed", payload)
-        flight = state.current_flight
-        if flight is None:  # the rebooked flight: first segment of the PNR still operating
-            pnr = self._rt.world.pnrs[rec.pnr_locator]
-            flight = next(
-                (
-                    s.flight_number
-                    for s in pnr.segments
-                    if self._rt.world.flights[s.flight_number].status != "cancelled"
-                ),
-                None,
-            )
+        flight = state.current_flight or self._current_flight(rec)
         return JourneyStatusView(
             status=state.status.value,
             flight=flight,
             resolution_acknowledged=state.resolution_acknowledged,
         )
 
-    def propose_offer(self, payload: dict[str, Any]) -> dict[str, str]:
+    def propose_offer(
+        self, payload: dict[str, Any], *, inventory: CabinInventory | None = None
+    ) -> dict[str, Any]:
+        """Validate, run the guardrail and record the decision (no delivery; see below).
+
+        Raises SkillError for invalid offers and for proposals while the journey is not
+        RESOLVED (nothing is recorded as an offer, #83). Other rejections are recorded as
+        `rejected` and returned as reason codes only.
+        """
         try:
             offer = Offer.model_validate(payload)
         except ValidationError as exc:
             raise SkillError(f"invalid offer: {exc.error_count()} validation error(s)") from None
         rec = self._journey(offer.journey_id)
-        if any(r.offer.offer_id == offer.offer_id for r in rec.state.offers):
+        state = rec.state
+        if any(r.offer.offer_id == offer.offer_id for r in state.offers):
             raise SkillError("duplicate offer_id")
-        rec.state.add_offer(offer)
-        rec.state.append_event(
+        state.current_flight = self._current_flight(rec)  # Customer-owned fact
+        decision = evaluate(state, offer, inventory or self._world_inventory(offer))
+        self._decision_event(state, offer, decision)
+        if "disruption_not_resolved" in decision.reasons:
+            raise SkillError("rejected: disruption_not_resolved")
+        record = state.add_offer(offer)
+        record.status = "approved" if decision.approved else "rejected"
+        state.append_event(
             "customer_agent",
             "offer_proposed",
             {"offer_id": str(offer.offer_id), "flight": offer.flight},
         )
-        return {"status": "proposed", "offer_id": str(offer.offer_id)}
+        return {
+            "status": record.status if decision.approved else "rejected",
+            "offer_id": str(offer.offer_id),
+            "reasons": list(decision.reasons),
+        }
+
+    async def propose_and_deliver(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """The A2A path: guardrail at proposal, then at send time, atomically per journey."""
+        try:
+            journey_id = str(payload["journey_id"])
+        except (KeyError, TypeError):
+            raise SkillError("invalid offer") from None
+        async with self._rt.journey_lock(journey_id):
+            rec = self._journey(journey_id)
+            inventory = await self._load_facts(rec, payload)
+            result = self.propose_offer(payload, inventory=inventory)
+            if result["status"] != "approved":
+                return result
+            record = rec.state.offers[-1]
+            decision = await self._deliver(rec, record)
+            if decision.approved:
+                return result
+            return {**result, "status": "rejected", "reasons": list(decision.reasons)}
+
+    # --- delivery ----------------------------------------------------------------------------
+    async def _load_facts(self, rec: JourneyRecord, payload: dict[str, Any]) -> CabinInventory:
+        """Customer-owned facts: tier from loyalty, inventory from the inventory server."""
+        rt = self._rt
+        member = await rt.client.call("loyalty", "member.get", passenger_id=rec.passenger_id)
+        rec.state.passenger_tier = member["tier"]
+        flight, cabin = str(payload.get("flight")), str(payload.get("cabin"))
+        try:
+            seats = await rt.client.call(
+                "inventory", "cabin_inventory.get", flight=flight, cabin=cabin
+            )
+            fare = await rt.client.call("inventory", "upgrade_fare.get", flight=flight, cabin=cabin)
+            return CabinInventory(
+                flight_number=flight,
+                cabin=cabin,  # type: ignore[arg-type]
+                open_seats=seats["open_seats"],
+                standard_upgrade_fare=Decimal(fare["standard_fare"]),
+                cost_floor=Decimal(fare["cost_floor"]),
+            )
+        except (ToolError, ValidationError):  # no such inventory: the guardrail rejects it
+            return CabinInventory(
+                flight_number=flight, cabin="premium_business", open_seats=0,
+                standard_upgrade_fare=Decimal(0), cost_floor=Decimal(0),
+            )  # fmt: skip
+
+    def _world_inventory(self, offer: Offer) -> CabinInventory:
+        try:
+            return self._rt.sim.cabin_inventory(offer.flight, offer.cabin)
+        except SimError:
+            return CabinInventory(
+                flight_number=offer.flight, cabin="premium_business", open_seats=0,
+                standard_upgrade_fare=Decimal(0), cost_floor=Decimal(0),
+            )  # fmt: skip
+
+    def _current_flight(self, rec: JourneyRecord) -> str | None:
+        """The rebooked flight: first PNR segment that is still operating (Customer data)."""
+        world = self._rt.world
+        return next(
+            (
+                s.flight_number
+                for s in world.pnrs[rec.pnr_locator].segments
+                if world.flights[s.flight_number].status != "cancelled"
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _decision_event(state: Any, offer: Offer, decision: Any) -> None:
+        state.append_event(
+            "guardrail",
+            "guardrail_decision",
+            {
+                "approved": decision.approved,
+                "reasons": list(decision.reasons),
+                "offer_id": str(offer.offer_id),
+            },
+        )
+
+    async def _deliver(self, rec: JourneyRecord, record: OfferRecord) -> Any:
+        """Compose from Customer data, re-run the guardrail immediately before sending, send."""
+        rt, state, offer = self._rt, rec.state, record.offer
+        inventory = await self._load_facts(rec, offer.model_dump(mode="json"))
+        state.current_flight = self._current_flight(rec)
+        text, context = await self._compose(rec, offer, inventory)
+        decision = evaluate(state, offer, inventory)  # time-of-use re-check: no await until send
+        if not decision.approved:
+            record.status = "invalidated"
+            self._decision_event(state, offer, decision)
+            return decision
+        msg = await rt.send(
+            rec.passenger_id,
+            text,
+            attachments=["boarding_pass", "hotel_voucher"],
+            buttons=["Accept", "No thanks"],
+        )
+        record.status = "sent"
+        state.append_event(
+            "customer_agent",
+            "offer_sent",
+            {"offer_id": str(offer.offer_id), "message_id": msg.message_id},
+        )
+        return decision
+
+    async def _compose(
+        self, rec: JourneyRecord, offer: Offer, inventory: CabinInventory
+    ) -> tuple[str, dict[str, Any]]:
+        """Passenger text from Customer-owned data only. From the offer: `price` (a Decimal that
+        the guardrail bounded). Flight, cabin and seat come from Customer journey/inventory data;
+        no Sales-authored string is rendered or sent to the LLM."""
+        rt = self._rt
+        profile = await rt.client.call("crm", "profile.get", passenger_id=rec.passenger_id)
+        name = profile["name"].split()[0]
+        flight = rec.state.current_flight or ""
+        open_premium = rt.world.flights[flight].open_seats.get(inventory.cabin, [])
+        seat = f" {open_premium[0]}" if open_premium else ""
+        price = f"${offer.price:.2f}"
+        hotel = f" and your hotel voucher ({rec.hotel.hotel_id})" if rec.hotel else ""
+        summary = (
+            f"your boarding pass for {flight}{hotel} are attached. "
+            "Only if you would like it, and with no pressure at all, there is an optional upgrade: "
+            f"a premium business (lie-flat) seat{seat} on {flight} for {price} instead of the "
+            f"usual ${inventory.standard_upgrade_fare:.2f}. Tap Accept to take it, or No thanks "
+            "to keep your current seat."
+        )
+        fallback = f"Hi {name}, {summary}"
+        context = {
+            "passenger": name,
+            "summary": summary,
+            "offer": {"flight": flight, "cabin": "premium business", "seat": seat.strip(),
+                      "price": price},
+        }  # fmt: skip
+        try:
+            text = await rt.llm.compose_passenger_message(context)
+            if not all(f in text for f in (flight, price, "optional", "premium business")):
+                raise ValueError("missing offer fact")
+        except Exception:  # noqa: BLE001 (any LLM failure falls back to the template)
+            text = fallback
+        return text, context
 
     # --- A2A transport -------------------------------------------------------------------------
-    def handle_a2a(self, request: dict[str, Any]) -> dict[str, Any]:
+    async def handle_a2a(self, request: dict[str, Any]) -> dict[str, Any]:
         rid = request.get("id")
         try:
             if request.get("method") != "message/send":
@@ -115,7 +265,7 @@ class CustomerSkills:
             data = parts[0].data
             if set(data) != {"skill", "args"} or not isinstance(data["args"], dict):
                 raise SkillError("data part must be exactly {skill, args}")
-            result = self._dispatch(data["skill"], data["args"])
+            result = await self._dispatch(data["skill"], data["args"])
         except (SkillError, ValidationError) as exc:
             return {
                 "jsonrpc": "2.0",
@@ -129,13 +279,13 @@ class CustomerSkills:
         )
         return {"jsonrpc": "2.0", "id": rid, "result": reply.model_dump(mode="json", by_alias=True)}
 
-    def _dispatch(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
+    async def _dispatch(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
         if skill == "list_journeys" and not args:
             return {"journey_ids": self.list_journeys()}
         if skill == "journey_status" and set(args) == {"journey_id"}:
             return self.journey_status(str(args["journey_id"])).model_dump()
         if skill == "propose_offer" and set(args) == {"offer"} and isinstance(args["offer"], dict):
-            return self.propose_offer(args["offer"])
+            return await self.propose_and_deliver(args["offer"])
         raise SkillError(f"unknown skill or bad arguments: {skill!r}")
 
 

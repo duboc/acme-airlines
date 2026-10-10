@@ -39,7 +39,7 @@ def resolve(rt, jid, acknowledged=True):
 
 
 def proposed(state):
-    return [r for r in state.offers if r.status == "proposed"]
+    return [r for r in state.offers if r.status in ("approved", "sent")]
 
 
 async def test_resolving_journey_sends_nothing_and_records_suppression(world):
