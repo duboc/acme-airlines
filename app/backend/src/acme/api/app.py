@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import AsyncIterator
 from typing import Literal
 
@@ -14,12 +15,21 @@ from pydantic import BaseModel, Field
 
 from acme.api.events import TimelineEvent
 from acme.api.runtime import JourneyRecord, Runtime, WhatsAppMessage
+from acme.api.scenarios import (
+    BY_ID,
+    PRESETS,
+    PresetView,
+    ScenarioRunner,
+    ScenarioState,
+    preset_view,
+)
 from acme.customer.adk_agent import CARD_PATH, customer_agent_card
 from acme.customer.conversion import NoSentOffer, accept_offer, decline_offer
 from acme.customer.skills import CustomerSkills
 from acme.domain.clock import Clock
 from acme.domain.journey import OfferRecord
 from acme.domain.models import PNR, Bag, HotelBooking, SeatAssignment, Segment, Voucher
+from acme.llm.config import load_llm_mode
 
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 SSE_POLL_SECONDS = 0.05
@@ -129,6 +139,36 @@ def create_app(clock: Clock | None = None) -> FastAPI:
         if body.flight not in rt.world.flights:
             raise HTTPException(404, f"unknown flight {body.flight}")
         return TriggerResult(journey_ids=await rt.trigger_cancellation(body.flight, body.reason))
+
+    runner = ScenarioRunner(rt)
+
+    def require_demo_mode() -> None:
+        if load_llm_mode(os.environ) != "fake":  # presets are a demo affordance (fake mode only)
+            raise HTTPException(404, "scenario presets are disabled outside LLM_MODE=fake")
+
+    @app.get("/scenarios", tags=["scenarios"])
+    async def list_scenarios() -> list[PresetView]:
+        require_demo_mode()
+        return [preset_view(p) for p in PRESETS]
+
+    @app.post("/scenarios/{scenario_id}/start", tags=["scenarios"])
+    async def start_scenario(scenario_id: str) -> ScenarioState:
+        require_demo_mode()
+        if scenario_id not in BY_ID:
+            raise HTTPException(404, f"unknown scenario {scenario_id}")
+        return runner.start(BY_ID[scenario_id])
+
+    @app.post("/scenarios/{scenario_id}/step", tags=["scenarios"])
+    async def step_scenario(scenario_id: str) -> ScenarioState:
+        """Advance the next scripted passenger action; the response is the expected next state."""
+        require_demo_mode()
+        if scenario_id not in BY_ID:
+            raise HTTPException(404, f"unknown scenario {scenario_id}")
+        if runner.active is None or runner.active.id != scenario_id:
+            raise HTTPException(409, f"scenario {scenario_id} is not started")
+        if runner.index >= len(runner.active.steps):
+            raise HTTPException(409, f"scenario {scenario_id} is finished; start it again")
+        return await runner.step()
 
     @app.get("/journeys", tags=["journeys"])
     async def list_journeys() -> list[JourneySummary]:
