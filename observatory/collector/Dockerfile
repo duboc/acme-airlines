@@ -6,4 +6,6 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev
+RUN useradd --system --uid 10001 --no-create-home collector
+USER collector
 CMD ["uv", "run", "--no-sync", "python", "-m", "collector"]
