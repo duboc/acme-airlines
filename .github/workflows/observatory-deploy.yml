@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: observatory-deploy
@@ -31,6 +30,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
