@@ -1,3 +1,4 @@
+import { ScrollRegion } from '../ScrollRegion';
 import { type SpendResponse } from '../api';
 import { usd } from '../format';
 
@@ -51,31 +52,33 @@ export function SpendBody({ data }: { data: SpendResponse }) {
       </svg>
       <details>
         <summary>Daily table</summary>
-        <table>
-          <caption className="sr-only">Daily spend by service, USD</caption>
-          <thead>
-            <tr>
-              <th scope="col">Date</th>
-              {SERIES.map(([k, label]) => (
-                <th key={k} scope="col">
-                  {label}
-                </th>
-              ))}
-              <th scope="col">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...data.series].reverse().map((r) => (
-              <tr key={r.date}>
-                <th scope="row">{r.date}</th>
-                {SERIES.map(([k]) => (
-                  <td key={k}>{usd(r[k])}</td>
+        <ScrollRegion label="Daily spend table, scrollable">
+          <table>
+            <caption className="sr-only">Daily spend by service, USD</caption>
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                {SERIES.map(([k, label]) => (
+                  <th key={k} scope="col">
+                    {label}
+                  </th>
                 ))}
-                <td>{usd(r.total)}</td>
+                <th scope="col">Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {[...data.series].reverse().map((r) => (
+                <tr key={r.date}>
+                  <th scope="row">{r.date}</th>
+                  {SERIES.map(([k]) => (
+                    <td key={k}>{usd(r[k])}</td>
+                  ))}
+                  <td>{usd(r.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollRegion>
       </details>
     </>
   );

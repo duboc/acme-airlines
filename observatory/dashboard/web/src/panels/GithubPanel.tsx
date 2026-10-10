@@ -1,3 +1,4 @@
+import { ScrollRegion } from '../ScrollRegion';
 import type { GithubResponse } from '../api';
 
 export function GithubBody({ data }: { data: GithubResponse }) {
@@ -22,29 +23,31 @@ export function GithubBody({ data }: { data: GithubResponse }) {
       {s.open_prs.length === 0 ? (
         <p>No open PRs.</p>
       ) : (
-        <table>
-          <caption className="sr-only">
-            Open pull requests with latest review verdict and CI
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">PR</th>
-              <th scope="col">Verdict</th>
-              <th scope="col">CI</th>
-            </tr>
-          </thead>
-          <tbody>
-            {s.open_prs.map((p) => (
-              <tr key={p.number}>
-                <th scope="row">
-                  #{p.number} {p.title}
-                </th>
-                <td>{p.latest_verdict ?? 'No verdict'}</td>
-                <td>{p.ci_conclusion ?? 'unknown'}</td>
+        <ScrollRegion label="Open pull requests table, scrollable">
+          <table>
+            <caption className="sr-only">
+              Open pull requests with latest review verdict and CI
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">PR</th>
+                <th scope="col">Verdict</th>
+                <th scope="col">CI</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {s.open_prs.map((p) => (
+                <tr key={p.number}>
+                  <th scope="row">
+                    #{p.number} {p.title}
+                  </th>
+                  <td>{p.latest_verdict ?? 'No verdict'}</td>
+                  <td>{p.ci_conclusion ?? 'unknown'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ScrollRegion>
       )}
       <h3>Merges per day</h3>
       <svg viewBox="0 0 280 40" className="chart" aria-hidden="true" focusable="false">
