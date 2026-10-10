@@ -49,7 +49,7 @@ observatory/
 | `BUDGET_USD` | dashboard | `1000` |
 | `BILLING_DATASET` / `OPS_DATASET` | dashboard / both | `billing_export` / `factory_ops` |
 | `HUB_ENDPOINT` | collector | `http://<hub VM internal IP>:8080`, reachable only from the VPC |
-| `HUB_PROJECT` | collector | `duboc-acme-airlines` |
+| `HUB_PROJECT` | collector | `61b6ae3d-9335-4360-a259-5b306dc229f6`, the hub project **UUID**. The hub REST API `GET /api/v1/projects/<id>/agents` rejects the slug `duboc-acme-airlines` (404) and the agent-scoped UAT cannot resolve slugs. Set by `infra/80` and re-applied on every deploy with `--update-env-vars` (never `--set-env-vars`); `verify-deploy.sh` asserts it. |
 | `GITHUB_REPO` | collector | `duboc/acme-airlines` |
 | `SCION_HUB_TOKEN` | collector (secret) | `acme-observatory-hub-token`. A hub UAT with **`agent:list`, `agent:read`**, project-scoped, 90 days. Use it as `Authorization: Bearer`, or with the scion CLI (`SCION_HUB_ENDPOINT` + `SCION_HUB_TOKEN`). |
 | `GITHUB_TOKEN` | collector (secret, **add to the job on first deploy**: `--update-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest`; not `--set-secrets`/`--clear-secrets`, which replace all of the job's secret mappings and would drop `SCION_HUB_TOKEN`). While the secret has no version, the deploy removes the mapping with `--remove-secrets=GITHUB_TOKEN`: a mapping to a versionless secret makes every later job deploy fail with "secret ... was not found" | A read-only GitHub PAT, provided by the product owner. Until it exists, skip the GitHub snapshot and log a warning. |
@@ -85,5 +85,5 @@ steps:
   else.
 - **Don't re-specify** `--service-account`, `--iap`, VPC flags or secrets on
   `gcloud run deploy`. The existing settings are kept when you only change
-  `--image`. Adding the collector's `GITHUB_TOKEN` secret is the one allowed
-  exception.
+  `--image`. The allowed exceptions are the collector's `GITHUB_TOKEN` secret
+  (`--update-secrets`) and its `HUB_PROJECT` env var (`--update-env-vars`).

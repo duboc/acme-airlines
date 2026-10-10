@@ -26,6 +26,8 @@ SA_DASH="acme-observatory@${P}.iam.gserviceaccount.com"
 SA_COLL="acme-observatory-collector@${P}.iam.gserviceaccount.com"
 SA_DEPL="acme-observatory-deployer@${P}.iam.gserviceaccount.com"
 HUB_SECRET="acme-observatory-hub-token"; GH_SECRET="acme-observatory-github-token"
+# Hub project UUID: the hub REST API (/api/v1/projects/<id>/agents) rejects the slug "duboc-acme-airlines".
+HUB_PROJECT_ID="${HUB_PROJECT_ID:-61b6ae3d-9335-4360-a259-5b306dc229f6}"
 PLACEHOLDER_SVC="us-docker.pkg.dev/cloudrun/container/hello"
 PLACEHOLDER_JOB="us-docker.pkg.dev/cloudrun/container/job"
 
@@ -137,8 +139,8 @@ VM_IP="$(gcloud compute instances describe "${VM_NAME}" --zone="$(resolve_zone)"
 if ! gcloud run jobs describe acme-observatory-collector --region="${R}" --project="${P}" >/dev/null 2>&1; then
   gcloud run jobs deploy acme-observatory-collector --region="${R}" --project="${P}" --image="${PLACEHOLDER_JOB}" \
     --service-account="${SA_COLL}" --network=default --subnet=default --vpc-egress=private-ranges-only \
-    --set-env-vars="PROJECT_ID=${P},OPS_DATASET=factory_ops,HUB_ENDPOINT=http://${VM_IP}:8080,HUB_PROJECT=duboc-acme-airlines,GITHUB_REPO=${REPO}" \
-    --set-secrets="SCION_HUB_TOKEN=${HUB_SECRET}:latest" \
+    --set-env-vars="PROJECT_ID=${P},OPS_DATASET=factory_ops,HUB_ENDPOINT=http://${VM_IP}:8080,HUB_PROJECT=${HUB_PROJECT_ID},GITHUB_REPO=${REPO}" \
+    --update-secrets="SCION_HUB_TOKEN=${HUB_SECRET}:latest" \
     --max-retries=1 --task-timeout=300s --quiet
 fi
 gcloud run jobs add-iam-policy-binding acme-observatory-collector --region="${R}" --project="${P}" \

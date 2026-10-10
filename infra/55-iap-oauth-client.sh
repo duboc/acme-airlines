@@ -18,7 +18,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 P="${PROJECT_ID}"; R="${REGION}"
-SERVICES=(scion-hub-acme-iap-proxy acme-observatory)
+SERVICES=(scion-hub-acme-iap-proxy acme-observatory acme-irrops-demo)
 ID_SECRET="acme-iap-oauth-client-id"; SECRET_SECRET="acme-iap-oauth-client-secret"
 
 ensure_secret() { gcloud secrets describe "$1" --project="${P}" >/dev/null 2>&1 || \
@@ -44,6 +44,9 @@ umask 077; TMP="$(mktemp)"; trap 'rm -f "${TMP}"' EXIT
 } > "${TMP}"
 
 for s in "${SERVICES[@]}"; do
+  if ! gcloud run services describe "${s}" --region="${R}" --project="${P}" >/dev/null 2>&1; then
+    echo "==> skipping ${s} (service not created yet)"; continue
+  fi
   echo "==> IAP custom OAuth client on ${s}"
   gcloud iap settings set "${TMP}" --project="${P}" --resource-type=cloud-run --service="${s}" --region="${R}" --format=none
 done

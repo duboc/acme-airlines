@@ -37,6 +37,11 @@ Vertex uses ADC only (no API keys, ever), project `acme-airlines-factory`, **`GO
 read-only into `customer-runtime` and setting `GOOGLE_APPLICATION_CREDENTIALS` in a local override file,
 never in this repo.
 
+## Hosted demo (IAP)
+
+The operator creates the IAP-protected `acme-irrops-demo` Cloud Run platform with
+`infra/90-irrops-demo-platform.sh` (see the [runbook](../setup/01-runbook.md#9-irrops-demo-platform-mocked-scenarios-behind-iap)).
+
 ## Cloud Run (target, not deployed)
 
 One Cloud Run service per container, one service account per service, **no unauthenticated access**:

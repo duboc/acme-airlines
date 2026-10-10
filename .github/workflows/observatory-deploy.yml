@@ -3,8 +3,9 @@ name: Observatory Deploy
 # Keyless deploy via Workload Identity Federation. WIF trusts only refs/heads/main, so this
 # cannot be exercised from a PR branch. Only --image is swapped on the existing Cloud Run
 # service and job; auth, IAP, networking, env and the runtime service accounts are unchanged.
-# The single exception is the collector's GITHUB_TOKEN secret, added with --update-secrets (not
-# --set-secrets, which would replace and drop the existing SCION_HUB_TOKEN).
+# The exceptions are the collector's GITHUB_TOKEN secret, added with --update-secrets (not
+# --set-secrets, which would replace and drop the existing SCION_HUB_TOKEN), and its HUB_PROJECT
+# env var, set with --update-env-vars (not --set-env-vars, which would replace all env vars).
 
 on:
   push:
@@ -25,6 +26,8 @@ env:
   AR_REPO: ${{ vars.OBSERVATORY_AR_REPO }}
   REGION: ${{ vars.OBSERVATORY_REGION }}
   PROJECT: ${{ vars.OBSERVATORY_PROJECT }}
+  # Hub project UUID (not the slug): the hub REST API /projects/<id>/agents rejects the slug.
+  HUB_PROJECT: 61b6ae3d-9335-4360-a259-5b306dc229f6
 
 jobs:
   deploy:
@@ -69,6 +72,6 @@ jobs:
         run: observatory/deploy/deploy-collector.sh
 
       # Runs even if a deploy step failed, so a half-deployed state is reported; the job still fails.
-      - name: Verify deployed images and SCION_HUB_TOKEN mapping
+      - name: Verify deployed images, SCION_HUB_TOKEN mapping and HUB_PROJECT
         if: always() && steps.build.outcome == 'success'
         run: observatory/deploy/verify-deploy.sh
