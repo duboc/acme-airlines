@@ -13,7 +13,7 @@ the MCT is feasible). MCT is per airport (`DEFAULT_MCT_MINUTES`; SCL internation
 unknown airports fall back to 90) and overridable per call. Datetimes must be timezone-aware.
 
 Fixture check (D+1, SCL, MCT 90, onward AC0800 at 14:00): AC1240 arr 10:15 (margin 135),
-AC1252 arr 12:20 (margin 20) are feasible; AC1260 arr 14:00 (margin -90) is not.
+AC1252 arr 12:20 (margin 10) are feasible; AC1260 arr 14:00 (margin -90) is not.
 
 ## duty_of_care
 

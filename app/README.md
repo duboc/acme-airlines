@@ -128,3 +128,13 @@ or not acknowledged) the Customer side records `sales_suppressed`.
 
 The radar sends at most one proposal per (journey, flight) and prices with `margin_opt`. Sales is
 PII-free so it prices at the best courtesy tier (Diamond); the guardrail re-checks against the real tier.
+
+### Conversational replanning (scenario 3b)
+
+`ReplanningChangeAgent` (`customer/specialists/change.py`) handles a `departure_after` request after the
+#13 hand-off: earliest feasible flight departing after the asked time that still protects the onward
+connection (AC1252 11:40 for "after 10am"), seat kept, bag re-routed, connection re-verified,
+hotel->airport transfer rescheduled (`transfer_arranged`), request closed (`request_closed`:
+`satisfied` | `unsatisfiable`) and the journey returned to `RESOLVED` with a confirmation message.
+Nothing feasible keeps the booking and the passenger gets an honest explanation. A failed step records
+`needs_human` and leaves the journey `REPLANNING`. Leaving `RESOLVED` invalidates live offers (#4).
