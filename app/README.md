@@ -1,6 +1,7 @@
 # ACME Airlines application
 
 - `backend/` — Python 3.12 uv project `acme` (agents, MCP sim servers, policy code).
+  - `uv run acme-sim` starts the simulated MCP systems; see `docs/product/simulators.md`.
 
 ## Backend: lint and test locally
 
