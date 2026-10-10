@@ -66,7 +66,7 @@ class CustomerRuntime:
 
     def reset(self) -> None:
         self.sim = SimWorld.seeded(self.clock)
-        # Plain config for now; #27 swaps in a per-caller credentialed connector.
+        # Every path authenticates as `customer` only (acme.sim.auth, #27).
         if self._custom_connector:
             connector = self._custom_connector
         elif self._connector_factory:

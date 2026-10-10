@@ -36,5 +36,5 @@ async def test_registry_is_pluggable(sim):
 
     assert {"occ", "pss", "crm", "inventory"} <= set(DEFAULT_REGISTRY)
     extra = FastMCP("extra", streamable_http_path="/")
-    app = create_app(sim, registry={"extra": lambda _sim: extra})
+    app = create_app(sim, registry={"extra": lambda _sim: extra}, tokens={})
     assert [r.path for r in app.routes] == ["/mcp/extra"]
