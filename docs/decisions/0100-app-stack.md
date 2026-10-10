@@ -58,6 +58,7 @@ Constraints that shape the choice:
 
 ```text
 app/
+  compose.yaml             # Docker Compose specification (4 services)
   backend/                 # uv project "acme"
     pyproject.toml
     src/acme/
@@ -67,12 +68,13 @@ app/
       llm/                 # Vertex/Gemini config (global only) + fake LLM for tests
       customer/            # Customer agent + specialist sub-agents (ADK)
       sales/               # Sales agent A2A service (ADK)
+      runtime/             # ScenarioDriver and runtime drivers
       memory/              # JourneyStore port + adapters
       api/                 # FastAPI app (REST + SSE)
     tests/
-      unit/  scenario/  governance/  live/
-  frontend/                # Vite + React + TS
-.github/workflows/ci.yml
+      unit/  scenario/  governance/  live/  sim/  api/  customer/  sales/
+  frontend/                # Vite + React + TS (operator console, simulated WhatsApp)
+.github/workflows/         # ci.yml, containers.yml, e2e.yml
 ```
 
 ### How the guardrail is enforced

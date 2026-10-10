@@ -1,13 +1,13 @@
 # Deployment: local containers and Cloud Run (documented, not deployed)
 
-Status: the **local containers are the verified deliverable**. Cloud Run deployment is **document
-only** in the MVP (ADR 0100, open question): nothing here was deployed and no deploy identity exists.
+Status: the **local containers are the verified deliverable**. Cloud Run deployment is **documented
+only** in the MVP (ADR 0100 Decision 1): nothing here was deployed and no deploy identity exists.
 
 ## Local: docker compose
 
 ```bash
 export ACME_SIM_TOKENS="customer=$(openssl rand -hex 24),sales=$(openssl rand -hex 24),test-admin=$(openssl rand -hex 24)"
-export ACME_SALES_TOKEN="<the sales=... value above>"
+export ACME_SALES_TOKEN=$(echo "$ACME_SIM_TOKENS" | sed -n 's/.*sales=\([^,]*\).*/\1/p')
 docker compose -f app/compose.yaml up --build     # then open http://localhost:8080
 ```
 
@@ -80,8 +80,8 @@ offer's `origin="sales"` claim with identity (the claim itself is only a payload
 
 Known gaps to close before a real deployment (follow-ups, not done here):
 1. Clients must send the Cloud Run ID token in **`X-Serverless-Authorization`** (the `Authorization` header
-   carries the sim bearer token); the HTTP connectors do not do this yet.
+   carries the sim bearer token); the HTTP connectors do not do this yet (#100).
 2. IAM is per service, not per path: the frontend's invoker role would also let it call `/a2a`. The nginx
    config blocks it, but an app-level check of the caller identity on `/a2a` (the `sales-agent` service
-   account only) is still needed.
-3. The runtime's in-process simulators must be replaced by `acme-sim` calls for a split deployment.
+   account only) is still needed (#101).
+3. The runtime's in-process simulators must be replaced by `acme-sim` calls for a split deployment (#102).
