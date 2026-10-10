@@ -31,9 +31,20 @@ gcloud iam service-accounts describe "${SA}" --project="${PROJECT_ID}" >/dev/nul
 gcloud compute instances add-iam-policy-binding "${VM_NAME}" --zone="${ZONE}" --project="${PROJECT_ID}" \
   --member="serviceAccount:${SA}" --role=roles/compute.instanceAdmin.v1 --format=none
 
+echo "==> Build service account (the org disables automatic grants to the default compute SA)"
+BUILD_SA="acme-builder@${PROJECT_ID}.iam.gserviceaccount.com"
+gcloud iam service-accounts describe "${BUILD_SA}" --project="${PROJECT_ID}" >/dev/null 2>&1 || \
+  gcloud iam service-accounts create acme-builder --project="${PROJECT_ID}" --display-name="ACME Cloud Build"
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" --member="serviceAccount:${BUILD_SA}" \
+  --role=roles/cloudbuild.builds.builder --condition=None --format=none
+# The deployer must be able to act as the build SA.
+gcloud iam service-accounts add-iam-policy-binding "${BUILD_SA}" --project="${PROJECT_ID}" \
+  --member="user:$(gcloud config get-value account 2>/dev/null)" --role=roles/iam.serviceAccountUser --format=none
+
 echo "==> Cloud Run service ${SVC}"
 gcloud run deploy "${SVC}" --project="${PROJECT_ID}" --region="${REGION}" \
   --source="${INFRA_DIR}/budget-guard" --service-account="${SA}" \
+  --build-service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
   --no-allow-unauthenticated --max-instances=1 --memory=256Mi \
   --set-env-vars="PROJECT_ID=${PROJECT_ID},ZONE=${ZONE},INSTANCE=${VM_NAME}" --quiet
 URL="$(gcloud run services describe "${SVC}" --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
@@ -49,10 +60,10 @@ gcloud iam service-accounts add-iam-policy-binding "${SA}" --project="${PROJECT_
   --role=roles/iam.serviceAccountTokenCreator --format=none
 if gcloud pubsub subscriptions describe "${SUB}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
   gcloud pubsub subscriptions update "${SUB}" --project="${PROJECT_ID}" \
-    --push-endpoint="${URL}/" --push-auth-service-account="${SA}"
+    --push-endpoint="${URL}/" --push-auth-service-account="${SA}" --push-auth-token-audience="${URL}"
 else
   gcloud pubsub subscriptions create "${SUB}" --project="${PROJECT_ID}" --topic="${TOPIC}" \
-    --push-endpoint="${URL}/" --push-auth-service-account="${SA}" --ack-deadline=60
+    --push-endpoint="${URL}/" --push-auth-service-account="${SA}" --push-auth-token-audience="${URL}" --ack-deadline=60
 fi
 
 echo "==> Budget ${BUDGET_NAME}: ${BUDGET_USD} USD/month, alerts 50/90/100%"
