@@ -90,7 +90,7 @@ The guardrail sits in three layers. Each layer works on its own.
      server, including `inventory` (read-only), which the guardrail needs.
    - Sales' only other channel is the Customer agent's A2A skills:
      - `list_journeys` returns open journey ids, with no PII.
-     - `journey_status` returns `{status, flight, resolution_acknowledged}`, with no PII.
+     - `journey_status` returns `{status, flight, resolution_acknowledged, run_id}` (`run_id`: opaque random per-run nonce, added in #104), with no PII.
        When it answers for a journey that isn't eligible, the Customer side
        records `sales_suppressed`.
      - `propose_offer` accepts a **structured `Offer` only** (`extra="forbid"`,

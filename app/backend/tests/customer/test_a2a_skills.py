@@ -56,7 +56,7 @@ async def test_list_journeys_and_status_have_no_pii(skills_and_jid):
     skills, jid, _ = skills_and_jid
     assert skills.list_journeys() == [jid]
     status = skills.journey_status(jid)
-    assert set(status.model_dump()) == {"status", "flight", "resolution_acknowledged"}
+    assert set(status.model_dump()) == {"status", "flight", "resolution_acknowledged", "run_id"}
     assert not PII & set(JourneyStatusView.model_json_schema()["properties"])
 
 
@@ -154,6 +154,7 @@ async def test_a2a_endpoint_round_trip(app, skills_and_jid):
         "status",
         "flight",
         "resolution_acknowledged",
+        "run_id",
     }
     rt = app.state.runtime
     await rt.sim.rebook("MSLV42", "AC1252")

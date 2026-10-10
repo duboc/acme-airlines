@@ -59,7 +59,7 @@ tests/scenario` reports 0 xfailed and 0 xpassed.
 
 | Layer | File | What it proves |
 |-------|------|----------------|
-| Architecture | `test_architecture.py` | Sales config/tools are `inventory` only; the Sales token gets 403 from every other registered server; `journey_status` has three non-PII fields |
+| Architecture | `test_architecture.py` | Sales config/tools are `inventory` only; the Sales token gets 403 from every other registered server; `journey_status` has exactly four non-PII fields (incl. the opaque `run_id`) |
 | Structured offers | `test_structured_offers.py` | No free-text field; extra keys (fuzzed), injected text in `seat_hint`/`flight`/`cabin` and text A2A parts are rejected |
 | Claims vs inventory | `test_claims_vs_inventory.py` | Inflated standard price, false margin, zero inventory are rejected |
 | Policy | `test_policy_properties.py` | hypothesis: approval implies all six rules (independent oracle, vacuity-guarded); each rule also hand-tested |
