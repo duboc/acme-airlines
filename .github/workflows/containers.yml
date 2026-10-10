@@ -1,0 +1,128 @@
+name: Containers
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/containers.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/containers.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  containers:
+    name: containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      LLM_MODE: fake
+      COMPOSE: docker compose -f app/compose.yaml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate throwaway per-caller tokens (masked, never stored)
+        run: |
+          C=$(openssl rand -hex 24); S=$(openssl rand -hex 24); A=$(openssl rand -hex 24)
+          echo "::add-mask::$C"; echo "::add-mask::$S"; echo "::add-mask::$A"
+          echo "ACME_SIM_TOKENS=customer=$C,sales=$S,test-admin=$A" >> "$GITHUB_ENV"
+          echo "ACME_SALES_TOKEN=$S" >> "$GITHUB_ENV"
+
+      - name: Build every image
+        run: $COMPOSE build
+
+      - name: Images run as a non-root user
+        run: |
+          for img in acme-backend:local acme-frontend:local; do
+            user=$(docker image inspect -f '{{.Config.User}}' "$img")
+            echo "$img -> user='$user'"
+            case "$user" in ""|root|0|0:*|root:*) echo "::error::$img runs as root"; exit 1;; esac
+          done
+
+      - name: No .env files or key material inside the images
+        run: |
+          for img in acme-backend:local acme-frontend:local; do
+            id=$(docker create "$img")
+            docker export "$id" | tar -tf - > /tmp/files.txt
+            docker rm "$id" > /dev/null
+            if grep -E '(^|/)\.env($|\.)|\.pem$|\.key$|credentials\.json$' /tmp/files.txt; then
+              echo "::error::$img contains env/key files"; exit 1
+            fi
+            echo "$img: clean ($(wc -l < /tmp/files.txt) files)"
+          done
+
+      - name: Secrets scan (trivy, fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: acme-backend:local
+          scanners: secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Secrets scan frontend image (trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: acme-frontend:local
+          scanners: secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Bring the stack up (fake LLM) and wait for health
+        run: |
+          $COMPOSE up -d
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/api/openapi.json > /dev/null; then echo "healthy after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "::error::stack did not become healthy"; $COMPOSE ps; $COMPOSE logs; exit 1
+
+      - name: Smoke test through the frontend proxy
+        run: |
+          set -e
+          curl -fsS -X POST http://127.0.0.1:8080/api/scenario/trigger-cancellation \
+            -H 'content-type: application/json' \
+            -d '{"flight":"AC1234","reason":"unscheduled maintenance"}' | tee /tmp/trigger.json
+          jid=$(jq -r '.journey_ids[0]' /tmp/trigger.json)
+          status=$(curl -fsS "http://127.0.0.1:8080/api/journeys/$jid" | jq -r '.status')
+          echo "journey $jid status=$status"
+          test "$status" = "RESOLVED"
+          # the agent-to-agent endpoint is not reachable from the browser side
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8080/api/a2a)" = "404"
+
+      - name: Sales credential reaches only the inventory server (403 elsewhere)
+        run: |
+          set -e
+          $COMPOSE exec -T sales-agent python - <<'PY'
+          import os, urllib.error, urllib.request
+          tok = os.environ["ACME_SALES_TOKEN"]
+          def code(server):
+              req = urllib.request.Request(
+                  f"http://acme-sim:8700/mcp/{server}/", data=b"{}", method="POST",
+                  headers={"Authorization": f"Bearer {tok}", "content-type": "application/json"})
+              try:
+                  return urllib.request.urlopen(req).status
+              except urllib.error.HTTPError as e:
+                  return e.code
+          for s in ["pss", "whatsapp", "payments", "crm", "dcs", "loyalty"]:
+              assert code(s) == 403, (s, code(s))
+          assert code("inventory") != 403
+          print("sales: 403 on every non-inventory server, inventory allowed")
+          PY
+
+      - name: Logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v --remove-orphans
