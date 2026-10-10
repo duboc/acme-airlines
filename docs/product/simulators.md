@@ -67,3 +67,11 @@ the flight's open seats. Holds live in `acme.sim.dcs.DcsState` (`dcs_state(sim)`
 |---|---|---|
 | `bag.get` | `tag` | `{tag, pnr, routing}`. Routing defaults to the PNR's first segment flight. |
 | `bag.reroute` | `tag`, `flight` | The updated bag. Rerouting onto a cancelled or unknown flight is a tool error. |
+
+## loyalty — `/mcp/loyalty/` (Loyalty/FFP)
+Access intent (enforced by the #27 allowlist, which is not merged yet): `customer` is allowed,
+`sales` is denied (403), because tier and benefits are passenger data.
+| Tool | Args | Result |
+|---|---|---|
+| `member.get` | `passenger_id` | `{passenger_id, member_id, tier, status_miles, benefits}`. Mariana: Diamond, 250000 miles. |
+| `courtesy.eligibility` | `passenger_id`, `kind` (`upgrade_recovery`) | `{passenger_id, kind, tier, eligible, discount_pct, rule}`. Eligible iff the tier is in `margin_opt.RECOVERY_DISCOUNT_PCT` (Diamond, Gold); `rule` references that table. |
