@@ -3,7 +3,9 @@ name = "acme"
 version = "0.1.0"
 description = "ACME Airlines agent backend"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "pydantic>=2.14.0",
+]
 
 [dependency-groups]
 dev = [
