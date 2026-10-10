@@ -1,0 +1,7 @@
+[
+  {"ts": "2026-10-10T08:00:12Z", "text": "cost=88.10 budget=1000 -> no action"},
+  {"ts": "2026-10-10T09:00:10Z", "text": "cost=95.40 budget=1000 -> no action"},
+  {"ts": "2026-10-10T10:00:11Z", "text": "cost=480.00 budget=500 -> agents suspended"},
+  {"ts": "2026-10-10T11:00:09Z", "text": "cost=480.00 budget=1000 -> no action"},
+  {"ts": "not-a-log-line", "text": "starting up"}
+]

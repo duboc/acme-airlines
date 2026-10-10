@@ -6,7 +6,7 @@ platform: `docs/observatory/platform-contract.md`).
 ```
 observatory/
   collector/   # Cloud Run job: snapshots hub agents + GitHub flow into BigQuery factory_ops
-  dashboard/   # Cloud Run service (later slices)
+  dashboard/   # Cloud Run service: read-only FastAPI (API.md is the UI contract); UI in web/ later
   fixtures/    # deterministic JSON rows, the shared contract for tests and fake mode
 ```
 
@@ -25,6 +25,15 @@ It sets `OBSERVATORY_DATA=fake`, uses no secrets and no GCP auth, and needs only
 
 A job whose project (or Dockerfile) does not exist yet logs `SKIPPED: ...` and passes.
 Once the project exists, every step is enforced.
+
+## Dashboard API
+
+`dashboard/API.md` is the contract (endpoints, JSON shapes, `state` values). Run it locally with
+fixtures: `OBSERVATORY_DATA=fake OBSERVATORY_SCENARIO=ok|empty|lagging|unavailable uv run uvicorn
+dashboard.app:create_app --factory` in `observatory/dashboard`. Tests and lint are the same as the
+collector's (`uv sync --frozen`, `uv run pytest`, `uv run ruff check`, `uv run ruff format --check`).
+Extra fixtures for it: `billing.json`, `monitoring.json`, `guard_logs.json`, `merges_per_day.json`.
+The dashboard image only contains `observatory/dashboard`; fake mode needs the fixtures dir (local/tests).
 
 ## Collector
 
