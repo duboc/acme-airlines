@@ -112,3 +112,20 @@ restart took longer, and `set -e` aborted the caller, whose output was sent to
 - The wait is now 180 seconds, with an explicit error message.
 - Callers no longer silence `disable`, and they verify that `status` reports
   `disabled` before continuing.
+
+## `@google.com` users get IAP "You don't have access"
+
+**Symptom:** `duboc@google.com` signs in to Google, then IAP shows *You don't
+have access* on the hub proxy and the Observatory. This happens even though
+`domain:google.com` holds `roles/iap.httpsResourceAccessor` on both services.
+
+**Root cause:** `gcloud run deploy --iap` uses IAP's **Google-managed OAuth
+client**. Per the Cloud IAP docs, *"Google-managed OAuth clients can only be
+used to manage access for internal users that are within an organization. You
+must use a custom OAuth configuration to … manage access … for external users
+that are outside of your organization."* The project's organization is
+`duboc.altostrat.com`, so `google.com` counts as external.
+
+**Fix:** a custom OAuth client with an **External** consent screen in
+**production**, applied to both services by `infra/55-iap-oauth-client.sh`
+(see runbook §6.3). `infra/verify.sh iap-oauth` fails until it is applied.

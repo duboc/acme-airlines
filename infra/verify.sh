@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verification harness for the acme-airlines factory.
 #
-# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|all>
+# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|all>
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
@@ -280,6 +280,18 @@ check_observatory() {
     || note=" (GitHub read token not yet added)"
   pass "observatory platform${note}"
 }
+check_iap_oauth() {
+  # External domains (google.com) need a CUSTOM OAuth client on IAP; the
+  # Google-managed client only admits users inside the project's organization.
+  local s cid bad=""
+  for s in scion-hub-acme-iap-proxy acme-observatory; do
+    cid="$(gcloud iap settings get --project="${PROJECT_ID}" --resource-type=cloud-run --service="${s}" \
+            --region="${REGION}" --format='value(accessSettings.oauthSettings.clientId)' 2>/dev/null)"
+    [[ "${cid}" == *.apps.googleusercontent.com ]] || bad+=" ${s}"
+  done
+  [[ -z "${bad}" ]] || { fail iap-oauth "no custom OAuth client on:${bad} (external domains such as google.com are refused)"; return 1; }
+  pass iap-oauth
+}
 check_lead() {
   # The lead agent's container is running on the VM.
   vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
@@ -303,11 +315,12 @@ run() {
     loop)         check_loop ;;
     budget)       check_budget ;;
     observatory)  check_observatory ;;
+    iap-oauth)    check_iap_oauth ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth; do run "$c" || rc=1; done
       return "$rc" ;;
-    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|all>" >&2; return 2 ;;
+    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|all>" >&2; return 2 ;;
   esac
 }
 
