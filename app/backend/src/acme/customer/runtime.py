@@ -154,10 +154,17 @@ class CustomerRuntime:
         return _to_message(received)
 
     async def tick(self) -> None:
-        """Run time-driven work: send each due proactive notification (once per journey)."""
+        """Run time-driven work: send each due proactive notification (once per journey).
+
+        Check-and-send is atomic per journey (same lock as offer delivery, acceptance and
+        inbound handling): concurrent ticks (console + chat polls) cannot both pass the check
+        before `notification_sent` is recorded. Nothing under this lock takes it again."""
         for rec in list(self.journeys.values()):
-            if outreach.notification_due(self, rec):
-                await outreach.notify_resolution(self, rec)
+            if not outreach.notification_due(self, rec):
+                continue  # cheap pre-check without the lock
+            async with self.journey_lock(rec.state.journey_id):
+                if outreach.notification_due(self, rec):  # re-check inside the lock
+                    await outreach.notify_resolution(self, rec)
 
     def journey_for_passenger(self, passenger_id: str) -> JourneyRecord | None:
         for rec in self.journeys.values():
