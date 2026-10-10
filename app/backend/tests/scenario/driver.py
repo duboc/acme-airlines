@@ -41,7 +41,7 @@ class EventType:
     VOUCHER_ISSUED = "voucher_issued"  # kind
     CONNECTION_VERIFIED = "connection_verified"  # flight, connection_flight
     SALES_OPPORTUNITY = "sales_opportunity"  # flight, open_seats
-    GUARDRAIL_CHECKED = "guardrail_checked"  # approved (bool)
+    GUARDRAIL_CHECKED = "guardrail_decision"  # approved (bool), reasons, offer_id (#61 contract)
     OFFER_SENT = "offer_sent"  # offer_id
     UPGRADE_CONFIRMED = "upgrade_confirmed"  # flight, seat, cabin, price
     VERIFICATION_PASSED = "verification_passed"  # checks: flight, seat, hotel, baggage, upgrade
