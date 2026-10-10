@@ -1832,6 +1832,59 @@
         "title": "SeatHeldPayload",
         "type": "object"
       },
+      "SeatReleasedEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/SeatReleasedPayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "seat_released",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "SeatReleasedEvent",
+        "type": "object"
+      },
+      "SeatReleasedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "flight": {
+            "title": "Flight",
+            "type": "string"
+          },
+          "replaced_by": {
+            "title": "Replaced By",
+            "type": "string"
+          },
+          "seat": {
+            "title": "Seat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flight",
+          "seat",
+          "replaced_by"
+        ],
+        "title": "SeatReleasedPayload",
+        "type": "object"
+      },
       "Segment": {
         "properties": {
           "flight_number": {
@@ -2505,6 +2558,7 @@
                         "sales_opportunity": "#/components/schemas/SalesOpportunityEvent",
                         "sales_suppressed": "#/components/schemas/SalesSuppressedEvent",
                         "seat_held": "#/components/schemas/SeatHeldEvent",
+                        "seat_released": "#/components/schemas/SeatReleasedEvent",
                         "status_changed": "#/components/schemas/StatusChangedEvent",
                         "transfer_arranged": "#/components/schemas/TransferArrangedEvent",
                         "upgrade_confirmed": "#/components/schemas/UpgradeConfirmedEvent",
@@ -2565,6 +2619,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/RequestClosedEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/SeatReleasedEvent"
                       },
                       {
                         "$ref": "#/components/schemas/VoucherIssuedEvent"

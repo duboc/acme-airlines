@@ -96,6 +96,14 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
         return await _refuse(rt, rec, record, reasons)
     seat = open_premium[0]
     pnr = rec.pnr_locator
+    original = next(
+        (
+            x["seat"]
+            for x in (await rt.client.call("pss", "pnr.get", pnr=pnr))["seats"]
+            if x["flight_number"] == flight
+        ),
+        None,
+    )
 
     try:
         await rt.client.call("dcs", "seat.hold", flight=flight, seat=seat, pnr=pnr)
@@ -123,6 +131,7 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
         await _void(rt, rec, record, charge["charge_id"])
         return await _refuse(rt, rec, record, ["upgrade_failed"], charged=True)
 
+    await _release_original_seat(rt, rec, flight, original, seat)
     record.status = "accepted"
     state.append_event(
         "customer_agent",
@@ -144,6 +153,29 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     del bp
     await close_loop(rt, rec)
     return "accepted"
+
+
+async def _release_original_seat(
+    rt: CustomerRuntime, rec: JourneyRecord, flight: str, original: str | None, new_seat: str
+) -> None:
+    """Free the economy seat only after the premium seat is assigned and the pass issued. A
+    failure here never undoes the upgrade: it is recorded for a human."""
+    if original is None or original == new_seat:
+        return
+    try:
+        await rt.client.call(
+            "dcs", "seat.release", flight=flight, seat=original, pnr=rec.pnr_locator
+        )
+    except ToolError as exc:
+        rec.state.append_event(
+            "customer_agent", "needs_human", {"step": "seat_release", "error": str(exc)}
+        )
+        return
+    rec.state.append_event(
+        "customer_agent",
+        "seat_released",
+        {"flight": flight, "seat": original, "replaced_by": new_seat},
+    )
 
 
 async def _void(

@@ -93,6 +93,7 @@ SAMPLES = {
     "resolution_acknowledged": {},
     "change_handoff": {"request_id": "r1", "after": "10:00"},
     "request_closed": {"request_id": "r1", "outcome": "unsatisfiable"},
+    "seat_released": {"flight": "AC1252", "seat": "14A", "replaced_by": "2A"},
     "voucher_issued": {"voucher_id": "V1", "kind": "meal", "meal_type": "dinner", "amount": "25.00",
                        "entitlement": "meals", "reason": "r"},
     "resolution_blocked": {"missing": ["seat"]},

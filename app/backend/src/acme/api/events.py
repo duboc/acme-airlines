@@ -137,6 +137,12 @@ class ChangeHandoffPayload(Payload):
     after: str
 
 
+class SeatReleasedPayload(Payload):
+    flight: str
+    seat: str
+    replaced_by: str
+
+
 class RequestClosedPayload(Payload):
     request_id: str
     outcome: Literal["satisfied", "unsatisfiable"]
@@ -244,6 +250,7 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "resolution_acknowledged": Empty,
     "change_handoff": ChangeHandoffPayload,
     "request_closed": RequestClosedPayload,
+    "seat_released": SeatReleasedPayload,
     "voucher_issued": VoucherIssuedPayload,
     "resolution_blocked": ResolutionBlockedPayload,
     "passenger_message": PassengerMessagePayload,
