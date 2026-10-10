@@ -1,0 +1,60 @@
+import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import App from './App';
+
+const ok = { state: 'ok', as_of: '2026-10-10T12:00:00Z', message: null };
+
+function mockApi(overrides: Record<string, unknown> = {}) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const name = url.replace('/api/', '');
+      const body = overrides[name] ?? ok;
+      if (body instanceof Error) throw body;
+      return { ok: true, status: 200, json: async () => body };
+    }),
+  );
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('App shell', () => {
+  it('has landmarks, one h1 and five titled panels', async () => {
+    mockApi();
+    render(<App />);
+    expect(screen.getByRole('main')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'ACME Observatory' })).toBeInTheDocument();
+    for (const t of ['Spend', 'Models', 'Agents', 'GitHub', 'Budget']) {
+      expect(screen.getByRole('region', { name: t })).toBeInTheDocument();
+    }
+    expect(await screen.findAllByText('Live')).toHaveLength(5);
+    expect(screen.getByText('Latest data 2026-10-10 12:00Z')).toBeInTheDocument();
+  });
+
+  it('first focusable element is the skip link', () => {
+    mockApi();
+    render(<App />);
+    expect(screen.getAllByRole('link')[0]).toHaveAttribute('href', '#main');
+  });
+
+  it.each([
+    ['empty', 'No data yet', 'Collector has not run.'],
+    ['lagging', 'Delayed', 'Billing data is 3 days old.'],
+    ['unavailable', 'Unavailable', 'Billing export is not enabled.'],
+  ])('shows an explicit %s state', async (state, chip, message) => {
+    mockApi({ spend: { state, as_of: null, message } });
+    render(<App />);
+    const panel = screen.getByRole('region', { name: 'Spend' });
+    expect(await within(panel).findByText(chip)).toBeInTheDocument();
+    expect(within(panel).getByRole('status')).toHaveTextContent(message);
+  });
+
+  it('shows a failure in one panel without blanking others', async () => {
+    mockApi({ models: new Error('boom') });
+    render(<App />);
+    const panel = screen.getByRole('region', { name: 'Models' });
+    expect(await within(panel).findByText('Failed to load')).toBeInTheDocument();
+    expect(within(panel).getByRole('status')).toHaveTextContent('Could not reach the API');
+    expect(await screen.findAllByText('Live')).toHaveLength(4);
+  });
+});

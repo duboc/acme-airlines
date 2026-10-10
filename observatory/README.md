@@ -6,7 +6,7 @@ platform: `docs/observatory/platform-contract.md`).
 ```
 observatory/
   collector/   # Cloud Run job: snapshots hub agents + GitHub flow into BigQuery factory_ops
-  dashboard/   # Cloud Run service: read-only FastAPI (API.md is the UI contract); UI in web/ later
+  dashboard/   # Cloud Run service: read-only FastAPI (API.md is the UI contract); React UI in web/ (PRODUCT.md, DESIGN.md)
   fixtures/    # deterministic JSON rows, the shared contract for tests and fake mode
 ```
 
@@ -83,3 +83,10 @@ the same files, so change the schema and fixtures together.
 
 `Sink.write(table, rows)`: `BigQuerySink` (streaming insert, raises on row errors) and `FakeSink`
 (in-memory dict, selected by `OBSERVATORY_DATA=fake`).
+
+## Dashboard UI
+
+`dashboard/web/` is React + Vite + TS. `cd observatory/dashboard/web && npm ci && npm run dev` proxies `/api`
+to `localhost:8080` (run the API with `OBSERVATORY_DATA=fake`). Set `VITE_DATA_MODE=fake` at build/dev time to show the
+"Fake data" header badge (the API contract carries no mode field). The Dockerfile builds `web/dist` in a node stage;
+the image sets `DASHBOARD_STATIC=/app/web/dist` and FastAPI serves it at `/`. Panel bodies plug into `Panel` as render children (#119/#120).
