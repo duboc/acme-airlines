@@ -105,6 +105,38 @@ async def test_new_flight_after_replanning_allows_one_more_proposal(world):
     assert len(state.offers) == 1
 
 
+async def rerun_after_reset(rt, rec_ack=True):
+    rt.auto_duty_of_care = False
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    await rt.sim.rebook("MSLV42", "AC1252")
+    return jid, resolve(rt, jid, acknowledged=rec_ack)
+
+
+async def test_reset_then_rerun_pitches_the_offer_again_exactly_once(world):
+    """#104: the sent-set must not survive POST /scenario/reset (same journey id and flight)."""
+    radar, rt, jid = world
+    state = resolve(rt, jid)
+    await radar.tick()
+    assert len(proposed(state)) == 1
+
+    rt.reset()  # what POST /scenario/reset does; acme-sales is not told
+    jid2, state2 = await rerun_after_reset(rt)
+    assert jid2 == jid  # deterministic id: only the run differs
+    for _ in range(3):
+        await radar.tick()
+    assert len(proposed(state2)) == 1  # pitched again, still once per (journey, flight, run)
+
+
+async def test_reset_without_rerun_proposes_nothing_and_rerun_unacknowledged_is_silent(world):
+    radar, rt, jid = world
+    resolve(rt, jid)
+    await radar.tick()
+    rt.reset()
+    assert await radar.tick() == []
+    _, state2 = await rerun_after_reset(rt, rec_ack=False)
+    assert await radar.tick() == [] and state2.offers == []
+
+
 def test_sales_tool_config_is_inventory_only():
     cfg = sales_mcp_config("http://sim:8700", load_tokens({}))
     assert SALES_SERVERS == ("inventory",)

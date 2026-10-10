@@ -1,6 +1,7 @@
 """Layer 1 (architecture): Sales cannot reach anything but inventory, and sees no PII."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -51,9 +52,12 @@ async def test_sales_credential_is_refused_by_every_other_server(server, suffix)
     assert r.status_code == 403
 
 
-async def test_journey_status_exposes_exactly_three_non_pii_fields(stack):
+async def test_journey_status_exposes_exactly_four_non_pii_fields(stack):
     view = stack.skills.journey_status(stack.jid).model_dump()
-    assert set(view) == {"status", "flight", "resolution_acknowledged"}
+    assert set(view) == {"status", "flight", "resolution_acknowledged", "run_id"}
+    # run_id is an opaque random nonce (#104): not derived from the PNR, journey id or passenger
+    assert re.fullmatch(r"[0-9a-f]{12}", view["run_id"])
+    assert stack.jid not in view["run_id"] and "MSLV42" not in view["run_id"]
     assert set(JourneyStatusView.model_json_schema()["properties"]) == set(view)
 
 

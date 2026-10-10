@@ -4,7 +4,8 @@ Sales sees only what the Customer skills expose (status, flight, acknowledged) a
 inventory/fares from the `inventory` MCP server. It never talks to a passenger and writes
 nothing to journeys; suppression is recorded by the Customer side when it answers
 `journey_status`. The Customer guardrail (rule 5 `offer_already_made`) is the authoritative
-backstop for duplicates; the sent-set here only avoids sending them.
+backstop for duplicates; the sent-set here only avoids sending them. It is keyed by the
+journey's opaque `run_id` so a scenario reset (same deterministic journey id) starts afresh.
 
 Pricing: Sales is PII-free, so it does not know the passenger's tier. It prices with the best
 courtesy tier (`COURTESY_TIER`); the guardrail re-checks the price against the real tier cap.
@@ -28,7 +29,7 @@ class SalesRadar:
     def __init__(self, customer: CustomerPort, inventory: SimClient) -> None:
         self._customer = customer
         self._inventory = inventory
-        self._sent: set[tuple[str, str]] = set()  # (journey_id, flight)
+        self._sent: set[tuple[str, str, str]] = set()  # (journey_id, run_id, flight)
 
     async def tick(self) -> list[Offer]:
         """One radar pass. Returns the offers proposed in this pass."""
@@ -42,12 +43,13 @@ class SalesRadar:
                 or not flight
             ):
                 continue  # suppressed: emit nothing
-            if (journey_id, flight) in self._sent:
+            key = (journey_id, status["run_id"], flight)
+            if key in self._sent:
                 continue
             offer = await self._price(journey_id, flight)
             if offer is None:
                 continue
-            self._sent.add((journey_id, flight))  # at most once, even if the proposal fails
+            self._sent.add(key)  # at most once per run, even if the proposal fails
             await self._customer.propose_offer(offer)
             proposed.append(offer)
         return proposed

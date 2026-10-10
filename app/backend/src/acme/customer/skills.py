@@ -38,6 +38,7 @@ class JourneyStatusView(BaseModel):
     status: str
     flight: str | None
     resolution_acknowledged: bool
+    run_id: str  # opaque nonce of this journey run; no passenger or booking data
 
 
 def ineligible_reason(rec: JourneyRecord) -> str | None:
@@ -78,6 +79,7 @@ class CustomerSkills:
             status=state.status.value,
             flight=flight,
             resolution_acknowledged=state.resolution_acknowledged,
+            run_id=rec.run_id,
         )
 
     def propose_offer(

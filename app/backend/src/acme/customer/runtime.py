@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import AwareDatetime, BaseModel
 
@@ -52,6 +53,9 @@ class JourneyRecord:
     hotel: HotelBooking | None = None
     vouchers: list[Voucher] = field(default_factory=list)
     constraint_latest_arrival: datetime | None = None
+    # Opaque per-run nonce (not derived from PNR/passenger): lets Sales tell a re-run of the same
+    # (deterministic) journey id after a scenario reset from the run it already pitched (#104).
+    run_id: str = field(default_factory=lambda: uuid4().hex[:12])
 
 
 def _to_message(m: dict[str, Any]) -> WhatsAppMessage:
