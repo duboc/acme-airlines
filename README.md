@@ -14,13 +14,15 @@ changes as pull requests.
 | [`infra/`](infra/) | Scripts and config that create and operate the factory. |
 | [`docs/setup/`](docs/setup/) | How the factory was built, step by step, and how to run it. |
 | [`docs/decisions/`](docs/decisions/) | Architecture decision records (app stack: [ADR 0100](docs/decisions/0100-app-stack.md)). |
-| [`docs/product/`](docs/product/) | Product brief (IRROPS use case), [MVP plan](docs/product/mvp-plan.md), and [demo script](docs/product/demo-script.md). |
+| [`docs/product/`](docs/product/) | Product brief (IRROPS use case), [MVP plan](docs/product/mvp-plan.md), [try-it guide](docs/product/try-it.md), and [demo script](docs/product/demo-script.md). |
 | [`docs/factory/`](docs/factory/) | How to work with the agent team; smoke-test records. |
 | [`factory/team/`](factory/team/) | Source for the agent team's role templates. |
 | [`factory/templates/`](factory/templates/) | Generated Scion role templates (`acme-*`). |
 | [`docs/superpowers/`](docs/superpowers/) | Design spec and implementation plan for the factory. |
 
 ## Application quickstart
+
+> **Product Owner & Testers:** Follow the **[Try-It Guide](docs/product/try-it.md)** to test the hosted demo behind IAP or run the guided scenario presets locally.
 
 Run the full multi-agent application locally with Docker Compose:
 
@@ -35,7 +37,7 @@ Then open:
 - **Operator Console:** `http://localhost:8080/console`
 - **WhatsApp Passenger Chat:** `http://localhost:8080/whatsapp`
 
-For the step-by-step narrative demo walkthrough, follow the [Demo Script](docs/product/demo-script.md).
+For the step-by-step narrative demo walkthrough, follow the [Demo Script](docs/product/demo-script.md). For guided testing of scenario variants and edge cases, see the [Try-It Guide](docs/product/try-it.md).
 
 ### LLM Mode (`LLM_MODE`)
 
