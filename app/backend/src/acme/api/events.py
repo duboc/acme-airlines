@@ -180,11 +180,18 @@ class OfferSentPayload(Payload):
     message_id: str
 
 
-class UpgradeConfirmedPayload(Provisional):
+class UpgradeConfirmedPayload(Payload):
     flight: str
     seat: str
     cabin: str
     price: str
+    charge_id: str
+
+
+class ChargeVoidedPayload(Payload):
+    offer_id: str
+    charge_id: str
+    reason: str
 
 
 class VerificationPassedPayload(Provisional):
@@ -224,6 +231,7 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "decline_offer": OfferActionPayload,
     "guardrail_decision": GuardrailDecisionPayload,
     "sales_suppressed": SalesSuppressedPayload,
+    "charge_voided": ChargeVoidedPayload,  # money returned after a failed upgrade (#28)
     "offer_proposed": OfferProposedPayload,  # Sales proposal received (#14)
     # Provisional: emitted by #16.
     "sales_opportunity": SalesOpportunityPayload,

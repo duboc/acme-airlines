@@ -56,6 +56,7 @@ export const EVENT_TYPES = [
   'accept_offer',
   'analytics_recorded',
   'bag_rerouted',
+  'charge_voided',
   'cancellation_detected',
   'change_handoff',
   'connection_constraint',

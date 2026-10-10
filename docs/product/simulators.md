@@ -53,6 +53,7 @@ MCP tool errors. Times are timezone-aware ISO 8601.
 | Tool | Args | Result |
 |---|---|---|
 | `charge` | `pnr`, `amount` (USD-scale, > 0), `currency` (`^[A-Z]{3}$`), `idempotency_key` | `{charge_id, pnr, amount, currency, status: "succeeded", at, idempotent_replay}`. Repeating a key with identical parameters returns the same charge (`idempotent_replay: true`); a different amount/PNR/currency under the same key is a tool error. Unknown PNR is an error. |
+| `charge.void` | `charge_id` | The charge with `status: "voided"` (idempotent; unknown id is an error). A voided charge no longer counts toward `sim.partners.net_charged(pnr)`; replaying `charge` with the same key returns the voided record, it never charges again. |
 
 ## dcs — `/mcp/dcs/` (departure control)
 Seat state is shared with the world: `seat.assign` writes the seat to the PNR and removes it from

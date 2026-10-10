@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from acme.api.events import TimelineEvent
 from acme.api.runtime import JourneyRecord, Runtime, WhatsAppMessage
 from acme.customer.adk_agent import CARD_PATH, customer_agent_card
+from acme.customer.conversion import NoSentOffer, accept_offer, decline_offer
 from acme.customer.skills import CustomerSkills
 from acme.domain.clock import Clock
 from acme.domain.journey import OfferRecord
@@ -190,12 +191,13 @@ def create_app(clock: Clock | None = None) -> FastAPI:
     async def whatsapp_action(passenger_id: str, body: PassengerAction) -> ActionResult:
         require_passenger(passenger_id)
         rec = rt.journey_for_passenger(passenger_id)
-        sent = [o for o in rec.state.offers if o.status == "sent"] if rec else []
-        if not sent:
+        if rec is None:
             raise HTTPException(409, "no offer has been sent to this passenger")
-        offer = sent[-1]
-        offer.status = "accepted" if body.action == "accept_offer" else "declined"
-        rec.state.append_event("passenger", body.action, {"offer_id": str(offer.offer.offer_id)})
-        return ActionResult(offer_status=offer.status)
+        try:
+            if body.action == "accept_offer":
+                return ActionResult(offer_status=await accept_offer(rt, rec))
+            return ActionResult(offer_status=await decline_offer(rt, rec))
+        except NoSentOffer:
+            raise HTTPException(409, "no offer has been sent to this passenger") from None
 
     return app

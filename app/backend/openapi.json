@@ -240,6 +240,59 @@
         "title": "ChangeHandoffPayload",
         "type": "object"
       },
+      "ChargeVoidedEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/ChargeVoidedPayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "charge_voided",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "ChargeVoidedEvent",
+        "type": "object"
+      },
+      "ChargeVoidedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "charge_id": {
+            "title": "Charge Id",
+            "type": "string"
+          },
+          "offer_id": {
+            "title": "Offer Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "offer_id",
+          "charge_id",
+          "reason"
+        ],
+        "title": "ChargeVoidedPayload",
+        "type": "object"
+      },
       "ConnectionConstraintEvent": {
         "properties": {
           "actor": {
@@ -1867,10 +1920,14 @@
         "type": "object"
       },
       "UpgradeConfirmedPayload": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "cabin": {
             "title": "Cabin",
+            "type": "string"
+          },
+          "charge_id": {
+            "title": "Charge Id",
             "type": "string"
           },
           "flight": {
@@ -1890,7 +1947,8 @@
           "flight",
           "seat",
           "cabin",
-          "price"
+          "price",
+          "charge_id"
         ],
         "title": "UpgradeConfirmedPayload",
         "type": "object"
@@ -2257,6 +2315,7 @@
                         "bag_rerouted": "#/components/schemas/BagReroutedEvent",
                         "cancellation_detected": "#/components/schemas/CancellationDetectedEvent",
                         "change_handoff": "#/components/schemas/ChangeHandoffEvent",
+                        "charge_voided": "#/components/schemas/ChargeVoidedEvent",
                         "connection_constraint": "#/components/schemas/ConnectionConstraintEvent",
                         "connection_verified": "#/components/schemas/ConnectionVerifiedEvent",
                         "crm_logged": "#/components/schemas/CrmLoggedEvent",
@@ -2360,6 +2419,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/SalesSuppressedEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ChargeVoidedEvent"
                       },
                       {
                         "$ref": "#/components/schemas/OfferProposedEvent"

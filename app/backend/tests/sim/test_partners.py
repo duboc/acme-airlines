@@ -108,3 +108,18 @@ async def test_registry_contains_partner_servers():
     from acme.sim.app import DEFAULT_REGISTRY
 
     assert {"concierge", "whatsapp", "payments"} <= set(DEFAULT_REGISTRY)
+
+
+async def test_charge_void_is_idempotent_and_leaves_no_net_charge(connect, sim):
+    async with connect("payments") as s:
+        c = await call(s, "charge", pnr="MSLV42", amount="135.00", currency="USD",
+                       idempotency_key="v-1")  # fmt: skip
+        v = await call(s, "charge.void", charge_id=c["charge_id"])
+        again = await call(s, "charge.void", charge_id=c["charge_id"])
+        replay = await call(s, "charge", pnr="MSLV42", amount="135.00", currency="USD",
+                            idempotency_key="v-1")  # fmt: skip
+        unknown = await s.call_tool("charge.void", {"charge_id": "CH-NOPE"})
+    assert v["status"] == "voided" and again["status"] == "voided"
+    assert replay["status"] == "voided" and replay["charge_id"] == c["charge_id"]
+    assert unknown.isError
+    assert sim.partners.net_charged("MSLV42") == 0

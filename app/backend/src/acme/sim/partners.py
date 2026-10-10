@@ -125,6 +125,21 @@ class PartnerState:
         self.charges[key] = rec
         return {**rec, "idempotent_replay": False}
 
+    def void(self, charge_id: str) -> dict:
+        """Void/refund a charge (idempotent). A voided charge no longer counts as money taken."""
+        for rec in self.charges.values():
+            if rec["charge_id"] == charge_id:
+                rec["status"] = "voided"
+                return dict(rec)
+        raise SimError(f"unknown charge {charge_id}")
+
+    def net_charged(self, pnr: str) -> Decimal:
+        return sum(
+            (Decimal(c["amount"]) for c in self.charges.values()
+             if c["pnr"] == pnr and c["status"] == "succeeded"),
+            Decimal(0),
+        )  # fmt: skip
+
 
 def build_concierge(sim: SimWorld) -> FastMCP:
     mcp = _server("concierge")
@@ -195,5 +210,10 @@ def build_payments(sim: SimWorld) -> FastMCP:
     ) -> dict[str, Any]:
         """Charge a PNR. Idempotent per `idempotency_key`."""
         return sim.partners.charge(pnr, amount, currency, idempotency_key)
+
+    @mcp.tool(name="charge.void")
+    def charge_void(charge_id: str) -> dict[str, Any]:
+        """Void/refund a charge. Idempotent; unknown ids are an error."""
+        return sim.partners.void(charge_id)
 
     return mcp
