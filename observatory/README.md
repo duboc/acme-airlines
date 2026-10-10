@@ -170,3 +170,5 @@ the same files, so change the schema and fixtures together.
 to `localhost:8080` (run the API with `OBSERVATORY_DATA=fake`). Set `VITE_DATA_MODE=fake` at build/dev time to show the
 "Fake data" header badge (the API contract carries no mode field). The Dockerfile builds `web/dist` in a node stage;
 the image sets `DASHBOARD_STATIC=/app/web/dist` and FastAPI serves it at `/`. Panel bodies plug into `Panel` as render children (#119/#120).
+
+Panels: Spend (stacked SVG bars + daily table), Model usage (24h/7d), Budget (meter with 50/90/100% markers, textual threshold, guard actions). Billing `empty` shows "Billing export not enabled yet".

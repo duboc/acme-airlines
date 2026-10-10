@@ -2,13 +2,28 @@ import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
-const ok = { state: 'ok', as_of: '2026-10-10T12:00:00Z', message: null };
+const zero = { date: 'total', vm: 0, cloud_run: 0, vertex_ai: 0, other: 0, total: 0 };
+const ok = {
+  state: 'ok',
+  as_of: '2026-10-10T12:00:00Z',
+  message: null,
+  days: 30,
+  hours: 24,
+  series: [],
+  totals: zero,
+  models: [],
+  budget_usd: 1000,
+  mtd_usd: 0,
+  percent: 0,
+  markers: [],
+  guard_actions: [],
+};
 
 function mockApi(overrides: Record<string, unknown> = {}) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
-      const name = url.replace('/api/', '');
+      const name = url.replace('/api/', '').split('?')[0]!;
       const body = overrides[name] ?? ok;
       if (body instanceof Error) throw body;
       return { ok: true, status: 200, json: async () => body };
@@ -27,7 +42,7 @@ describe('App shell', () => {
     render(<App />);
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'ACME Observatory' })).toBeInTheDocument();
-    for (const t of ['Spend', 'Models', 'Agents', 'GitHub', 'Budget']) {
+    for (const t of ['Spend', 'Model usage', 'Agents', 'GitHub', 'Budget']) {
       expect(screen.getByRole('region', { name: t })).toBeInTheDocument();
     }
     expect(await screen.findAllByText('Live')).toHaveLength(5);
@@ -52,9 +67,9 @@ describe('App shell', () => {
     ['lagging', 'Delayed', 'Billing data is 3 days old.'],
     ['unavailable', 'Unavailable', 'Billing export is not enabled.'],
   ])('shows an explicit %s state', async (state, chip, message) => {
-    mockApi({ spend: { state, as_of: null, message } });
+    mockApi({ agents: { state, as_of: null, message } });
     render(<App />);
-    const panel = screen.getByRole('region', { name: 'Spend' });
+    const panel = screen.getByRole('region', { name: 'Agents' });
     expect(await within(panel).findByText(chip)).toBeInTheDocument();
     expect(within(panel).getByRole('status')).toHaveTextContent(message);
   });
@@ -62,7 +77,7 @@ describe('App shell', () => {
   it('shows a failure in one panel without blanking others', async () => {
     mockApi({ models: new Error('boom') });
     render(<App />);
-    const panel = screen.getByRole('region', { name: 'Models' });
+    const panel = screen.getByRole('region', { name: 'Model usage' });
     expect(await within(panel).findByText('Failed to load')).toBeInTheDocument();
     expect(within(panel).getByRole('status')).toHaveTextContent('Could not reach the API');
     expect(await screen.findAllByText('Live')).toHaveLength(4);

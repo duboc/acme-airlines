@@ -4,11 +4,11 @@ import { fetchApi, type Endpoints } from './api';
 export type Result<T> =
   { status: 'loading' } | { status: 'error'; error: string } | { status: 'done'; data: T };
 
-export function useApi<K extends keyof Endpoints>(name: K): Result<Endpoints[K]> {
+export function useApi<K extends keyof Endpoints>(name: K, query = ''): Result<Endpoints[K]> {
   const [result, setResult] = useState<Result<Endpoints[K]>>({ status: 'loading' });
   useEffect(() => {
     const ctl = new AbortController();
-    fetchApi(name, ctl.signal).then(
+    fetchApi(name, ctl.signal, query).then(
       (data) => setResult({ status: 'done', data }),
       (e: unknown) => {
         if (!ctl.signal.aborted)
@@ -16,6 +16,6 @@ export function useApi<K extends keyof Endpoints>(name: K): Result<Endpoints[K]>
       },
     );
     return () => ctl.abort();
-  }, [name]);
+  }, [name, query]);
   return result;
 }
