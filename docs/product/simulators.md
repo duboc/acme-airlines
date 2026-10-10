@@ -51,3 +51,19 @@ MCP tool errors. Times are timezone-aware ISO 8601.
 | Tool | Args | Result |
 |---|---|---|
 | `charge` | `pnr`, `amount` (USD-scale, > 0), `currency` (`^[A-Z]{3}$`), `idempotency_key` | `{charge_id, pnr, amount, currency, status: "succeeded", at, idempotent_replay}`. Repeating a key with identical parameters returns the same charge (`idempotent_replay: true`); a different amount/PNR/currency under the same key is a tool error. Unknown PNR is an error. |
+
+## dcs — `/mcp/dcs/` (departure control)
+Seat state is shared with the world: `seat.assign` writes the seat to the PNR and removes it from
+the flight's open seats. Holds live in `acme.sim.dcs.DcsState` (`dcs_state(sim)`).
+| Tool | Args | Result |
+|---|---|---|
+| `seatmap.get` | `flight` | `{flight, seats: {cabin: [open seats, holds excluded]}, held: {seat: pnr}}`. |
+| `seat.hold` | `flight`, `seat`, `pnr` | `{flight, seat, pnr, status: "held"}`. Re-holding by the same PNR is idempotent; a hold by another PNR, or of a seat that is not open, is a tool error. |
+| `seat.assign` | `flight`, `seat`, `pnr`, `cabin` | `{flight, seat, pnr, cabin, status: "assigned"}`. The seat must be open in that cabin and free or held by the same PNR. Clears the hold; replaces the PNR's seat on that flight. |
+| `boarding_pass.issue` | `pnr`, `flight` | `{boarding_pass_id, pnr, passenger_name, flight, origin, destination, departure, seat, cabin}`. The PNR must have a segment on `flight` (rebook first) and an assigned seat there. |
+
+## worldtracer — `/mcp/worldtracer/` (baggage)
+| Tool | Args | Result |
+|---|---|---|
+| `bag.get` | `tag` | `{tag, pnr, routing}`. Routing defaults to the PNR's first segment flight. |
+| `bag.reroute` | `tag`, `flight` | The updated bag. Rerouting onto a cancelled or unknown flight is a tool error. |
