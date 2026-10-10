@@ -40,6 +40,25 @@ GCP errors become `state: unavailable`, a missing billing export becomes `empty`
 the daily max of `merges_24h` from `github_snapshots`.
 The dashboard image only contains `observatory/dashboard`; fake mode needs the fixtures dir (local/tests).
 
+## Deploy (`.github/workflows/observatory-deploy.yml`)
+
+Runs on push to `main` touching `observatory/**` or the workflow itself, and on `workflow_dispatch`.
+Keyless: WIF auth (`vars.OBSERVATORY_WIF_PROVIDER`, `vars.OBSERVATORY_DEPLOYER_SA`), no secrets or keys.
+WIF trusts only `refs/heads/main`, so PR branches cannot deploy (and the workflow cannot be tested from
+one). One deploy at a time (`concurrency`, no cancel-in-progress). A merge:
+
+1. builds and pushes `dashboard:<sha>` (context `observatory/dashboard`) and `collector:<sha>`
+   (context `observatory/collector`) to `vars.OBSERVATORY_AR_REPO`;
+2. `gcloud run deploy acme-observatory --image dashboard:<sha>` (dashboard first);
+3. `gcloud run jobs deploy acme-observatory-collector --image collector:<sha>` with
+   `--update-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest`. The deployer cannot read Secret
+   Manager, so if that fails (typically the secret has no version yet) the step retries image-only and
+   emits a `::warning::`; the GitHub snapshot then stays skipped until the PAT exists. `--update-secrets`
+   is used rather than `--set-secrets` because the latter replaces all secrets and would drop `SCION_HUB_TOKEN`;
+4. verifies that `gcloud run services describe` / `jobs describe` report the new image.
+
+Only `--image` changes otherwise: service accounts, IAP, networking and env vars are never passed.
+
 ## Collector
 
 `python -m collector` ensures the `factory_ops` tables exist, then writes one row set per run

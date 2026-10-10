@@ -52,7 +52,7 @@ observatory/
 | `HUB_PROJECT` | collector | `duboc-acme-airlines` |
 | `GITHUB_REPO` | collector | `duboc/acme-airlines` |
 | `SCION_HUB_TOKEN` | collector (secret) | `acme-observatory-hub-token`. A hub UAT with **`agent:list`, `agent:read`**, project-scoped, 90 days. Use it as `Authorization: Bearer`, or with the scion CLI (`SCION_HUB_ENDPOINT` + `SCION_HUB_TOKEN`). |
-| `GITHUB_TOKEN` | collector (secret, **add to the job on first deploy**: `--set-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest`) | A read-only GitHub PAT, provided by the product owner. Until it exists, skip the GitHub snapshot and log a warning. |
+| `GITHUB_TOKEN` | collector (secret, **add to the job on first deploy**: `--update-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest`; not `--set-secrets`, which replaces all of the job's secret mappings and would drop `SCION_HUB_TOKEN`) | A read-only GitHub PAT, provided by the product owner. Until it exists, skip the GitHub snapshot and log a warning. |
 | `OBSERVATORY_DATA` | tests / local | `fake` makes everything read `observatory/fixtures/`. **CI must use `fake`.** |
 
 ## Deploy (GitHub Actions, keyless)
