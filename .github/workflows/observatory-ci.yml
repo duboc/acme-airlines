@@ -1,0 +1,146 @@
+name: Observatory CI
+
+on:
+  pull_request:
+    paths:
+      - "observatory/**"
+      - ".github/workflows/observatory-*.yml"
+  push:
+    branches: [main]
+    paths:
+      - "observatory/**"
+      - ".github/workflows/observatory-*.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  OBSERVATORY_DATA: fake
+
+jobs:
+  collector:
+    name: collector
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: observatory/collector
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect project
+        id: detect
+        working-directory: .
+        run: |
+          if [ -f observatory/collector/pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "SKIPPED: observatory/collector/pyproject.toml does not exist yet; nothing to check."
+          fi
+      # No python-version: it would make setup-uv create a root .venv and export VIRTUAL_ENV.
+      # uv reads observatory/collector/.python-version instead.
+      - uses: astral-sh/setup-uv@v5
+        if: steps.detect.outputs.present == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: observatory/collector/uv.lock
+      - if: steps.detect.outputs.present == 'true'
+        run: uv sync --frozen
+      - if: steps.detect.outputs.present == 'true'
+        run: uv run ruff check
+      - if: steps.detect.outputs.present == 'true'
+        run: uv run ruff format --check
+      - if: steps.detect.outputs.present == 'true'
+        run: uv run pytest
+
+  dashboard-api:
+    name: dashboard-api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: observatory/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect project
+        id: detect
+        working-directory: .
+        run: |
+          if [ -f observatory/dashboard/pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "SKIPPED: observatory/dashboard/pyproject.toml does not exist yet; nothing to check."
+          fi
+      # No python-version: it would make setup-uv create a root .venv and export VIRTUAL_ENV.
+      # uv reads observatory/dashboard/.python-version instead.
+      - uses: astral-sh/setup-uv@v5
+        if: steps.detect.outputs.present == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: observatory/dashboard/uv.lock
+      - if: steps.detect.outputs.present == 'true'
+        run: uv sync --frozen
+      - if: steps.detect.outputs.present == 'true'
+        run: uv run ruff check
+      - if: steps.detect.outputs.present == 'true'
+        run: uv run ruff format --check
+      - if: steps.detect.outputs.present == 'true'
+        run: uv run pytest
+
+  dashboard-web:
+    name: dashboard-web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: observatory/dashboard/web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect project
+        id: detect
+        working-directory: .
+        run: |
+          if [ -f observatory/dashboard/web/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "SKIPPED: observatory/dashboard/web/package.json does not exist yet; nothing to check."
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.present == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: observatory/dashboard/web/package-lock.json
+      - if: steps.detect.outputs.present == 'true'
+        run: npm ci
+      - if: steps.detect.outputs.present == 'true'
+        run: npm run lint
+      - if: steps.detect.outputs.present == 'true'
+        run: npm test
+      - if: steps.detect.outputs.present == 'true'
+        run: npm run build
+
+  docker-build:
+    name: docker-build (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [collector, dashboard]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect Dockerfile
+        id: detect
+        run: |
+          if [ -f "observatory/${{ matrix.image }}/Dockerfile" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "SKIPPED: observatory/${{ matrix.image }}/Dockerfile does not exist yet; nothing to build."
+          fi
+      - name: Build image (no push)
+        if: steps.detect.outputs.present == 'true'
+        run: docker build -t "observatory-${{ matrix.image }}:ci" "observatory/${{ matrix.image }}"
