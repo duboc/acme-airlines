@@ -8,12 +8,13 @@ toolset is closed when the context exits. No model is involved.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
 from google.adk.tools.mcp_tool import MCPToolset, StreamableHTTPConnectionParams
 
-from acme.sim.client import Connector
+from acme.sim.client import Connector, caller_headers
 
 
 class _AdkSession:
@@ -31,9 +32,12 @@ class _AdkSession:
         return await tool.run_async(args=arguments, tool_context=None)  # type: ignore[arg-type]
 
 
-def adk_connector(base_url: str, headers: dict[str, str] | None = None) -> Connector:
+def adk_connector(base_url: str, caller: str, tokens: Mapping[str, str]) -> Connector:
+    """ADK connector acting as ONE caller: every request carries only that caller's token (#27)."""
+
     @asynccontextmanager
     async def connect(server: str):
+        headers = caller_headers(caller, base_url, tokens, server)
         toolset = MCPToolset(
             connection_params=StreamableHTTPConnectionParams(
                 url=f"{base_url.rstrip('/')}/mcp/{server}/", headers=headers

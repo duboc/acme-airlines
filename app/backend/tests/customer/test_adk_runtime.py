@@ -20,6 +20,7 @@ from acme.domain.clock import FixedClock
 from acme.domain.fixtures import DISRUPTION_DETECTED_AT
 from acme.sim.adk_connector import adk_connector
 from acme.sim.app import create_app as create_sim_app
+from acme.sim.auth import load_tokens
 
 # Scenario-1 tests, unchanged: they only use the `rt` fixture, redefined below.
 from tests.customer.test_agent import *  # noqa: F401,F403,E402
@@ -48,12 +49,14 @@ def adk_runtime():
     def factory(sim):
         sock = socket.socket()
         sock.bind(("127.0.0.1", 0))
-        server = uvicorn.Server(uvicorn.Config(create_sim_app(sim), log_level="error"))
+        tokens = load_tokens({})  # random; the ADK connector presents only the customer token
+        app = create_sim_app(sim, tokens=tokens)
+        server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
         threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True).start()
         while not server.started:
             time.sleep(0.01)
         servers.append(server)
-        return adk_connector(f"http://127.0.0.1:{sock.getsockname()[1]}")
+        return adk_connector(f"http://127.0.0.1:{sock.getsockname()[1]}", "customer", tokens)
 
     yield lambda: CustomerRuntime(
         FixedClock(DISRUPTION_DETECTED_AT), connector_factory=factory, auto_duty_of_care=False

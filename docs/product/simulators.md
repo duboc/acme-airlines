@@ -71,7 +71,7 @@ the flight's open seats. Holds live in `acme.sim.dcs.DcsState` (`dcs_state(sim)`
 | `bag.reroute` | `tag`, `flight` | The updated bag. Rerouting onto a cancelled or unknown flight is a tool error. |
 
 ## loyalty — `/mcp/loyalty/` (Loyalty/FFP)
-Access intent (enforced by the #27 allowlist, which is not merged yet): `customer` is allowed,
+Access (enforced by the allowlist, see Access control below): `customer` is allowed,
 `sales` is denied (403), because tier and benefits are passenger data.
 | Tool | Args | Result |
 |---|---|---|
@@ -96,4 +96,5 @@ callers only). If unset, random per-process tokens are generated and **not print
 to use the sim from another process. Tokens are never committed, logged or echoed (tested).
 `create_app(sim, tokens=...)` takes tokens explicitly (tests). Clients build their MCP config with
 `acme.sim.auth.client_config(caller, base_url, tokens, servers)`, which returns only the servers the
-caller may use, each with that caller's header. The Customer runtime (#10) and Sales (#14) must use it.
+caller may use, each with that caller's header. The Customer runtime already uses it (`sim.client.inprocess_connector` / `http_connector` act as one
+caller with only that caller's token); Sales (#14) must do the same with the `sales` credential.

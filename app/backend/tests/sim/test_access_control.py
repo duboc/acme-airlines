@@ -166,3 +166,17 @@ def test_client_config_per_caller():
     assert set(full) == set(DEFAULT_REGISTRY)
     with pytest.raises(KeyError):
         client_config("nobody", "http://x", TOKENS, servers=[])
+
+
+async def test_sim_client_acts_as_one_caller(sim):
+    from acme.sim.client import SimClient, ToolError, inprocess_connector
+
+    customer = SimClient(inprocess_connector(sim, "customer"))
+    assert (await customer.call("pss", "pnr.get", pnr="MSLV42"))["locator"] == "MSLV42"
+    sales = SimClient(inprocess_connector(sim, "sales"))
+    inv = await sales.call(
+        "inventory", "cabin_inventory.get", flight="AC1252", cabin="premium_business"
+    )
+    assert inv["open_seats"] == 4
+    with pytest.raises(ToolError, match="not allowed"):
+        await sales.call("pss", "pnr.get", pnr="MSLV42")
