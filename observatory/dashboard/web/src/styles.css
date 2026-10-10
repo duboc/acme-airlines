@@ -259,3 +259,10 @@ details summary {
 .flag {
   color: var(--bad);
 }
+.scroll {
+  overflow: auto;
+  max-width: 100%;
+}
+.scroll:focus-visible {
+  outline-offset: -3px;
+}

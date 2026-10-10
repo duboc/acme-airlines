@@ -35,3 +35,11 @@ below 40rem. 4px spacing base, hairline borders, no nested cards.
 
 ## Motion
 None beyond 150ms colour transitions; disabled under `prefers-reduced-motion`.
+
+## Keyboard and screen-reader navigation
+Tab order: skip link → interactive controls only (range toggle, `<details>` summaries) → scrollable table regions.
+Panels are `<section>` landmarks named by their `h2` (screen-reader landmark/heading navigation); static panels
+are deliberately **not** tab stops. Any container that can overflow (Spend daily table, Agents table, PR table)
+is wrapped in `ScrollRegion`: `role="region"`, `aria-label`, `tabIndex={0}`, with the standard focus ring, so
+axe's `scrollable-region-focusable` holds at 320/768/1280px. Manual axe check: open the page at each width and
+run axe DevTools; expect 0 violations.
