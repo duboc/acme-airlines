@@ -92,6 +92,14 @@ pd-balanced) and the idle Cloud Run proxy (≈ $0).
 
 Set a budget alert on the billing account for project `acme-airlines-factory`.
 
+## Observatory dashboard
+
+<https://acme-observatory-vdhcml5ceq-uc.a.run.app> (IAP). Built and deployed
+by the factory; platform in `infra/80-observatory-platform.sh`, contract in
+[docs/observatory/platform-contract.md](../observatory/platform-contract.md).
+Token rotation (90 days): `ROTATE_TOKEN=1 infra/80-observatory-platform.sh`
+(hub UAT); the GitHub read PAT is manual (runbook §8).
+
 ## Upgrades
 
 `update_policy: notify` — the admin UI shows a banner when a new release is

@@ -68,3 +68,14 @@ job runs the four commands above. A `frontend` job is added with the frontend sc
 `uv run acme-customer` (from `app/backend`) serves the runtime API on `ACME_CUSTOMER_PORT` (default 8800) with the
 Customer agent and in-process simulators. `POST /scenario/trigger-cancellation` runs scenario 1
 (silent ingestion and profile evaluation); see `docs/product/policy-rules.md` for the quiet-hours rule.
+
+### Duty of care and RESOLVED (scenario 2b)
+
+`acme.customer.specialists.run_duty_of_care(rt, rec, RebuildResult(...))` runs after the rebuild
+(#11). The Rights & Compensation specialist runs `policy.duty_of_care` (wait = original -> new
+departure, overnight = new departure on a later local day) and records `duty_of_care_assessed` with
+entitlements and rule citations. The Concierge specialist fulfils them through the concierge MCP:
+hotel HT8842, airport<->hotel transfers, meal vouchers. Each `hotel_booked` / `transfer_booked` /
+`voucher_issued` event carries its `entitlement` and the policy `reason`. The journey moves to
+`RESOLVED` only if flight, seat and bag are done and every step succeeded. A failed step records
+`needs_human` and leaves it `RESOLVING` (meal vouchers are still issued if only the hotel failed).

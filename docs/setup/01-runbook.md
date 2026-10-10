@@ -335,3 +335,46 @@ In one admin-access window:
 
 Check: `infra/verify.sh loop` (schedule active, targets acme-lead, at most one
 tick per 30 minutes; `cron_interval_ok` is unit-tested).
+
+## 8. Observatory platform (addendum C)
+
+Spec: [addendum C](../superpowers/specs/2026-10-09-addendum-c-observatory.md).
+The agents build against [the platform contract](../observatory/platform-contract.md).
+
+```bash
+infra/80-observatory-platform.sh
+```
+Idempotent. What it creates:
+- BigQuery `billing_export` and `factory_ops` (US)
+- service accounts `acme-observatory` (read-only), `acme-observatory-collector`
+  and `acme-observatory-deployer`
+- secrets `acme-observatory-hub-token` (a hub UAT with `agent:list`/`agent:read`,
+  minted in an admin-access window and piped straight into Secret Manager) and
+  `acme-observatory-github-token` (empty until the product owner adds it)
+- Artifact Registry `observatory`
+- WIF pool `github` / provider `github-actions`, restricted to
+  `duboc/acme-airlines` on `refs/heads/main`
+- the placeholder Cloud Run service `acme-observatory` with **IAP** for
+  `google.com` and `duboc.altostrat.com`
+- the placeholder job `acme-observatory-collector` (VPC egress to the hub)
+- Cloud Scheduler `acme-observatory-collect` (`*/5`)
+- the GitHub Actions variables `OBSERVATORY_*`
+
+Dashboard URL: <https://acme-observatory-vdhcml5ceq-uc.a.run.app> (IAP).
+Then the brief issue
+[#72](https://github.com/duboc/acme-airlines/issues/72) was filed for the lead.
+
+Check: `infra/verify.sh observatory`.
+
+### Manual steps (product owner)
+
+1. **Billing export:** console → Billing → *Billing export* → **Standard usage
+   cost** → Edit settings → project `acme-airlines-factory`, dataset
+   `billing_export` → Save. Data starts flowing after a few hours.
+2. **Read-only GitHub token:** a fine-grained PAT on `duboc/acme-airlines`
+   with Contents, Issues, Pull requests, Actions and Metadata all **read-only**.
+   Store it without echoing it:
+   ```bash
+   read -rs GH_RO && printf '%s' "$GH_RO" | gcloud secrets versions add acme-observatory-github-token \
+     --project=acme-airlines-factory --data-file=- && unset GH_RO
+   ```
