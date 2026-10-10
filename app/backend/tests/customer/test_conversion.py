@@ -228,3 +228,63 @@ async def test_api_action_endpoint_converts_and_reflects_state():
     assert r.json() == {"offer_status": "accepted"} and r2.json() == {"offer_status": "accepted"}
     assert d["offer"]["status"] == "accepted" and d["seat"]["seat"] == "2A"
     assert len(rt.sim.partners.charges) == 1
+
+
+def open_economy(c):
+    return c.rt.world.flights["AC1252"].open_seats["economy"]
+
+
+async def test_accept_releases_14a_after_2a_is_assigned(c):
+    assert "14A" not in open_economy(c)  # blocked while she holds it
+    assert await accept_offer(c.rt, c.rec) == "accepted"
+    assert "14A" in open_economy(c)
+    assert [s.seat for s in c.rt.world.pnrs[PNR].seats if s.flight_number == "AC1252"] == ["2A"]
+    (rel,) = [e for e in c.state.timeline if e.type == "seat_released"]
+    assert rel.payload == {"flight": "AC1252", "seat": "14A", "replaced_by": "2A"}
+    TypeAdapter(TimelineEvent).validate_python(rel.model_dump(mode="json"))
+
+
+async def test_release_happens_only_after_assign_and_boarding_pass(c, monkeypatch):
+    order = []
+    real = c.rt.client.call
+
+    async def call(server, tool, **args):
+        order.append(tool)
+        return await real(server, tool, **args)
+
+    monkeypatch.setattr(c.rt.client, "call", call)
+    await accept_offer(c.rt, c.rec)
+    assert order.index("seat.assign") < order.index("seat.release")
+    assert order.index("boarding_pass.issue") < order.index("seat.release")
+
+
+async def test_no_release_when_the_upgrade_fails(c, monkeypatch):
+    real = c.rt.client.call
+    tools = []
+
+    async def call(server, tool, **args):
+        tools.append(tool)
+        if tool == "seat.assign":
+            raise ToolError("dcs/seat.assign: boom")
+        return await real(server, tool, **args)
+
+    monkeypatch.setattr(c.rt.client, "call", call)
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    assert "seat.release" not in tools
+    assert seat_of(c).seat == "14A" and "14A" not in open_economy(c)
+    assert not [e for e in c.state.timeline if e.type == "seat_released"]
+
+
+async def test_release_failure_does_not_undo_the_upgrade(c, monkeypatch):
+    real = c.rt.client.call
+
+    async def call(server, tool, **args):
+        if tool == "seat.release":
+            raise ToolError("dcs/seat.release: boom")
+        return await real(server, tool, **args)
+
+    monkeypatch.setattr(c.rt.client, "call", call)
+    assert await accept_offer(c.rt, c.rec) == "accepted"
+    assert seat_of(c).seat == "2A" and charges(c)
+    nh = [e for e in c.state.timeline if e.type == "needs_human"]
+    assert nh and nh[-1].payload["step"] == "seat_release"

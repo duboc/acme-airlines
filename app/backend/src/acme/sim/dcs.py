@@ -23,6 +23,7 @@ class DcsState:
     def __init__(self, sim: SimWorld) -> None:
         self._sim = sim
         self.holds: dict[tuple[str, str], str] = {}  # (flight, seat) -> pnr
+        self.assigned: dict[tuple[str, str], tuple[str, str]] = {}  # (flight, seat) -> (pnr, cabin)
         self.boarding_passes: dict[str, dict[str, Any]] = {}
         self.bag_routing: dict[str, str] = {}
 
@@ -60,7 +61,36 @@ class DcsState:
         self._open(flight)[cabin].remove(seat)  # type: ignore[attr-defined]
         record.seats = [s for s in record.seats if s.flight_number != flight]
         record.seats.append(SeatAssignment(flight_number=flight, seat=seat, cabin=cabin))  # type: ignore[arg-type]
+        # A replaced seat stays blocked (still tracked here) until it is explicitly released.
+        self.assigned[(flight, seat)] = (pnr, cabin)
         return {"flight": flight, "seat": seat, "pnr": pnr, "cabin": cabin, "status": "assigned"}
+
+    def release(self, flight: str, seat: str, pnr: str) -> dict[str, Any]:
+        """Free a seat this PNR holds or was assigned. Idempotent; only the holder may release."""
+        record = self._sim.get_pnr(pnr)
+        key = (flight, seat)
+        hold_owner = self.holds.get(key)
+        assignment = self.assigned.get(key)
+        on_pnr = next(
+            (s for s in record.seats if s.flight_number == flight and s.seat == seat), None
+        )
+        if hold_owner not in (None, pnr) or (assignment and assignment[0] != pnr):
+            raise SimError(f"seat {seat} on {flight} belongs to another booking")
+        result = {"flight": flight, "seat": seat, "pnr": pnr, "status": "released"}
+        if hold_owner == pnr:
+            del self.holds[key]  # a held seat never left the open list
+            return result
+        if assignment or on_pnr:
+            cabin = assignment[1] if assignment else on_pnr.cabin  # type: ignore[union-attr]
+            self.assigned.pop(key, None)
+            record.seats = [s for s in record.seats if (s.flight_number, s.seat) != key]
+            open_seats = self._open(flight).setdefault(cabin, [])  # type: ignore[arg-type]
+            if seat not in open_seats:
+                open_seats.append(seat)
+            return result
+        if self._cabin_of(flight, seat) is None:
+            raise SimError(f"seat {seat} on {flight} is not held by booking {pnr}")
+        return result  # already free: idempotent
 
     def boarding_pass(self, pnr: str, flight: str) -> dict[str, Any]:
         record: PNR = self._sim.get_pnr(pnr)
@@ -133,6 +163,11 @@ def build_dcs(sim: SimWorld) -> FastMCP:
     def seat_assign(flight: str, seat: str, pnr: str, cabin: str) -> dict[str, Any]:
         """Assign an open seat (held by this PNR or free) and write it to the PNR."""
         return st.assign(flight, seat, pnr, cabin)
+
+    @mcp.tool(name="seat.release")
+    def seat_release(flight: str, seat: str, pnr: str) -> dict[str, Any]:
+        """Release a seat held or assigned to this PNR back to inventory (idempotent)."""
+        return st.release(flight, seat, pnr)
 
     @mcp.tool(name="boarding_pass.issue")
     def boarding_pass_issue(pnr: str, flight: str) -> dict[str, Any]:
