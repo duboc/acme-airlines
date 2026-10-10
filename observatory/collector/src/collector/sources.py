@@ -1,6 +1,6 @@
 """Row sources. A source takes the run ``ts`` and returns rows for one table.
 
-The hub source lives in ``hub.py``; slice 3 (GitHub) replaces the remaining placeholder.
+Live sources: ``hub.py`` (agents) and ``github.py`` (GitHub flow).
 """
 
 import json
@@ -9,6 +9,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
+from .github import fixture_github_source, live_github_source
 from .hub import fixture_hub_source, live_hub_source
 
 log = logging.getLogger(__name__)
@@ -28,19 +29,10 @@ def fixture_source(table: str) -> Source:
     return read
 
 
-def pending_source(table: str) -> Source:
-    def skip(ts: str) -> list[dict]:
-        log.warning("no live source for %s yet; skipping", table)
-        return []
-
-    return skip
-
-
 def default_sources(mode: str) -> dict[str, Source]:
-    make = fixture_source if mode == "fake" else pending_source
-    sources = {"github_snapshots": make("github_snapshots")}
     if mode == "fake":
-        sources["agent_snapshots"] = fixture_hub_source(FIXTURES / "hub_agents.json")
-    else:
-        sources["agent_snapshots"] = live_hub_source()
-    return sources
+        return {
+            "agent_snapshots": fixture_hub_source(FIXTURES / "hub_agents.json"),
+            "github_snapshots": fixture_github_source(),
+        }
+    return {"agent_snapshots": live_hub_source(), "github_snapshots": live_github_source()}

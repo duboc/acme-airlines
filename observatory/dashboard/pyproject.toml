@@ -6,6 +6,9 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "google-cloud-bigquery>=3.25",
+    "google-cloud-monitoring>=2.22",
+    "google-cloud-logging>=3.10",
 ]
 
 [dependency-groups]
@@ -32,3 +35,6 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+filterwarnings = [
+    "ignore:Using .httpx. with .starlette.testclient.*",
+]

@@ -6,7 +6,7 @@ platform: `docs/observatory/platform-contract.md`).
 ```
 observatory/
   collector/   # Cloud Run job: snapshots hub agents + GitHub flow into BigQuery factory_ops
-  dashboard/   # Cloud Run service: read-only FastAPI (API.md is the UI contract); UI in web/ later
+  dashboard/   # Cloud Run service: read-only FastAPI (API.md is the UI contract); React UI in web/ (PRODUCT.md, DESIGN.md)
   fixtures/    # deterministic JSON rows, the shared contract for tests and fake mode
 ```
 
@@ -33,6 +33,11 @@ fixtures: `OBSERVATORY_DATA=fake OBSERVATORY_SCENARIO=ok|empty|lagging|unavailab
 dashboard.app:create_app --factory` in `observatory/dashboard`. Tests and lint are the same as the
 collector's (`uv sync --frozen`, `uv run pytest`, `uv run ruff check`, `uv run ruff format --check`).
 Extra fixtures for it: `billing.json`, `monitoring.json`, `guard_logs.json`, `merges_per_day.json`.
+Live mode (`OBSERVATORY_DATA` unset, the production default) uses `dashboard/gcp.py`
+(`GcpDataSource`, read-only ADC): BigQuery billing export + `factory_ops`, Cloud Monitoring Vertex
+token/request counts by `model_user_id`, Cloud Logging budget-guard lines. Results are cached for 60s;
+GCP errors become `state: unavailable`, a missing billing export becomes `empty`. `merges_per_day` is
+the daily max of `merges_24h` from `github_snapshots`.
 The dashboard image only contains `observatory/dashboard`; fake mode needs the fixtures dir (local/tests).
 
 ## Deploy (`.github/workflows/observatory-deploy.yml`)
@@ -58,13 +63,14 @@ Only `--image` changes otherwise: service accounts, IAP, networking and env vars
 
 `python -m collector` ensures the `factory_ops` tables exist, then writes one row set per run
 (all rows share one `ts`). It exits non-zero only when a snapshot step really fails.
-The hub step (`collector/hub.py`) is live; the GitHub source arrives in a later slice and live mode logs a warning and skips it until then.
+The hub (`collector/hub.py`) and GitHub (`collector/github.py`) steps are live.
 If the hub step fails (unreachable, 401/5xx, missing env), it logs a clear error, writes nothing for `agent_snapshots`, the other steps still run, and the exit code is non-zero.
 
 | Env | Meaning |
 |---|---|
 | `OBSERVATORY_DATA=fake` | In-memory sink, rows come from `fixtures/`. No network or GCP. Used by tests and CI. |
 | `HUB_ENDPOINT`, `HUB_PROJECT`, `SCION_HUB_TOKEN` | Hub base URL, project (UUID or slug, see below), Bearer token (scopes `agent:list`/`agent:read`). Live mode only. |
+| `GITHUB_TOKEN`, `GITHUB_REPO` | Read-only token and repo (default `duboc/acme-airlines`). No token: `WARNING ... GitHub snapshot skipped`, no row, exit 0. |
 | `PROJECT_ID`, `OPS_DATASET` | BigQuery target (`acme-airlines-factory`, `factory_ops`) |
 
 Tests and lint (from `observatory/collector`):
@@ -124,6 +130,21 @@ exits non-zero; the fix is to set `HUB_PROJECT` to the project UUID.
 removed; `acme-reviewer` edited to the `limits_exceeded` state as a synthetic case). In fake mode the
 collector maps it with the same code. `fixtures/agent_snapshots.json` is unchanged (dashboard fixture).
 
+## GitHub snapshot (`collector/github.py`)
+
+One `github_snapshots` row per run, from read-only REST calls (paginated, 100 per page, at most 5 pages):
+open issues (`/issues`, PRs excluded; `status:*` labels → `issues_by_status`, every other label →
+`issues_by_label`), open PRs (`/pulls`), closed PRs sorted by update (merged in the last 24h →
+`merges_24h`), `/actions/runs` created in the last 24h (`success`, `failure`, everything else
+`other` → `ci_conclusions`), and per open PR its reviews and issue comments.
+`latest_verdict`: the most recent review/comment whose first line is `VERDICT: APPROVE` or
+`VERDICT: REQUEST CHANGES` (latest wins). PR `ci_conclusion` from runs on the head SHA: any failure →
+`failure`, any unfinished → `pending`, all success → `success`, no runs → null.
+A missing token or any GitHub error (401/403/429/5xx/network) logs a `GitHub snapshot skipped`
+warning and writes no row; the hub snapshot is unaffected and the exit code stays 0. The token is
+never logged. Fake mode serves the sanitised recordings in `fixtures/github/` through the same code.
+Schema unchanged.
+
 ## Fixtures
 
 `fixtures/agent_snapshots.json` and `fixtures/github_snapshots.json` are JSON arrays of rows in the
@@ -134,3 +155,10 @@ the same files, so change the schema and fixtures together.
 
 `Sink.write(table, rows)`: `BigQuerySink` (streaming insert, raises on row errors) and `FakeSink`
 (in-memory dict, selected by `OBSERVATORY_DATA=fake`).
+
+## Dashboard UI
+
+`dashboard/web/` is React + Vite + TS. `cd observatory/dashboard/web && npm ci && npm run dev` proxies `/api`
+to `localhost:8080` (run the API with `OBSERVATORY_DATA=fake`). Set `VITE_DATA_MODE=fake` at build/dev time to show the
+"Fake data" header badge (the API contract carries no mode field). The Dockerfile builds `web/dist` in a node stage;
+the image sets `DASHBOARD_STATIC=/app/web/dist` and FastAPI serves it at `/`. Panel bodies plug into `Panel` as render children (#119/#120).

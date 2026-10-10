@@ -1,0 +1,34 @@
+{
+ "workflow_runs": [
+  {
+   "head_sha": "aaa",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "head_sha": "aaa",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "head_sha": "bbb",
+   "status": "completed",
+   "conclusion": "failure"
+  },
+  {
+   "head_sha": "bbb",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "head_sha": "ccc",
+   "status": "in_progress",
+   "conclusion": null
+  },
+  {
+   "head_sha": "zzz",
+   "status": "completed",
+   "conclusion": "cancelled"
+  }
+ ]
+}
