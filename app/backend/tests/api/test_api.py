@@ -61,11 +61,11 @@ async def test_journey_detail(client):
     d = r.json()
     assert d["journey_id"] == jid
     assert d["passenger_id"] == PID
-    assert d["status"] == "RESOLVING"
+    assert d["status"] == "RESOLVED"
     assert [s["flight_number"] for s in d["itinerary"]] == ["AC1240", "AC0800"]
     assert d["seat"]["seat"] == "14A"
     assert d["bags"][0]["tag"] == "BAG0001"
-    assert d["hotel"] is None and d["vouchers"] == [] and d["offer"] is None
+    assert d["hotel"]["hotel_id"] == "HT8842" and d["vouchers"] and d["offer"] is None
 
 
 async def test_journey_404(client):
@@ -112,7 +112,7 @@ async def test_whatsapp_thread_is_silent_after_trigger(client):
 async def test_trigger_reflects_real_agent_state(client):
     (jid,) = await trigger(client)
     d = (await client.get(f"/journeys/{jid}")).json()
-    assert d["status"] == "RESOLVING"
+    assert d["status"] == "RESOLVED"
     r = await client.post(
         "/scenario/trigger-cancellation", json={"flight": "AC1240", "reason": "crew"}
     )
@@ -178,4 +178,4 @@ async def test_journey_detail_reflects_rebuilt_flight_seat_and_bag(client):
     d = (await client.get(f"/journeys/{jid}")).json()
     assert [s["flight_number"] for s in d["itinerary"]] == ["AC1240", "AC0800"]
     assert (d["seat"]["flight_number"], d["seat"]["seat"]) == ("AC1240", "14A")
-    assert d["status"] == "RESOLVING"
+    assert d["status"] == "RESOLVED"

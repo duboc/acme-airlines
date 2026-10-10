@@ -56,7 +56,9 @@ class CustomerRuntime:
         clock: Clock | None = None,
         connector: Connector | None = None,
         connector_factory: Callable[[SimWorld], Connector] | None = None,
+        auto_duty_of_care: bool = True,
     ) -> None:
+        self.auto_duty_of_care = auto_duty_of_care  # False isolates the rebuild in tests
         self.clock = clock or SystemClock()
         self._custom_connector = connector
         self._connector_factory = connector_factory
@@ -137,9 +139,10 @@ class CustomerRuntime:
             state.transition(DisruptionStatus.RESOLVING, actor="customer_agent")
             await self._load_context(rec, flight)
             result = await rebuild_journey(self.client, rec, flight)
-            from acme.customer.specialists.duty import run_duty_of_care  # noqa: PLC0415 (cycle)
+            if self.auto_duty_of_care:
+                from acme.customer.specialists.duty import run_duty_of_care  # noqa: PLC0415
 
-            await run_duty_of_care(self, rec, result)
+                await run_duty_of_care(self, rec, result)
             opened.append(jid)
         return opened
 

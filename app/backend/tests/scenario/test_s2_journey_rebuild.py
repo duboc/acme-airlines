@@ -43,7 +43,6 @@ def test_duty_of_care_books_ht8842_a_transfer_and_a_dinner_voucher(driver: Scena
     assert "meal" in kinds
 
 
-@needs(12)
 def test_journey_reaches_resolved_after_the_rebuild(driver: ScenarioDriver):
     cancelled(driver)
     assert driver.get_journey().status is DisruptionStatus.RESOLVED

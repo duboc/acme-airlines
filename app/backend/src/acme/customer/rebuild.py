@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from acme.customer.specialists.common import RebuildResult
 from acme.customer.specialists.baggage import BaggageSpecialist, BagRequest
+from acme.customer.specialists.common import RebuildResult
 from acme.customer.specialists.irrops import IrropsRebooking, RebookRequest
 from acme.customer.specialists.seat import SeatRequest, SeatSpecialist
 from acme.policy.connection_check import check_connection

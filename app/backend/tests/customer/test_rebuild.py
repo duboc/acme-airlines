@@ -10,7 +10,7 @@ from acme.sim.dcs import dcs_state
 
 @pytest.fixture
 def rt():
-    return CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT))
+    return CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT), auto_duty_of_care=False)
 
 
 def ev(rt, jid, type_):

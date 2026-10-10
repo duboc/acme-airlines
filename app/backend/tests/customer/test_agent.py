@@ -10,7 +10,7 @@ from acme.domain.journey import DisruptionStatus as S
 
 @pytest.fixture
 def rt():
-    return CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT))
+    return CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT), auto_duty_of_care=False)
 
 
 async def test_cancellation_creates_resolving_journey_with_profile(rt):
