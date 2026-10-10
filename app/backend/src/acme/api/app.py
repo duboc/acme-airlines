@@ -7,12 +7,13 @@ import json
 from collections.abc import AsyncIterator
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from acme.api.runtime import JourneyRecord, Runtime, WhatsAppMessage
+from acme.customer.adk_agent import CARD_PATH, customer_agent_card
 from acme.domain.clock import Clock
 from acme.domain.journey import JourneyEvent, OfferRecord
 from acme.domain.models import PNR, Bag, HotelBooking, SeatAssignment, Segment, Voucher
@@ -95,6 +96,11 @@ def create_app(clock: Clock | None = None) -> FastAPI:
     def require_passenger(passenger_id: str) -> None:
         if passenger_id not in rt.world.passengers:
             raise HTTPException(404, f"unknown passenger {passenger_id}")
+
+    @app.get(CARD_PATH, include_in_schema=False)
+    async def agent_card(request: Request) -> dict:
+        card = customer_agent_card(str(request.base_url))
+        return card.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     @app.post("/scenario/reset", tags=["scenario"])
     async def reset() -> dict[str, str]:

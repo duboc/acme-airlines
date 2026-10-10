@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.14.0",
     "google-genai>=2.29.0",
     "fastapi>=0.143.0",
+    "google-adk[a2a]>=1.10.0",
 ]
 
 [project.scripts]

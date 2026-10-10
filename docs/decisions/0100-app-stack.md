@@ -187,6 +187,14 @@ Governance tests attack each layer separately, including the time-of-check/time-
   - The guardrail is testable and enforced by code.
   - Each simulator can later be swapped for a real adapter behind the same MCP
     tool names.
+  - **How ADK is wrapped (#64):** `acme.customer.adk_agent.CustomerAgent` is a
+    deterministic custom `BaseAgent` (no `LlmAgent`, no model call) over the unchanged
+    `CustomerRuntime`. `acme.sim.adk_connector.adk_connector` is a second `Connector`
+    implementation built on ADK's `MCPToolset`; it needs a served `acme-sim` (ADK builds its
+    own HTTP transport), while the plain in-process connector stays for tests and the demo.
+    `google-adk[a2a]` is pinned in `uv.lock`. Vertex config loads only when `LLM_MODE=vertex`.
+    The Customer A2A card (no skills yet) is served at `/.well-known/agent-card.json`; #14 adds
+    the skills.
 - **Negative / risks:**
   - ADK and A2A APIs move quickly. We mitigate by pinning versions and wrapping
     ADK usage in thin modules.
