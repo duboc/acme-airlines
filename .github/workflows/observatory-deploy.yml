@@ -1,0 +1,87 @@
+name: Observatory Deploy
+
+# Keyless deploy via Workload Identity Federation. WIF trusts only refs/heads/main, so this
+# cannot be exercised from a PR branch. Only --image is swapped on the existing Cloud Run
+# service and job; auth, IAP, networking, env and the runtime service accounts are unchanged.
+# The single exception is the collector's GITHUB_TOKEN secret, added with --update-secrets (not
+# --set-secrets, which would replace and drop the existing SCION_HUB_TOKEN).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "observatory/**"
+      - ".github/workflows/observatory-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: observatory-deploy
+  cancel-in-progress: false
+
+env:
+  AR_REPO: ${{ vars.OBSERVATORY_AR_REPO }}
+  REGION: ${{ vars.OBSERVATORY_REGION }}
+  PROJECT: ${{ vars.OBSERVATORY_PROJECT }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.OBSERVATORY_WIF_PROVIDER }}
+          service_account: ${{ vars.OBSERVATORY_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${AR_REPO%%/*}" --quiet
+
+      - name: Build and push images
+        run: |
+          docker build -t "$AR_REPO/dashboard:$GITHUB_SHA" observatory/dashboard
+          docker push "$AR_REPO/dashboard:$GITHUB_SHA"
+          docker build -t "$AR_REPO/collector:$GITHUB_SHA" observatory/collector
+          docker push "$AR_REPO/collector:$GITHUB_SHA"
+
+      # Dashboard first, so a collector-secret problem can never block it.
+      - name: Deploy dashboard (image only)
+        run: |
+          gcloud run deploy acme-observatory \
+            --image "$AR_REPO/dashboard:$GITHUB_SHA" \
+            --region "$REGION" --project "$PROJECT" --quiet
+
+      # The deployer cannot read Secret Manager, so we cannot check whether the secret has a
+      # version. Try with the secret; if that fails, retry image-only and warn.
+      - name: Deploy collector job
+        run: |
+          IMG="$AR_REPO/collector:$GITHUB_SHA"
+          if ! gcloud run jobs deploy acme-observatory-collector \
+            --image "$IMG" \
+            --update-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest \
+            --region "$REGION" --project "$PROJECT" --quiet; then
+            echo "::warning::Collector deploy with GITHUB_TOKEN secret failed; retrying image-only. The GitHub snapshot stays skipped until the acme-observatory-github-token PAT exists."
+            gcloud run jobs deploy acme-observatory-collector \
+              --image "$IMG" \
+              --region "$REGION" --project "$PROJECT" --quiet
+          fi
+
+      - name: Verify deployed images
+        run: |
+          svc=$(gcloud run services describe acme-observatory \
+            --region "$REGION" --project "$PROJECT" \
+            --format='value(spec.template.spec.containers[0].image)')
+          job=$(gcloud run jobs describe acme-observatory-collector \
+            --region "$REGION" --project "$PROJECT" \
+            --format='value(spec.template.spec.template.spec.containers[0].image)')
+          echo "service: $svc"
+          echo "job:     $job"
+          test "$svc" = "$AR_REPO/dashboard:$GITHUB_SHA"
+          test "$job" = "$AR_REPO/collector:$GITHUB_SHA"
