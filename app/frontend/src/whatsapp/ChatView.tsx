@@ -24,7 +24,7 @@ export function ChatView({
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   // Message ids whose buttons were already tapped: one action per offer.
-  const [answered, setAnswered] = useState<Set<string>>(new Set());
+  const [answered, setAnswered] = useState<Map<string, string>>(new Map());
   const endRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
@@ -67,13 +67,13 @@ export function ChatView({
 
   async function onButton(msg: WhatsAppMessage, label: string) {
     if (answered.has(msg.message_id)) return;
-    setAnswered((s) => new Set(s).add(msg.message_id));
+    setAnswered((s) => new Map(s).set(msg.message_id, label));
     try {
       await postAction(passengerId, actionForButton(label));
       await refresh();
     } catch {
       setAnswered((s) => {
-        const next = new Set(s);
+        const next = new Map(s);
         next.delete(msg.message_id);
         return next;
       });
@@ -85,33 +85,45 @@ export function ChatView({
     <div className="chat">
       <div className="chat-title">
         <strong>ACME Airlines</strong>
-        <span>Simulated WhatsApp</span>
+        <span>Simulated WhatsApp · times in UTC</span>
       </div>
       {error && (
-        <p className="chat-error" role="alert">
-          {error}
-        </p>
+        <div className="chat-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={refresh}>
+            Retry
+          </button>
+        </div>
       )}
-      <div className="chat-log" role="log" aria-label="Conversation" aria-live="polite">
+      <div className="chat-log" role="log" aria-label="Conversation">
         {messages.length === 0 && <p className="chat-empty">No messages yet.</p>}
         {messages.map((m) => (
           <div key={m.message_id} className={`bubble-row ${m.direction}`}>
             <div className="bubble">
-              <p className="bubble-text">{m.text}</p>
-              <time dateTime={m.timestamp}>{formatTime(m.timestamp)} UTC</time>
+              <p className="bubble-text">
+                <span className="sr-only">
+                  {m.direction === 'inbound' ? 'You: ' : 'ACME Airlines: '}
+                </span>
+                {m.text}
+              </p>
+              <time dateTime={m.timestamp}>{formatTime(m.timestamp)}</time>
               {m.buttons && m.buttons.length > 0 && (
-                <div className="quick-replies" role="group" aria-label="Quick replies">
-                  {m.buttons.map((b) => (
-                    <button
-                      key={b}
-                      type="button"
-                      disabled={answered.has(m.message_id)}
-                      onClick={() => onButton(m, b)}
-                    >
-                      {b}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <p className="quick-hint">Optional. You can ignore this.</p>
+                  <div className="quick-replies" role="group" aria-label="Quick replies">
+                    {m.buttons.map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        disabled={answered.has(m.message_id)}
+                        aria-pressed={answered.get(m.message_id) === b}
+                        onClick={() => onButton(m, b)}
+                      >
+                        {answered.get(m.message_id) === b ? `✓ ${b}` : b}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -131,7 +143,7 @@ export function ChatView({
           onChange={(e) => setDraft(e.target.value)}
         />
         <button type="submit" disabled={sending || !draft.trim()}>
-          Send
+          {sending ? 'Sending…' : 'Send'}
         </button>
       </form>
     </div>

@@ -58,7 +58,8 @@ describe('ChatView', () => {
     render(<ChatView passengerId="P-MARIANA" />);
     expect(await screen.findByText(RESOLUTION)).toBeInTheDocument();
     expect(calls[0]?.url).toBe('/api/whatsapp/P-MARIANA/messages');
-    expect(screen.getAllByText(/UTC$/).length).toBe(2);
+    expect(screen.getAllByText(/^\d\d:\d\d$/).length).toBe(2);
+    expect(screen.getByText(/times in UTC/)).toBeInTheDocument();
   });
 
   it('sends a typed reply and shows it in the transcript', async () => {
@@ -79,6 +80,11 @@ describe('ChatView', () => {
     await userEvent.click(accept);
     await waitFor(() => expect(accept).toBeDisabled());
     expect(screen.getByRole('button', { name: 'No thanks' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '✓ Accept upgrade $135' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('Optional. You can ignore this.')).toBeInTheDocument();
     const posts = calls.filter((c) => c.url.endsWith('/actions'));
     expect(posts).toHaveLength(1);
     expect(posts[0]?.body).toEqual({ action: 'accept_offer' });

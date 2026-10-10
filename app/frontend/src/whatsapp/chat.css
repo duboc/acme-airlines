@@ -4,7 +4,8 @@
   flex-direction: column;
   width: 100%;
   max-width: 24rem;
-  height: min(40rem, 80vh);
+  height: min(40rem, calc(100dvh - 8rem));
+  min-height: 20rem;
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--panel);
@@ -26,6 +27,15 @@
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   border-bottom: 1px solid var(--signal);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.quick-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: var(--ink-soft);
 }
 .chat-log {
   flex: 1;
@@ -50,7 +60,7 @@
   padding: 0.5rem 0.75rem;
   border-radius: 0.75rem;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid oklch(0.68 0.02 250);
 }
 .inbound .bubble {
   background: oklch(0.92 0.03 255);
@@ -88,10 +98,19 @@
 .chat button:hover:not(:disabled) {
   background: var(--panel);
 }
+.chat button[aria-pressed='true']:disabled {
+  color: var(--navy);
+  border-color: var(--navy);
+  font-weight: 600;
+}
 .chat button:disabled {
   color: var(--ink-soft);
   border-color: var(--line);
   cursor: default;
+}
+.chat-input input:focus-visible,
+.chat-input button:focus-visible {
+  outline-offset: -3px;
 }
 .chat-input {
   display: flex;
