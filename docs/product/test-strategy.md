@@ -34,10 +34,15 @@ Test at the lowest layer that captures the behaviour. CI runs `pytest -m "not li
 `trigger_cancellation`, `passenger_reply`, `passenger_tap`, `get_journey`, `transcript`,
 `advance_clock`), the `Message` model and the `EventType` timeline names/payload keys the
 tests assert. The runtime exposes `acme.runtime.scenario.make_driver(clock) -> ScenarioDriver`;
-the `driver` fixture imports it. Until then the fixture raises `NotImplementedError`.
+the `driver` fixture imports it. The driver runs the Sales radar in-process (as the `sales`
+caller, through the Customer skills only) after every passenger-visible step, maps the button
+labels to the harness ids (`accept_upgrade`, `decline_upgrade`) and routes taps to the #28
+accept/decline flows.
 
-Every scenario test is Given/When/Then and is marked `@needs(<issue>[, ...])`
-(`tests/scenario/marks.py`), which is `xfail(strict=True, reason="needs #N")`.
+Every scenario test is Given/When/Then. A test for a feature that has not landed is marked
+`@needs(<issue>[, ...])` (`tests/scenario/marks.py`), which is
+`xfail(strict=True, reason="needs #N")`. **At M4 (#91) no `@needs` remains**: `uv run pytest
+tests/scenario` reports 0 xfailed and 0 xpassed.
 
 ### Flipping a test from xfail to pass
 
@@ -47,7 +52,6 @@ Every scenario test is Given/When/Then and is marked `@needs(<issue>[, ...])`
 4. CI is green when each scenario test passes or is strict-xfail for a still-open issue.
    If the driver contract must change, change `driver.py` in a PR reviewed by `acme-qa`.
 
-At M4 no `@needs` remains.
 
 ## Governance suite (part 1, #22)
 
@@ -121,4 +125,5 @@ test that does not exist).
 | S5: one tap → seat 2A Premium Business ($135) | `test_s5_conversion_verification.py::test_one_tap_acceptance_confirms_seat_2a_premium_business_for_135` |
 | S5: flight, seat, hotel, bag, upgrade verified | `test_s5_conversion_verification.py::test_verification_finds_flight_seat_hotel_baggage_and_upgrade_in_sync` |
 | S5: Memory Bank, CRM, NPS, analytics | `test_s5_conversion_verification.py::test_journey_state_is_committed_to_memory_and_crm_nps_analytics_are_recorded` |
+| S5: declining keeps 14A, closes without a charge | `test_s5_conversion_verification.py::test_declining_keeps_seat_14a_closes_the_journey_without_a_charge` |
 | S5: no verification before passenger decides | `test_s5_conversion_verification.py::test_verification_does_not_run_before_the_passenger_decides` |
