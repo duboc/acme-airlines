@@ -122,6 +122,15 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     except ToolError:
         return await _refuse(rt, rec, record, ["payment_failed"])
 
+    # The approval must still hold AFTER the money moved: a transition out of RESOLVED that
+    # raced the charge (anything not holding the journey lock) voids it and changes no seat.
+    state.current_flight = skills._current_flight(rec)  # noqa: SLF001
+    recheck = evaluate(state, offer, inventory)
+    if not recheck.approved:
+        skills._decision_event(state, offer, recheck)  # noqa: SLF001
+        await _void(rt, rec, record, charge["charge_id"], reason="journey_changed")
+        return await _refuse(rt, rec, record, list(recheck.reasons), charged=True)
+
     try:
         await rt.client.call(
             "dcs", "seat.assign", flight=flight, seat=seat, pnr=pnr, cabin=inventory.cabin
@@ -179,7 +188,11 @@ async def _release_original_seat(
 
 
 async def _void(
-    rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord, charge_id: str
+    rt: CustomerRuntime,
+    rec: JourneyRecord,
+    record: OfferRecord,
+    charge_id: str,
+    reason: str = "upgrade_failed",
 ) -> None:
     offer_id = str(record.offer.offer_id)
     try:
@@ -187,7 +200,7 @@ async def _void(
         rec.state.append_event(
             "customer_agent",
             "charge_voided",
-            {"offer_id": offer_id, "charge_id": charge_id, "reason": "upgrade_failed"},
+            {"offer_id": offer_id, "charge_id": charge_id, "reason": reason},
         )
     except Exception:  # noqa: BLE001
         rec.state.append_event(
@@ -206,9 +219,11 @@ async def _refuse(
 ) -> str:
     record.status = "invalidated"
     if charged:
+        changed = next((REASON_TEXT[r] for r in reasons if r in REASON_TEXT), None)
+        because = f" because {changed}" if changed else ""
         text = (
-            "I'm sorry, I couldn't complete the upgrade. The payment was reversed, you have not "
-            "been charged, and you keep your current seat."
+            f"I'm sorry, I couldn't complete the upgrade{because}. The payment was reversed, "
+            "you have not been charged, and you keep your current seat."
         )
     else:
         why = next((REASON_TEXT[r] for r in reasons if r in REASON_TEXT), None)
