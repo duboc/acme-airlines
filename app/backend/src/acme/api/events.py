@@ -11,7 +11,7 @@ them in the PR that emits them.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Literal, Union
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, create_model
 
@@ -137,6 +137,12 @@ class ChangeHandoffPayload(Payload):
     after: str
 
 
+class SeatReleasedPayload(Payload):
+    flight: str
+    seat: str
+    replaced_by: str
+
+
 class RequestClosedPayload(Payload):
     request_id: str
     outcome: Literal["satisfied", "unsatisfiable"]
@@ -194,16 +200,36 @@ class ChargeVoidedPayload(Payload):
     reason: str
 
 
-class VerificationPassedPayload(Provisional):
-    checks: dict[str, Any]
+class VerificationPassedPayload(Payload):
+    checks: dict[str, bool]
 
 
-class ConversionPayload(Provisional):
+class VerificationFailedPayload(Payload):
+    failed: list[str]
+    details: dict[str, str]
+    checks: dict[str, bool]
+
+
+class MemoryCommittedPayload(Payload):
+    journey_id: str
+    events: int
+
+
+class CrmLoggedPayload(Payload):
+    interaction_id: str
+
+
+class NpsScheduledPayload(Payload):
+    survey_id: str
+    send_after: AwareDatetime
+
+
+class ConversionPayload(Payload):
+    event: str
     converted: bool
-
-
-class AnyProvisional(Provisional):
-    pass
+    offer_id: str | None
+    price: str | None
+    margin: str | None
 
 
 PAYLOADS: dict[str, type[BaseModel]] = {
@@ -224,6 +250,7 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "resolution_acknowledged": Empty,
     "change_handoff": ChangeHandoffPayload,
     "request_closed": RequestClosedPayload,
+    "seat_released": SeatReleasedPayload,
     "voucher_issued": VoucherIssuedPayload,
     "resolution_blocked": ResolutionBlockedPayload,
     "passenger_message": PassengerMessagePayload,
@@ -233,14 +260,14 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "sales_suppressed": SalesSuppressedPayload,
     "charge_voided": ChargeVoidedPayload,  # money returned after a failed upgrade (#28)
     "offer_proposed": OfferProposedPayload,  # Sales proposal received (#14)
-    # Provisional: emitted by #16.
     "sales_opportunity": SalesOpportunityPayload,
     "offer_sent": OfferSentPayload,
     "upgrade_confirmed": UpgradeConfirmedPayload,
     "verification_passed": VerificationPassedPayload,
-    "memory_committed": AnyProvisional,
-    "crm_logged": AnyProvisional,
-    "nps_scheduled": AnyProvisional,
+    "verification_failed": VerificationFailedPayload,
+    "memory_committed": MemoryCommittedPayload,
+    "crm_logged": CrmLoggedPayload,
+    "nps_scheduled": NpsScheduledPayload,
     "analytics_recorded": ConversionPayload,
 }
 EVENT_TYPES = tuple(PAYLOADS)

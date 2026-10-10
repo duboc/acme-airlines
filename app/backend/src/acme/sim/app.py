@@ -23,6 +23,7 @@ DEFAULT_REGISTRY: dict[str, ServerFactory] = {
     "concierge": partners.build_concierge,
     "whatsapp": partners.build_whatsapp,
     "payments": partners.build_payments,
+    "scheduler": partners.build_scheduler,
     "dcs": dcs.build_dcs,
     "worldtracer": dcs.build_worldtracer,
     "loyalty": loyalty.build_loyalty,
