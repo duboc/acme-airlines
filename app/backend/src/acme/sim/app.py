@@ -65,4 +65,6 @@ def main() -> None:
             "acme-sim: ACME_SIM_TOKENS not set; using random per-process tokens (not shown). "
             "Set ACME_SIM_TOKENS=customer=<tok>,sales=<tok>,test-admin=<tok> for other processes."
         )
-    uvicorn.run(create_app(SimWorld.seeded()), host="127.0.0.1", port=port)
+    uvicorn.run(
+        create_app(SimWorld.seeded()), host=os.environ.get("ACME_SIM_HOST", "127.0.0.1"), port=port
+    )

@@ -9,4 +9,4 @@ from acme.api.app import create_app
 
 def main() -> None:
     port = int(os.environ.get("ACME_CUSTOMER_PORT", "8800"))
-    uvicorn.run(create_app(), host="127.0.0.1", port=port)
+    uvicorn.run(create_app(), host=os.environ.get("ACME_CUSTOMER_HOST", "127.0.0.1"), port=port)

@@ -1,0 +1,71 @@
+# Local demo: `docker compose -f app/compose.yaml up --build`, then open http://localhost:8080
+#
+# Required (no defaults, never committed): per-caller sim tokens, e.g.
+#   export ACME_SIM_TOKENS="customer=$(openssl rand -hex 24),sales=$(openssl rand -hex 24),test-admin=$(openssl rand -hex 24)"
+#   export ACME_SALES_TOKEN="<the sales=... value from ACME_SIM_TOKENS>"
+# LLM_MODE defaults to `fake` (offline, $0). `vertex` is for the live demo only: see docs/product/deploy.md.
+
+x-backend: &backend
+  build: ./backend
+  image: acme-backend:local
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: [/tmp]
+
+services:
+  customer-runtime:
+    <<: *backend
+    command: ["acme-customer"]
+    environment:
+      ACME_CUSTOMER_HOST: 0.0.0.0
+      LLM_MODE: ${LLM_MODE:-fake}
+      GOOGLE_CLOUD_PROJECT: acme-airlines-factory
+      GOOGLE_CLOUD_LOCATION: global
+    networks: [web-net, a2a-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8800/openapi.json')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  acme-sim:
+    <<: *backend
+    command: ["acme-sim"]
+    environment:
+      ACME_SIM_HOST: 0.0.0.0
+      ACME_SIM_TOKENS: ${ACME_SIM_TOKENS:?set ACME_SIM_TOKENS (see the header of this file)}
+    networks: [sim-net]
+
+  sales-agent:
+    <<: *backend
+    command: ["acme-sales"]
+    environment:
+      ACME_SALES_HOST: 0.0.0.0
+      ACME_SIM_URL: http://acme-sim:8700
+      ACME_CUSTOMER_URL: http://customer-runtime:8800
+      # Only the sales credential: acme-sim answers 403 for every server except `inventory`.
+      ACME_SALES_TOKEN: ${ACME_SALES_TOKEN:?set ACME_SALES_TOKEN (the sales token)}
+    networks: [sim-net, a2a-net]
+    depends_on:
+      customer-runtime: {condition: service_healthy}
+      acme-sim: {condition: service_started}
+
+  frontend:
+    build: ./frontend
+    image: acme-frontend:local
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    ports: ["127.0.0.1:8080:8080"]
+    networks: [web-net]
+    depends_on:
+      customer-runtime: {condition: service_healthy}
+
+# acme-sim is only on sim-net (shared with the sales agent). The browser-facing network never
+# reaches it, and the customer runtime keeps its own in-process simulators for the demo world.
+networks:
+  web-net: {}
+  a2a-net: {internal: true}
+  sim-net: {internal: true}

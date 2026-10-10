@@ -181,3 +181,10 @@ Race safety (#88): change requests (`handle_inbound`, which can move RESOLVED ->
 same per-journey lock as offer delivery and acceptance, and `accept_offer` re-evaluates the guardrail
 after the charge and before `seat.assign`: if the journey changed meanwhile, the charge is voided
 (`charge_voided`, reason `journey_changed`), the seat is untouched and the passenger is told why.
+
+## Containers
+
+`docker compose -f app/compose.yaml up --build` runs the full demo (fake LLM by default); see
+`docs/product/deploy.md` for the network/credential isolation, the Vertex (global, ADC) switch and the
+Cloud Run target (documented only). The services read `ACME_SIM_HOST`, `ACME_CUSTOMER_HOST` and
+`ACME_SALES_HOST` (default `127.0.0.1`; the containers set `0.0.0.0`).
