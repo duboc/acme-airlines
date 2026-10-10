@@ -175,8 +175,9 @@ class SalesOpportunityPayload(Provisional):
     open_seats: int
 
 
-class OfferSentPayload(Provisional):
+class OfferSentPayload(Payload):
     offer_id: str
+    message_id: str
 
 
 class UpgradeConfirmedPayload(Provisional):
@@ -224,7 +225,7 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "guardrail_decision": GuardrailDecisionPayload,
     "sales_suppressed": SalesSuppressedPayload,
     "offer_proposed": OfferProposedPayload,  # Sales proposal received (#14)
-    # Provisional: emitted by #14-#16.
+    # Provisional: emitted by #16.
     "sales_opportunity": SalesOpportunityPayload,
     "offer_sent": OfferSentPayload,
     "upgrade_confirmed": UpgradeConfirmedPayload,

@@ -110,7 +110,7 @@ def create_app(clock: Clock | None = None) -> FastAPI:
             body = await request.json()
         except ValueError:
             body = {}
-        return CustomerSkills(rt).handle_a2a(body if isinstance(body, dict) else {})
+        return await CustomerSkills(rt).handle_a2a(body if isinstance(body, dict) else {})
 
     @app.post("/scenario/reset", tags=["scenario"])
     async def reset() -> dict[str, str]:
@@ -135,7 +135,7 @@ def create_app(clock: Clock | None = None) -> FastAPI:
         await rt.tick()
         rec = get_journey(journey_id)
         pnr: PNR = rt.world.pnrs[rec.pnr_locator]
-        offers = [o for o in rec.state.offers if o.status != "invalidated"]
+        offers = [o for o in rec.state.offers if o.status not in ("invalidated", "rejected")]
         return JourneyDetail(
             journey_id=journey_id,
             passenger_id=rec.passenger_id,

@@ -98,6 +98,7 @@ class CustomerRuntime:
             connector = inprocess_connector(self.sim)
         self.client = SimClient(connector)
         self.journeys: dict[str, JourneyRecord] = {}
+        self._journey_locks: dict[str, asyncio.Lock] = {}
         self._cursor = 0
         self._lock = asyncio.Lock()
 
@@ -114,11 +115,24 @@ class CustomerRuntime:
             for pid, msgs in self.sim.partners.transcripts.items()
         }
 
+    def journey_lock(self, journey_id: str) -> asyncio.Lock:
+        """One lock per journey: evaluate -> approve/send/invalidate is atomic (#15)."""
+        return self._journey_locks.setdefault(journey_id, asyncio.Lock())
+
     async def send(
-        self, passenger_id: str, text: str, attachments: Sequence[str] = ()
+        self,
+        passenger_id: str,
+        text: str,
+        attachments: Sequence[str] = (),
+        buttons: Sequence[str] = (),
     ) -> WhatsAppMessage:
         sent = await self.client.call(
-            "whatsapp", "message.send", to=passenger_id, body=text, attachments=list(attachments)
+            "whatsapp",
+            "message.send",
+            to=passenger_id,
+            body=text,
+            attachments=list(attachments),
+            buttons=list(buttons),
         )
         return _to_message(sent)
 

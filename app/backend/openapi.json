@@ -1117,15 +1117,20 @@
         "type": "object"
       },
       "OfferSentPayload": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
           "offer_id": {
             "title": "Offer Id",
             "type": "string"
           }
         },
         "required": [
-          "offer_id"
+          "offer_id",
+          "message_id"
         ],
         "title": "OfferSentPayload",
         "type": "object"
