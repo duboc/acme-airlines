@@ -1,0 +1,7 @@
+[
+  {"model_id": "claude-opus-5-5", "tokens": 2400000, "requests": 310},
+  {"model_id": "claude-sonnet-5-5", "tokens": 9800000, "requests": 1450},
+  {"model_id": "claude-haiku-4-5", "tokens": 600000, "requests": 220},
+  {"model_id": "gemini-3-flash", "tokens": 5200000, "requests": 2100},
+  {"model_id": "text-embedding-005", "tokens": 90000, "requests": 400}
+]
