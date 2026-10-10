@@ -3,7 +3,8 @@
 The real GCP source (slice 4b) implements the same protocol. Raw record shapes:
 billing ``{usage_date, service, cost_usd}``; monitoring ``{model_id, tokens, requests}``;
 agent/github snapshot rows as in ``collector/schema.py``; guard ``{ts, text}``;
-merges ``{date, count}``. Any method may raise ``SourceUnavailable``.
+merges ``{date, count}``. A method may raise ``SourceUnavailable`` or ``SourceEmpty``
+(both carry the message shown to the UI).
 """
 
 import json
@@ -17,6 +18,10 @@ Rows = list[dict]
 
 class SourceUnavailable(Exception):
     """The backing system cannot be read (e.g. billing export not enabled yet)."""
+
+
+class SourceEmpty(Exception):
+    """Nothing to read yet, with a reason for the UI (e.g. billing export not enabled)."""
 
 
 class DataSource(Protocol):

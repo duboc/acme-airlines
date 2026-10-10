@@ -20,7 +20,7 @@ from .models import (
     SpendDay,
     SpendResponse,
 )
-from .source import DataSource, SourceUnavailable
+from .source import DataSource, SourceEmpty, SourceUnavailable
 
 BILLING_LAG = timedelta(days=2)  # billing export lags up to a day; older than 2 days is stale
 SNAPSHOT_LAG = timedelta(minutes=15)  # the collector runs every 5 minutes
@@ -63,6 +63,8 @@ def spend(src: DataSource, days: int) -> SpendResponse:
     try:
         today = src.now().date()
         rows = src.billing_rows(today - timedelta(days=days - 1))
+    except SourceEmpty as e:
+        return SpendResponse(state="empty", message=str(e), days=days)
     except SourceUnavailable as e:
         return SpendResponse(state="unavailable", message=str(e), days=days)
     if not rows:
@@ -192,6 +194,8 @@ def budget(src: DataSource, budget_usd: float) -> BudgetResponse:
         first = src.now().date().replace(day=1)
         rows = src.billing_rows(first)
         logs = src.guard_logs(20)
+    except SourceEmpty as e:
+        return BudgetResponse(state="empty", message=str(e), budget_usd=budget_usd)
     except SourceUnavailable as e:
         return BudgetResponse(state="unavailable", message=str(e), budget_usd=budget_usd)
     if not rows:
