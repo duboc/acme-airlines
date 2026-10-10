@@ -56,6 +56,7 @@ class JourneyDetail(JourneySummary):
     hotel: HotelBooking | None
     vouchers: list[Voucher]
     offer: OfferView | None
+    verification: dict[str, bool] | None = None
 
 
 class PassengerReply(BaseModel):
@@ -81,6 +82,11 @@ def _offer_view(rec: OfferRecord | None) -> OfferView | None:
         standard_price=str(o.standard_price),
         status=rec.status,
     )
+
+
+def _verification(rec: JourneyRecord) -> dict[str, bool] | None:
+    found = [e.payload["checks"] for e in rec.state.timeline if e.type == "verification_passed"]
+    return found[-1] if found else None
 
 
 def create_app(clock: Clock | None = None) -> FastAPI:
@@ -148,6 +154,7 @@ def create_app(clock: Clock | None = None) -> FastAPI:
             hotel=rec.hotel,
             vouchers=rec.vouchers,
             offer=_offer_view(offers[-1] if offers else None),
+            verification=_verification(rec),
         )
 
     @app.get(

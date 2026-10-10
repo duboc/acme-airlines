@@ -72,12 +72,6 @@
         "title": "AnalyticsRecordedEvent",
         "type": "object"
       },
-      "AnyProvisional": {
-        "additionalProperties": true,
-        "properties": {},
-        "title": "AnyProvisional",
-        "type": "object"
-      },
       "Bag": {
         "properties": {
           "checked": {
@@ -431,15 +425,56 @@
         "type": "object"
       },
       "ConversionPayload": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "converted": {
             "title": "Converted",
             "type": "boolean"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "margin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin"
+          },
+          "offer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offer Id"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
           }
         },
         "required": [
-          "converted"
+          "event",
+          "converted",
+          "offer_id",
+          "price",
+          "margin"
         ],
         "title": "ConversionPayload",
         "type": "object"
@@ -451,7 +486,7 @@
             "type": "string"
           },
           "payload": {
-            "$ref": "#/components/schemas/AnyProvisional"
+            "$ref": "#/components/schemas/CrmLoggedPayload"
           },
           "timestamp": {
             "format": "date-time",
@@ -471,6 +506,20 @@
           "payload"
         ],
         "title": "CrmLoggedEvent",
+        "type": "object"
+      },
+      "CrmLoggedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "interaction_id": {
+            "title": "Interaction Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interaction_id"
+        ],
+        "title": "CrmLoggedPayload",
         "type": "object"
       },
       "DeclineOfferEvent": {
@@ -841,6 +890,20 @@
             "title": "Status",
             "type": "string"
           },
+          "verification": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification"
+          },
           "vouchers": {
             "items": {
               "$ref": "#/components/schemas/Voucher"
@@ -894,7 +957,7 @@
             "type": "string"
           },
           "payload": {
-            "$ref": "#/components/schemas/AnyProvisional"
+            "$ref": "#/components/schemas/MemoryCommittedPayload"
           },
           "timestamp": {
             "format": "date-time",
@@ -914,6 +977,25 @@
           "payload"
         ],
         "title": "MemoryCommittedEvent",
+        "type": "object"
+      },
+      "MemoryCommittedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "title": "Events",
+            "type": "integer"
+          },
+          "journey_id": {
+            "title": "Journey Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "journey_id",
+          "events"
+        ],
+        "title": "MemoryCommittedPayload",
         "type": "object"
       },
       "NeedsHumanEvent": {
@@ -1056,7 +1138,7 @@
             "type": "string"
           },
           "payload": {
-            "$ref": "#/components/schemas/AnyProvisional"
+            "$ref": "#/components/schemas/NpsScheduledPayload"
           },
           "timestamp": {
             "format": "date-time",
@@ -1076,6 +1158,26 @@
           "payload"
         ],
         "title": "NpsScheduledEvent",
+        "type": "object"
+      },
+      "NpsScheduledPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "send_after": {
+            "format": "date-time",
+            "title": "Send After",
+            "type": "string"
+          },
+          "survey_id": {
+            "title": "Survey Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "survey_id",
+          "send_after"
+        ],
+        "title": "NpsScheduledPayload",
         "type": "object"
       },
       "OfferActionPayload": {
@@ -1993,6 +2095,68 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "VerificationFailedEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/VerificationFailedPayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "verification_failed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "VerificationFailedEvent",
+        "type": "object"
+      },
+      "VerificationFailedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Details",
+            "type": "object"
+          },
+          "failed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Failed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "failed",
+          "details",
+          "checks"
+        ],
+        "title": "VerificationFailedPayload",
+        "type": "object"
+      },
       "VerificationPassedEvent": {
         "properties": {
           "actor": {
@@ -2023,10 +2187,12 @@
         "type": "object"
       },
       "VerificationPassedPayload": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "checks": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "type": "boolean"
+            },
             "title": "Checks",
             "type": "object"
           }
@@ -2342,6 +2508,7 @@
                         "status_changed": "#/components/schemas/StatusChangedEvent",
                         "transfer_arranged": "#/components/schemas/TransferArrangedEvent",
                         "upgrade_confirmed": "#/components/schemas/UpgradeConfirmedEvent",
+                        "verification_failed": "#/components/schemas/VerificationFailedEvent",
                         "verification_passed": "#/components/schemas/VerificationPassedEvent",
                         "voucher_issued": "#/components/schemas/VoucherIssuedEvent"
                       },
@@ -2437,6 +2604,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/VerificationPassedEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/VerificationFailedEvent"
                       },
                       {
                         "$ref": "#/components/schemas/MemoryCommittedEvent"

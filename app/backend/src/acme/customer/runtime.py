@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ from acme.domain.fixtures import World
 from acme.domain.journey import DisruptionStatus, JourneyState
 from acme.domain.models import HotelBooking, Voucher
 from acme.llm import LlmPort, build_llm
+from acme.memory import JourneyStore, SqliteJourneyStore
 from acme.policy.connection_check import latest_arrival
 from acme.sim.client import Connector, SimClient, ToolError, inprocess_connector
 from acme.sim.world import SimWorld
@@ -97,6 +99,9 @@ class CustomerRuntime:
         else:
             connector = inprocess_connector(self.sim)
         self.client = SimClient(connector)
+        if hasattr(self, "store"):
+            self.store.close()
+        self.store: JourneyStore = SqliteJourneyStore(os.environ.get("ACME_JOURNEY_DB", ":memory:"))
         self.journeys: dict[str, JourneyRecord] = {}
         self._journey_locks: dict[str, asyncio.Lock] = {}
         self._cursor = 0
