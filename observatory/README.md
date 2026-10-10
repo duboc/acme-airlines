@@ -50,12 +50,20 @@ one). One deploy at a time (`concurrency`, no cancel-in-progress). A merge:
 1. builds and pushes `dashboard:<sha>` (context `observatory/dashboard`) and `collector:<sha>`
    (context `observatory/collector`) to `vars.OBSERVATORY_AR_REPO`;
 2. `gcloud run deploy acme-observatory --image dashboard:<sha>` (dashboard first);
-3. `gcloud run jobs deploy acme-observatory-collector --image collector:<sha>` with
-   `--update-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest`. The deployer cannot read Secret
-   Manager, so if that fails (typically the secret has no version yet) the step retries image-only and
-   emits a `::warning::`; the GitHub snapshot then stays skipped until the PAT exists. `--update-secrets`
-   is used rather than `--set-secrets` because the latter replaces all secrets and would drop `SCION_HUB_TOKEN`;
-4. verifies that `gcloud run services describe` / `jobs describe` report the new image.
+3. `observatory/deploy/deploy-collector.sh` deploys the collector job: it probes
+   `gcloud secrets versions list` (the deployer usually lacks access, so denial is expected). With an
+   enabled version, or when the probe is denied, it runs `gcloud run jobs deploy ... --image collector:<sha>
+   --update-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest`. If that fails with "secret was not
+   found", or the probe shows no enabled version, it redeploys with `--remove-secrets=GITHUB_TOKEN` and emits a
+   `::warning::` (the GitHub snapshot stays skipped until the PAT has a version); the fallback matches only the `Secret .*acme-observatory-github-token.* was not found` error. Any other failure fails
+   the job. A leftover mapping to a versionless secret would make *every* job deploy fail, which is why the
+   mapping is removed rather than left. `--set-secrets`/`--clear-secrets` are never used: they replace all
+   mappings and would drop `SCION_HUB_TOKEN`;
+4. `observatory/deploy/verify-deploy.sh` (runs even if a deploy step failed, and never masks the failure)
+   asserts both images end in `:<sha>` and the collector job still maps `SCION_HUB_TOKEN`.
+
+`bash observatory/deploy/test_deploy.sh` tests these paths with a fake `gcloud` (run by Observatory CI,
+job `deploy-scripts`). The workflow itself only runs on `main` (WIF), so use `workflow_dispatch` to re-run it.
 
 Only `--image` changes otherwise: service accounts, IAP, networking and env vars are never passed.
 
