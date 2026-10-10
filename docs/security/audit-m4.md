@@ -22,11 +22,14 @@
 | **Payment Safety** | **PASS** | Idempotency keys, hold-before-charge, post-charge TOCTOU re-check, automatic voiding |
 
 ### Findings Count
-- **Critical (P0):** 0
-- **High (P1):** 0
-- **Medium (P2):** 0
-- **Low / Info:** 0
-- **Resolved Issues:** 3 ([#83](https://github.com/duboc/acme-airlines/issues/83), [#88](https://github.com/duboc/acme-airlines/issues/88), [#97](https://github.com/duboc/acme-airlines/issues/97))
+- **Audit Findings (New Vulnerabilities):** 0
+  - Critical (P0): 0
+  - High (P1): 0
+  - Medium (P2): 0
+  - Low / Info: 0
+- **Pre-Audit Historical Defects Resolved During M4:** 4
+  - Discovered by automated test suites: 3 ([#83](https://github.com/duboc/acme-airlines/issues/83) via #22 governance suite, [#88](https://github.com/duboc/acme-airlines/issues/88) via #29 race suite, [#97](https://github.com/duboc/acme-airlines/issues/97) via #23 Playwright E2E)
+  - Discovered by security review: 1 ([#87](https://github.com/duboc/acme-airlines/issues/87) via PR #86 review)
 
 ---
 
@@ -136,15 +139,19 @@
 ## 4. Historical Vulnerabilities Resolved During M4
 
 1. **[Issue #83](https://github.com/duboc/acme-airlines/issues/83) — `propose_offer` accepted proposals outside `RESOLVED`**
+   - *Discovery Source:* **Automated tests** (Phase 1 governance test suite [#22](https://github.com/duboc/acme-airlines/issues/22)).
    - *Impact:* Proposals submitted during `RESOLVING` or `REPLANNING` were recorded into journey state.
    - *Fix:* Resolved in PR #85. `propose_offer` now evaluates the guardrail and raises `SkillError("rejected: disruption_not_resolved")` if not `RESOLVED`, recording nothing.
 2. **[Issue #88](https://github.com/duboc/acme-airlines/issues/88) — `accept_offer` TOCTOU race between check and charge**
+   - *Discovery Source:* **Automated tests** (Phase 2 governance race suite [#29](https://github.com/duboc/acme-airlines/issues/29) / `test_races.py`).
    - *Impact:* Inbound passenger change requests did not acquire the journey lock, allowing a transition to `REPLANNING` to occur between the pre-charge check and `payments:charge`.
    - *Fix:* Resolved in PR #93. `handle_inbound` now acquires `rt.journey_lock(rec.state.journey_id)`, and `_convert` runs a post-charge guardrail re-check that immediately voids the payment if state shifted.
 3. **[Issue #87](https://github.com/duboc/acme-airlines/issues/87) — Economy hold remained active in DCS upon upgrade**
+   - *Discovery Source:* **Security audit** (PR #86 pre-merge security review by `acme-security-auditor`).
    - *Impact:* Upgrading to 2A left the original 14A hold in DCS.
    - *Fix:* Resolved in PR #89. Added `seat.release` tool and automatic release upon seat assignment.
 4. **[Issue #97](https://github.com/duboc/acme-airlines/issues/97) — Duplicate proactive notification under concurrent `tick()`**
+   - *Discovery Source:* **Automated tests** (CI Playwright E2E narrative suite [#23](https://github.com/duboc/acme-airlines/issues/23) / PR #94).
    - *Impact:* Concurrent `tick()` executions (e.g. overlapping operator console and passenger chat polls) raced between the `notification_due()` check and `notify_resolution()`, delivering duplicate WhatsApp resolution notifications.
    - *Fix:* Resolved in PR #99. Enforces atomic check-and-send with double-checked locking under `rt.journey_lock(journey_id)` within `CustomerRuntime.tick()`, guaranteeing exactly one consolidated WhatsApp notification.
 
