@@ -33,7 +33,9 @@ export function Panel<T extends Envelope>({ id, title, result, children }: Props
       ? `Could not reach the API (${result.error}). Other panels are unaffected.`
       : data?.state === 'empty'
         ? (data.message ?? 'The source has no rows yet.')
-        : (data?.message ?? null);
+        : data?.state === 'lagging'
+          ? `${data.message ?? 'Data is stale.'} Showing the last data received.`
+          : (data?.message ?? null);
   const showBody = data && (data.state === 'ok' || data.state === 'lagging');
   return (
     <section className={`panel panel-${key}`} aria-labelledby={`${id}-title`}>
@@ -44,7 +46,11 @@ export function Panel<T extends Envelope>({ id, title, result, children }: Props
           {label}
         </span>
       </header>
-      {data?.as_of && <p className="asof">As of {formatAsOf(data.as_of)}</p>}
+      {data?.as_of && (
+        <p className="asof">
+          As of <time dateTime={data.as_of}>{formatAsOf(data.as_of)}</time>
+        </p>
+      )}
       {message && (
         <p className="message" role="status">
           {message}

@@ -16,7 +16,10 @@ function mockApi(overrides: Record<string, unknown> = {}) {
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe('App shell', () => {
   it('has landmarks, one h1 and five titled panels', async () => {
@@ -29,6 +32,13 @@ describe('App shell', () => {
     }
     expect(await screen.findAllByText('Live')).toHaveLength(5);
     expect(screen.getByText('Latest data 2026-10-10 12:00Z')).toBeInTheDocument();
+  });
+
+  it('hides the fake-data badge unless VITE_DATA_MODE=fake (production image)', () => {
+    mockApi();
+    const { unmount } = render(<App />);
+    expect(screen.queryByText('Fake data')).not.toBeInTheDocument();
+    unmount();
   });
 
   it('first focusable element is the skip link', () => {
