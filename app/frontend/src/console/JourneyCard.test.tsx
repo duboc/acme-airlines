@@ -36,6 +36,15 @@ describe('JourneyCard', () => {
     expect(screen.getByText(/420\.00/)).toBeInTheDocument();
   });
 
+  it('leads the hotel row with the property code, booking reference second', () => {
+    const journey = {
+      ...resolved,
+      hotel: { booking_id: 'HB-AD0362EF', hotel_id: 'HT8842', passenger_id: 'P', nights: 1 },
+    };
+    render(<JourneyCard journey={journey} />);
+    expect(screen.getByText('HT8842 · Booking HB-AD0362EF, 1 night')).toBeInTheDocument();
+  });
+
   it('says what is not yet arranged', () => {
     render(<JourneyCard journey={detected} />);
     expect(screen.getAllByText('Not arranged yet').length).toBe(2);

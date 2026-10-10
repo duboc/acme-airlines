@@ -54,7 +54,7 @@ export function JourneyCard({ journey }: { journey: JourneyDetail | null }) {
         <Row term="Bag routing">{journey.bags.map((b) => b.tag).join(', ') || NONE}</Row>
         <Row term="Hotel">
           {hotel
-            ? `${hotel.booking_id}, ${hotel.nights} night${hotel.nights > 1 ? 's' : ''}`
+            ? `${hotel.hotel_id} · Booking ${hotel.booking_id}, ${hotel.nights} night${hotel.nights > 1 ? 's' : ''}`
             : NONE}
         </Row>
         <Row term="Vouchers">

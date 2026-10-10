@@ -18,7 +18,7 @@ export const resolved: JourneyDetail = {
   status: 'RESOLVED',
   itinerary: [{ flight_number: 'AC1240' }],
   seat: { flight_number: 'AC1240', seat: '14A', cabin: 'economy' },
-  hotel: { booking_id: 'HT8842', hotel_id: 'H-GRU', passenger_id: 'P-MARIANA', nights: 1 },
+  hotel: { booking_id: 'HB-AD0362EF', hotel_id: 'HT8842', passenger_id: 'P-MARIANA', nights: 1 },
   vouchers: [
     { voucher_id: 'V1', passenger_id: 'P-MARIANA', kind: 'meal', amount: '40.00' },
     { voucher_id: 'V2', passenger_id: 'P-MARIANA', kind: 'transport', amount: '60.00' },
