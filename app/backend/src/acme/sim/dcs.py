@@ -28,7 +28,7 @@ class DcsState:
 
     # --- seats ---
     def _open(self, flight: str) -> dict[str, list[str]]:
-        return self._sim._flight(flight).open_seats  # type: ignore[return-value]
+        return self._sim.flight(flight).open_seats  # type: ignore[return-value]
 
     def _cabin_of(self, flight: str, seat: str) -> str | None:
         return next((c for c, seats in self._open(flight).items() if seat in seats), None)
@@ -69,7 +69,7 @@ class DcsState:
         seat = next((s for s in record.seats if s.flight_number == flight), None)
         if seat is None:
             raise SimError(f"PNR {pnr} has no assigned seat on {flight}")
-        f = self._sim._flight(flight)
+        f = self._sim.flight(flight)
         passenger = self._sim.get_passenger(record.passenger_id)
         bp = {
             "boarding_pass_id": f"BP-{len(self.boarding_passes) + 1:04d}",
@@ -100,7 +100,7 @@ class DcsState:
 
     def reroute(self, tag: str, flight: str) -> dict[str, Any]:
         self._find_bag(tag)
-        if self._sim._flight(flight).status == "cancelled":
+        if self._sim.flight(flight).status == "cancelled":
             raise SimError(f"flight {flight} is cancelled")
         self.bag_routing[tag] = flight
         return self.bag(tag)
