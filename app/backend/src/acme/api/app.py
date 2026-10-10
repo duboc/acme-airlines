@@ -12,10 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from acme.api.events import TimelineEvent
 from acme.api.runtime import JourneyRecord, Runtime, WhatsAppMessage
 from acme.customer.adk_agent import CARD_PATH, customer_agent_card
 from acme.domain.clock import Clock
-from acme.domain.journey import JourneyEvent, OfferRecord
+from acme.domain.journey import OfferRecord
 from acme.domain.models import PNR, Bag, HotelBooking, SeatAssignment, Segment, Voucher
 
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -142,14 +143,14 @@ def create_app(clock: Clock | None = None) -> FastAPI:
     @app.get(
         "/journeys/{journey_id}/events",
         tags=["journeys"],
-        response_model=list[JourneyEvent],
+        response_model=list[TimelineEvent],
         responses={200: {"content": {"text/event-stream": {}}}},
     )
     async def journey_events(
         journey_id: str,
         limit: int | None = Query(None, ge=1, description="Close the stream after N events."),
     ) -> StreamingResponse:
-        """SSE stream: each timeline event is one `data:` frame holding a JSON `JourneyEvent`."""
+        """SSE stream: one `data:` frame per timeline event (a `TimelineEvent`, by `type`)."""
         rec = get_journey(journey_id)
 
         async def stream() -> AsyncIterator[str]:
