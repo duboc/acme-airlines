@@ -149,15 +149,16 @@ async def test_action_without_sent_offer_is_409(client):
     assert r.status_code == 409
 
 
-async def test_action_accept_sent_offer(client, app):
+async def test_action_accept_is_refused_by_the_guardrail_unless_resolved(client, app):
     from .helpers import put_sent_offer
 
     (jid,) = await trigger(client)
     put_sent_offer(app.state.runtime.journeys[jid].state)
     r = await client.post(f"/whatsapp/{PID}/actions", json={"action": "accept_offer"})
-    assert r.status_code == 200 and r.json()["offer_status"] == "accepted"
-    d = (await client.get(f"/journeys/{jid}")).json()
-    assert d["offer"]["status"] == "accepted"
+    # the journey is not RESOLVED: the accept-time re-check refuses, nothing is charged (#28);
+    # the success path is covered in tests/customer/test_conversion.py
+    assert r.status_code == 200 and r.json()["offer_status"] == "invalidated"
+    assert app.state.runtime.sim.partners.charges == {}
 
 
 async def test_action_bad_value_422(client):

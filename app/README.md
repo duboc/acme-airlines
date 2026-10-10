@@ -152,3 +152,14 @@ composed from Customer-owned data only: flight, cabin and seat come from the jou
 and only `price` (a bounded `Decimal`) comes from the offer; no Sales string is rendered or sent to the
 LLM. If the journey leaves RESOLVED before sending, the offer is `invalidated` and nothing is sent.
 Events: `guardrail_decision`, `offer_proposed`, `offer_sent`.
+
+### One-tap conversion (scenario 5a)
+
+`POST /whatsapp/{id}/actions` `accept_offer` runs `acme.customer.conversion.accept_offer` under the
+same per-journey lock as offer delivery. It re-runs the full guardrail against the current journey and
+current inventory (rule 5 excludes this offer by id) and needs the offer `sent`; otherwise nothing is
+charged, the seat is unchanged, the offer is `invalidated` and the passenger gets an honest message.
+Order: `seat.hold` -> `charge` (idempotency key = offer id) -> `seat.assign` + `boarding_pass.issue` ->
+confirmation, offer `accepted`. A failure after the charge voids it (`charge.void`, event
+`charge_voided`; if the void itself fails, `needs_human`). Duplicate taps do nothing more.
+`decline_offer` ("No thanks") marks the offer `declined`, changes nothing else and sends nothing.
