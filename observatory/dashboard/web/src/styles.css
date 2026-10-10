@@ -1,0 +1,130 @@
+:root {
+  --ink: oklch(0.24 0.04 255);
+  --ink-soft: oklch(0.42 0.03 255);
+  --surface: oklch(0.985 0.004 250);
+  --panel: oklch(0.96 0.008 250);
+  --line: oklch(0.88 0.012 250);
+  --navy: oklch(0.3 0.07 255);
+  --signal: oklch(0.58 0.17 50);
+  --warn: oklch(0.45 0.11 70);
+  --warn-bg: oklch(0.95 0.05 85);
+  --bad: oklch(0.42 0.15 27);
+  --bad-bg: oklch(0.95 0.03 25);
+  font-family: 'IBM Plex Sans Variable', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--surface);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+:focus-visible {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
+}
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -4rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+.skip-link:focus {
+  top: 0.5rem;
+}
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--navy);
+  color: var(--surface);
+}
+.app-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.header-meta {
+  margin: 0;
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+.badge {
+  padding: 0 0.5rem;
+  border: 1px solid currentColor;
+  font-weight: 600;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 0.75rem 1rem;
+  min-height: 9rem;
+}
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.panel h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.chip {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.asof {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+.message {
+  margin: 0.5rem 0 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+.panel-lagging .message,
+.panel-lagging .chip {
+  color: var(--warn);
+}
+.panel-lagging .message {
+  background: var(--warn-bg);
+}
+.panel-unavailable .message,
+.panel-unavailable .chip,
+.panel-error .message,
+.panel-error .chip {
+  color: var(--bad);
+}
+.panel-unavailable .message,
+.panel-error .message {
+  background: var(--bad-bg);
+}
+@media (min-width: 64rem) {
+  .grid > :nth-child(1),
+  .grid > :nth-child(3) {
+    grid-column: span 2;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chip {
+    transition: color 150ms ease-out;
+  }
+}

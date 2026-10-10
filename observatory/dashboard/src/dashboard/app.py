@@ -7,6 +7,7 @@ from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 
 from . import service
+from .gcp import GcpDataSource
 from .models import (
     AgentsResponse,
     BudgetResponse,
@@ -19,15 +20,19 @@ from .source import DataSource, FakeDataSource
 DEFAULT_STATIC = Path(__file__).resolve().parents[2] / "web" / "dist"
 
 
+def select_source(env: dict | os._Environ = os.environ) -> DataSource:
+    """OBSERVATORY_DATA=fake -> fixtures; anything else (unset in production) -> GCP."""
+    if env.get("OBSERVATORY_DATA") == "fake":
+        return FakeDataSource(env.get("OBSERVATORY_SCENARIO", "ok"))
+    return GcpDataSource.from_env()
+
+
 def create_app(
     source: DataSource | None = None,
     budget_usd: float | None = None,
     static_dir: Path | None = None,
 ) -> FastAPI:
-    if source is None:
-        if os.environ.get("OBSERVATORY_DATA") != "fake":
-            raise RuntimeError("no live data source yet (slice 4b); set OBSERVATORY_DATA=fake")
-        source = FakeDataSource(os.environ.get("OBSERVATORY_SCENARIO", "ok"))
+    source = source or select_source()
     budget = budget_usd if budget_usd is not None else float(os.environ.get("BUDGET_USD", "1000"))
     app = FastAPI(title="ACME Observatory", docs_url=None, redoc_url=None)
 
