@@ -288,3 +288,34 @@ async def test_release_failure_does_not_undo_the_upgrade(c, monkeypatch):
     assert seat_of(c).seat == "2A" and charges(c)
     nh = [e for e in c.state.timeline if e.type == "needs_human"]
     assert nh and nh[-1].payload["step"] == "seat_release"
+
+
+async def test_replanning_racing_the_charge_voids_it_and_says_why(c, monkeypatch):
+    real = c.rt.client.call
+
+    async def call(server, tool, **args):
+        if tool == "charge":
+            c.state.transition(S.REPLANNING)  # a racer that does NOT hold the journey lock
+        return await real(server, tool, **args)
+
+    monkeypatch.setattr(c.rt.client, "call", call)
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    assert c.rt.sim.partners.net_charged(PNR) == 0 and seat_of(c).seat == "14A"
+    (voided,) = [e for e in c.state.timeline if e.type == "charge_voided"]
+    assert voided.payload["reason"] == "journey_changed"
+    assert "your journey is being changed" in last_text(c) and "not been charged" in last_text(c)
+    assert not [e for e in c.state.timeline if e.type == "seat_released"]  # 14A is kept
+
+
+async def test_a_change_request_waits_for_an_in_flight_accept(c):
+    await asyncio.gather(
+        accept_offer(c.rt, c.rec),
+        c.rt.handle_inbound("P-MARIANA", "Can I leave after 10:00 AM instead?"),
+    )
+    kinds = [(e.type, e.payload.get("to")) for e in c.state.timeline]
+    if c.rt.sim.partners.net_charged(PNR) > 0:  # the accept won the lock: replanning came after
+        assert kinds.index(("upgrade_confirmed", None)) < kinds.index(
+            ("status_changed", "REPLANNING")
+        )
+    else:  # the change won: no money moved
+        assert seat_of(c).seat == "14A"

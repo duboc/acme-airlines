@@ -147,7 +147,10 @@ class CustomerRuntime:
             "whatsapp", "message.receive", sender=passenger_id, body=text
         )
         if rec := self.journey_for_passenger(passenger_id):
-            await outreach.handle_inbound(self, rec, text)
+            # Transitions out of RESOLVED (change requests) take the same per-journey lock as
+            # offer delivery and acceptance, so they cannot land between a check and a charge.
+            async with self.journey_lock(rec.state.journey_id):
+                await outreach.handle_inbound(self, rec, text)
         return _to_message(received)
 
     async def tick(self) -> None:
