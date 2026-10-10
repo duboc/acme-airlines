@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verification harness for the acme-airlines factory.
 #
-# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|all>
+# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|all>
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
@@ -37,6 +37,45 @@ topology_ok() {
   [[ -z "${bad}" ]] || { echo "not under acme-lead:${bad}"; return 1; }
   (( n >= min )) || { echo "only ${n} agents under acme-lead (want >= ${min})"; return 1; }
   echo "${n} agents under acme-lead"
+}
+
+# Addendum-B model mapping: role -> "harness model".
+declare -A ACME_MODEL=(
+  [acme-lead]="claude large" [acme-eng-manager]="claude large" [acme-architect]="claude large"
+  [acme-backend]="claude medium" [acme-frontend]="claude medium" [acme-qa]="claude medium"
+  [acme-reviewer]="antigravity medium" [acme-security-auditor]="antigravity medium"
+  [acme-investigator]="antigravity medium" [acme-researcher]="antigravity medium"
+  [acme-qa-tester]="antigravity medium" [acme-doc-writer]="antigravity medium"
+  [acme-release-notes]="antigravity medium"
+)
+_yaml_val() { awk -F': *' -v k="$1" '$1==k{gsub(/"/,"",$2); print $2; exit}' "$2"; }
+
+# models_ok <templates-dir>: each acme-* template's harness/model matches ACME_MODEL.
+models_ok() {
+  local dir="$1" f t want got n=0 bad=""
+  for f in "${dir}"/acme-*/scion-agent.yaml; do
+    [[ -f "${f}" ]] || continue
+    t="$(basename "$(dirname "${f}")")"; want="${ACME_MODEL[${t}]:-}"
+    got="$(_yaml_val default_harness_config "${f}") $(_yaml_val model "${f}")"
+    n=$((n+1)); [[ -z "${want}" || "${got}" == "${want}" ]] || bad+=" ${t}(${got}≠${want})"
+  done
+  (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
+  [[ -z "${bad}" ]] || { echo "model mismatch:${bad}"; return 1; }
+  echo "${n} templates match the model mapping"
+}
+
+# caps_ok <templates-dir>: every acme-* template except acme-lead sets max_duration and max_turns.
+caps_ok() {
+  local dir="$1" f t n=0 bad=""
+  for f in "${dir}"/acme-*/scion-agent.yaml; do
+    [[ -f "${f}" ]] || continue
+    t="$(basename "$(dirname "${f}")")"; n=$((n+1))
+    [[ "${t}" == "acme-lead" ]] && continue
+    [[ -n "$(_yaml_val max_duration "${f}")" && -n "$(_yaml_val max_turns "${f}")" ]] || bad+=" ${t}"
+  done
+  (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
+  [[ -z "${bad}" ]] || { echo "missing caps:${bad}"; return 1; }
+  echo "caps present on all non-lead templates"
 }
 
 check_project() {
@@ -144,6 +183,22 @@ check_topology() {
       --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
   if msg="$(topology_ok "${rows}" "${TOPOLOGY_MIN:-11}")"; then pass "topology (${msg})"; else fail topology "${msg}"; fi
 }
+check_cost() {
+  # Committed templates follow the model mapping and carry caps.
+  local m c
+  m="$(models_ok "${REPO_ROOT}/.scion/templates")" || { fail cost "${m}"; return 1; }
+  c="$(caps_ok "${REPO_ROOT}/.scion/templates")" || { fail cost "${c}"; return 1; }
+  pass "cost (${m}; ${c})"
+}
+check_skills() {
+  # The frontend template stored BY THE HUB (local template storage on the VM)
+  # references the pinned impeccable skill.
+  if vm_ssh "sudo grep -rqs 'pbakaus/impeccable/.claude/skills/impeccable@d631a88' /home/scion/.scion --include=scion-agent.yaml" >/dev/null 2>&1; then
+    pass skills
+  else
+    fail skills "impeccable skill not found in a hub-stored template"
+  fi
+}
 check_lead() {
   # The lead agent's container is running on the VM.
   vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
@@ -162,11 +217,13 @@ run() {
     team)         check_team ;;
     lead)         check_lead ;;
     topology)     check_topology ;;
+    cost)         check_cost ;;
+    skills)       check_skills ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke team lead topology; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills; do run "$c" || rc=1; done
       return "$rc" ;;
-    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|all>" >&2; return 2 ;;
+    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|all>" >&2; return 2 ;;
   esac
 }
 

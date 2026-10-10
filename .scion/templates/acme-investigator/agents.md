@@ -19,21 +19,26 @@ repository `duboc/acme-airlines`. The human product owner is
 
 ## Team roster
 
-| Role | Template | Harness / model | Typical agent name |
-|------|----------|-----------------|--------------------|
+| Role | Template | Harness / model | Standing agent |
+|------|----------|-----------------|----------------|
 | Lead / tech lead (orchestrator) | `acme-lead` | claude / Opus 5.5 | `acme-lead` |
-| Engineering manager (workstream sub-lead) | `acme-eng-manager` | claude / Opus 5.5 | `acme-em-<stream>` |
-| Architect | `acme-architect` | claude / Opus 5.5 | `acme-arch-<topic>` |
-| Backend developer | `acme-backend` | claude / Sonnet 5.5 | `acme-be-<issue>` |
-| Frontend developer | `acme-frontend` | antigravity / Gemini Pro | `acme-fe-<issue>` |
-| QA / test engineer (automated tests) | `acme-qa` | antigravity / Gemini Pro | `acme-qa-<issue>` |
-| QA tester (exploratory / acceptance) | `acme-qa-tester` | antigravity / Gemini Pro | `acme-qat-<milestone>` |
-| Code reviewer | `acme-reviewer` | claude / Opus 5.5 | `acme-rev-<pr>` |
-| Security auditor | `acme-security-auditor` | claude / Opus 5.5 | `acme-sec-<scope>` |
-| Investigator | `acme-investigator` | antigravity / Gemini Pro | `acme-inv-<issue>` |
-| Researcher | `acme-researcher` | antigravity / Gemini Pro | `acme-res-<topic>` |
-| Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash | `acme-doc-<topic>` |
-| Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `acme-rel-<date>` |
+| Engineering manager (workstream sub-lead) | `acme-eng-manager` | claude / Opus 5.5 | ephemeral `acme-em-<stream>` |
+| Architect | `acme-architect` | claude / Opus 5.5 | `acme-architect` |
+| Backend developer | `acme-backend` | claude / Sonnet 5.5 | `acme-backend` |
+| Frontend developer (uses **impeccable**) | `acme-frontend` | claude / Sonnet 5.5 | `acme-frontend` |
+| QA / test engineer (automated tests) | `acme-qa` | claude / Sonnet 5.5 | `acme-qa` |
+| Code reviewer | `acme-reviewer` | antigravity / Gemini Flash | `acme-reviewer` |
+| Security auditor | `acme-security-auditor` | antigravity / Gemini Flash | `acme-security-auditor` |
+| QA tester (exploratory / acceptance) | `acme-qa-tester` | antigravity / Gemini Flash | `acme-qa-tester` |
+| Investigator | `acme-investigator` | antigravity / Gemini Flash | `acme-investigator` |
+| Researcher | `acme-researcher` | antigravity / Gemini Flash | `acme-researcher` |
+| Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash | `acme-doc-writer` |
+| Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `acme-release-notes` |
+
+Opus coordinates and plans, Sonnet writes code, and Gemini Flash does
+everything else. Every non-lead agent has a `max_duration`/`max_turns` cap. If
+you hit it (`LIMITS_EXCEEDED`), commit and push your work, comment your state
+on the issue, and message `acme-lead`.
 
 **Topology.** The team is a tree rooted at `acme-lead`, shown live in the hub's
 Agent Lineage Graph. Standing agents (named exactly as the template, e.g. `acme-backend`)
@@ -45,34 +50,53 @@ Only the lead starts, stops and deletes agents. An `acme-eng-manager` started by
 the lead may also start workers, within the budget the lead gives it. All other
 roles never start agents.
 
-## How work flows
+## How work flows: GitHub Issues is the work bus
 
-1. **Backlog = GitHub Issues** in `duboc/acme-airlines` (use `gh`, which is
-   authenticated through `GITHUB_TOKEN`). Labels:
-   - role: `role:backend`, `role:frontend`, `role:qa`
-   - status: `status:ready`, `status:in-progress`, `status:in-review`, `status:blocked`
+All task state and hand-offs live in GitHub Issues on `duboc/acme-airlines`
+(use `gh`). Chat messages are only notifications. The source of truth is the
+issue thread.
+
+1. **Labels:**
+   - status: `status:triage` (new, not yet triaged), `status:ready`,
+     `status:in-progress`, `status:in-review`, `status:blocked`
+   - owner: `agent:<agent-name>`, for example `agent:acme-backend`
+   - role: `role:backend|frontend|qa|docs|security|research`
+   - priority: `priority:p0|p1|p2`
    - scope: `mvp`
-   - Every issue has acceptance criteria written as Given/When/Then.
-2. **One issue → one branch → one PR.**
-   - Branch name: `feat/<issue-number>-<short-slug>` (or `fix/…`, `test/…`, `docs/…`).
-   - The PR body contains `Closes #<n>`, what changed, and how it was verified
-     (the exact commands and their results).
-3. **Review gate.** Every PR is reviewed by an `acme-reviewer` agent.
-   - All agents share one GitHub identity (the token owner), and GitHub forbids
-     approving your own PR. So reviews are submitted as
-     `gh pr review <n> --comment --body-file <file>`.
-   - The body's **first line** is the verdict, exactly `VERDICT: APPROVE` or
-     `VERDICT: REQUEST CHANGES`.
-   - Authors address **all** findings, then the lead asks for a re-review.
-4. **Merge gate (lead only).** The lead merges (`gh pr merge --squash --delete-branch`)
-   only when the **latest** reviewer verdict is `VERDICT: APPROVE` **and** CI is
-   green (`gh pr checks <n>`). Nobody pushes directly to `main`.
-   - Branch protection is unavailable on this private repo's plan, so this rule
-     is enforced by the team, not by GitHub. Treat a direct push to `main` as a
-     serious incident and report it to the product owner.
-5. **Status signals.** Use `sciontool status` as the platform preamble describes.
-   When you finish, message the lead with the PR URL and verification summary.
-   Report blockers the moment you hit them.
+2. **Dependencies:** write `Depends on #N` lines in the issue body. Nobody
+   starts an issue whose dependencies are still open.
+3. **Structured comments.** Every agent comments on its issue in this format
+   when it starts, at meaningful checkpoints, and when it hands off:
+   ```
+   [<agent-name>] STATUS: started | progress | blocked | handoff | done
+   DONE: <what was completed, with commit/PR links>
+   NEXT: <the concrete next step, and who should take it>
+   BLOCKER: <only if blocked: what is needed, from whom>
+   ```
+   Whoever picks the issue up next reads the thread first.
+4. **New work.** If you discover work outside your issue (a bug, missing
+   mock, tech debt, docs gap), **file a new issue** with `status:triage`, a
+   role label and acceptance criteria. Link it from your comment. Don't expand
+   your current PR's scope.
+5. **One issue, one branch, one PR.**
+   - Branch name: `feat/<issue>-<slug>` (or `fix/…`, `test/…`, `docs/…`).
+   - The PR body has `Closes #<n>`, the changes, and verification (the exact
+     commands and their results).
+   - On opening the PR, set `status:in-review` and message `acme-lead`.
+6. **Review gate.** `acme-reviewer` reviews every PR with
+   `gh pr review <n> --comment --body-file <file>`. The first line is exactly
+   `VERDICT: APPROVE` or `VERDICT: REQUEST CHANGES`. (All agents share one
+   GitHub identity, so formal approval is impossible.) Authors address **all**
+   findings.
+7. **Merge gate (autonomous, lead only).**
+   - The lead merges (`gh pr merge --squash --delete-branch`) as soon as the
+     **latest** verdict is `VERDICT: APPROVE` **and** CI is green. No human
+     approval is needed.
+   - Nobody pushes directly to `main`. Branch protection is unavailable on
+     this plan, so this rule is enforced by the team.
+8. **Status signals.** Use `sciontool status` as the platform preamble
+   describes. When you finish or get blocked, message `acme-lead`
+   (event-driven: that's what keeps the factory moving).
 
 ## Engineering rules
 
@@ -80,6 +104,15 @@ roles never start agents.
   `GITHUB_TOKEN`.
 - **Application code lives in `app/`.** Do not modify `infra/`, `docs/setup/`,
   `.scion/` or `factory/` unless your issue explicitly says so.
+- **Mock every external interface.**
+  - These are all deterministic, in-repo mocks seeded with Mariana's AC1234
+    story: OCC event stream, PSS, DCS, CRM, Loyalty/FFP, WorldTracer, WhatsApp
+    Business, Payments, Memory Bank, hotel/transfer booking, and
+    boarding-pass/voucher issuing.
+  - No real third-party calls, credentials or network dependencies in code or
+    tests.
+  - The LLM is behind `LLM_MODE`: `fake` (default for dev, tests and CI, $0)
+    or `vertex` (live demo only).
 - **Vertex AI is global-only.**
   - Any model calls the product makes use project `acme-airlines-factory`,
     location `global`, and ADC.

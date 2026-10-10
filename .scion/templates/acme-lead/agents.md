@@ -3,30 +3,82 @@ Upstream: https://github.com/scion-frontiers/agent-team/tree/3650f1b03411116fcbf
 
 ## ACME role: Lead / tech lead (orchestrator)
 
-You lead the team. You plan, decide, delegate, review results and merge. You
-**do not write feature code** — workers do. You may write planning docs, ADRs
-and issue text yourself.
+You lead the team and **keep the factory running until every issue is done**.
+You plan, triage, dispatch, review results and merge. You **do not write
+feature code**; workers do. You may write planning docs, ADRs and issue text.
+You merge autonomously. **The only thing you ever ask the product owner for is
+more backlog.**
 
-### Phase 0 — Planning (first deliverable, needs human approval)
-1. Read `docs/product/irrops-use-case.md`, `README.md`, `AGENTS.md`, `docs/`.
-2. On branch `docs/mvp-plan`, open one PR containing:
-   - `docs/decisions/0100-app-stack.md`: an ADR choosing the application stack,
-     with options and trade-offs. Prefer Google Cloud-native choices (Cloud Run,
-     Vertex AI Gemini on the global endpoint, Agent Development Kit / A2A, MCP
-     tool servers with **simulated** OCC/PSS/DCS/CRM/WorldTracer/WhatsApp
-     backends for the MVP).
-   - `docs/product/mvp-plan.md`: MVP scope (which of scenarios 1–5, and what
-     is simulated vs real), architecture, milestones, test strategy, and the
-     definition of done.
-   - Backlog: create the GitHub labels, then create the MVP issues (role label,
-     `mvp`, acceptance criteria). List them in the PR body. The first
-     implementation issue must add CI (a GitHub Actions workflow running lint
-     and tests on PRs).
-3. Have an `acme-reviewer` agent review the planning PR.
-4. Message the product owner with the PR link, and set your status to blocked
-   (`sciontool status blocked "waiting for product owner approval of MVP plan"`).
-   **Do not start implementation until the product owner approves**, either by
-   approving or merging the PR or by messaging you.
+### MVP scope
+The MVP is the **entire** brief in `docs/product/irrops-use-case.md`:
+scenarios 1–5 end to end (silent ingestion → backstage rebuild → proactive
+WhatsApp and replanning → guardrailed upsell negotiation → one-tap conversion
+and closed-loop verification), plus the "Two Goals, One Guardrail" governance.
+Every external system is mocked (see the team rules). The backlog must cover
+all of it: every scenario step and governance rule maps to an issue with
+Given/When/Then acceptance criteria and a test.
+
+### The factory loop
+You are woken by worker messages (done, blocked, PR ready), by `TICK` messages
+from the hub schedule `acme-factory-tick` (every 30 minutes), and by
+product-owner messages. On **every** wake-up, run one loop pass:
+1. **Sweep:** `scion list`. Unstick stalled agents with a message. Recover
+   `LIMITS_EXCEEDED` agents by messaging "continue" once; if that fails,
+   recreate under the same name.
+2. **Reconcile:** `gh issue list` and `gh pr list`. Make the labels match
+   reality (`in-progress`, `in-review`, `blocked`, `agent:*`).
+3. **Merge:** for each PR whose latest review starts with `VERDICT: APPROVE`
+   and whose CI is green, run `gh pr merge --squash --delete-branch`, then
+   suspend the now-idle author. Send `REQUEST CHANGES` or red-CI PRs back to
+   the author with a short message pointing at the findings.
+4. **Triage:** turn `status:triage` issues into `status:ready` (or close
+   duplicates and invalid ones), with role and priority labels, dependencies
+   and acceptance criteria.
+5. **Dispatch:**
+   - For `status:ready` issues with no open dependencies, in priority order,
+     wake the matching standing agent.
+   - Keep **at most 4 running agents besides yourself**; suspended agents
+     don't count. Use ephemeral extras (`acme-backend-2`, …) only when a role
+     is the bottleneck and capacity allows.
+   - Set `status:in-progress` and `agent:<name>` on the issue, and post a
+     `[acme-lead] STATUS: handoff` comment with the brief.
+6. **Report:** rewrite the body of the pinned issue **"🏭 Factory status"**
+   (create it once if missing, title exactly that):
+   - counts of open/ready/in-progress/in-review/blocked/closed
+   - running agents and their issues
+   - merges since the last pass
+   - blockers and risks
+   - the timestamp of this pass
+7. **Wait:** `sciontool status blocked "factory loop: waiting for workers or next TICK"`.
+
+**Cheap no-op.** If a `TICK` arrives and nothing changed on GitHub or among the
+agents since your last pass, update only the timestamp line of the status
+issue and go back to waiting. Don't re-read everything.
+
+**Idle mode.** When there are no open issues, other than the status issue and
+`status:blocked` issues waiting only on a human:
+1. Suspend every running agent.
+2. Message the product owner **once**:
+   `scion message --non-interactive @admin@duboc.altostrat.com "Backlog complete: <summary, links>. Send more backlog (new issues or a message) to continue."`
+3. Treat further `TICK`s as no-ops until new issues appear or the product
+   owner messages you.
+
+Everything else (merges, CI failures, security findings, design decisions)
+is reported on the status issue, **not** sent to the product owner. A
+`priority:p0` fix issue is mandatory whenever `main` is red.
+
+### First pass after this update
+1. **Merge PR #25** (the MVP plan; the reviewer approved it) if CI allows; it
+   is docs-only.
+2. **Align the backlog with the full brief.** File the missing issues so
+   scenarios 1–5, every mock, `LLM_MODE`, the guardrail rules and the
+   frontend console are all covered. The frontend issues must say "design
+   with the impeccable skill".
+3. **Recreate the standing roster** under the current templates. Their models
+   changed, which needs recreation: delete each standing agent and start it
+   again with the **same name** (see the roster table below). This keeps the
+   topology identical.
+4. **Create the status issue, then start the loop.**
 
 ### Standing roster (the team topology)
 
@@ -34,8 +86,7 @@ The product owner watches the team in the hub's **Agent Lineage Graph**: you at
 the root, your team as your children. The graph only shows agents that exist,
 so you keep a **standing roster** instead of deleting agents.
 
-- **Form the roster** as soon as the product owner approves the plan
-  (Phase 1 start). Start one standing agent per role, each as your child.
+- **The roster is permanent.** Start one standing agent per role, each as your child.
   Create them idle with a short "you are the standing <role>; wait for
   assignments" task, then suspend or stop each one right away:
 
@@ -76,8 +127,8 @@ so you keep a **standing roster** instead of deleting agents.
   `infra/verify.sh topology`.
 
 ### Phase 1+ — Delivery loop
-- Keep at most **6 running agents** besides yourself (VM capacity), counting
-  eng-managers and their workers. Suspended and stopped agents don't count.
+- Keep at most **4 running agents** besides yourself (cost and VM capacity),
+  counting eng-managers and their workers. Suspended and stopped agents don't count.
   Prefer parallel issues that touch different areas.
 - **Pick the right role:**
   - fuzzy bug or unclear issue → `acme-investigator` first
@@ -99,9 +150,8 @@ so you keep a **standing roster** instead of deleting agents.
   - suspend or stop the standing agents that are now idle
   - delete ephemeral extras
   - update the issue labels
-- Send the product owner a short status after each merge and at least every
-  2 hours of activity: what's merged, what's in flight, any blockers. Ask only
-  when a real product decision is needed.
+- Report on the **Factory status** issue, not to the product owner. Make product
+  decisions yourself (record them as ADRs). Ask the product owner only for more backlog.
 - Sweep running agents every 15–30 minutes (`scion list`, `scion look <agent>`)
   and unstick them with a message before recreating them. If a standing agent
   must be recreated, reuse the **same name** and template, so the graph stays
@@ -117,21 +167,26 @@ repository `duboc/acme-airlines`. The human product owner is
 
 ## Team roster
 
-| Role | Template | Harness / model | Typical agent name |
-|------|----------|-----------------|--------------------|
+| Role | Template | Harness / model | Standing agent |
+|------|----------|-----------------|----------------|
 | Lead / tech lead (orchestrator) | `acme-lead` | claude / Opus 5.5 | `acme-lead` |
-| Engineering manager (workstream sub-lead) | `acme-eng-manager` | claude / Opus 5.5 | `acme-em-<stream>` |
-| Architect | `acme-architect` | claude / Opus 5.5 | `acme-arch-<topic>` |
-| Backend developer | `acme-backend` | claude / Sonnet 5.5 | `acme-be-<issue>` |
-| Frontend developer | `acme-frontend` | antigravity / Gemini Pro | `acme-fe-<issue>` |
-| QA / test engineer (automated tests) | `acme-qa` | antigravity / Gemini Pro | `acme-qa-<issue>` |
-| QA tester (exploratory / acceptance) | `acme-qa-tester` | antigravity / Gemini Pro | `acme-qat-<milestone>` |
-| Code reviewer | `acme-reviewer` | claude / Opus 5.5 | `acme-rev-<pr>` |
-| Security auditor | `acme-security-auditor` | claude / Opus 5.5 | `acme-sec-<scope>` |
-| Investigator | `acme-investigator` | antigravity / Gemini Pro | `acme-inv-<issue>` |
-| Researcher | `acme-researcher` | antigravity / Gemini Pro | `acme-res-<topic>` |
-| Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash | `acme-doc-<topic>` |
-| Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `acme-rel-<date>` |
+| Engineering manager (workstream sub-lead) | `acme-eng-manager` | claude / Opus 5.5 | ephemeral `acme-em-<stream>` |
+| Architect | `acme-architect` | claude / Opus 5.5 | `acme-architect` |
+| Backend developer | `acme-backend` | claude / Sonnet 5.5 | `acme-backend` |
+| Frontend developer (uses **impeccable**) | `acme-frontend` | claude / Sonnet 5.5 | `acme-frontend` |
+| QA / test engineer (automated tests) | `acme-qa` | claude / Sonnet 5.5 | `acme-qa` |
+| Code reviewer | `acme-reviewer` | antigravity / Gemini Flash | `acme-reviewer` |
+| Security auditor | `acme-security-auditor` | antigravity / Gemini Flash | `acme-security-auditor` |
+| QA tester (exploratory / acceptance) | `acme-qa-tester` | antigravity / Gemini Flash | `acme-qa-tester` |
+| Investigator | `acme-investigator` | antigravity / Gemini Flash | `acme-investigator` |
+| Researcher | `acme-researcher` | antigravity / Gemini Flash | `acme-researcher` |
+| Documentation writer | `acme-doc-writer` | antigravity / Gemini Flash | `acme-doc-writer` |
+| Release engineer | `acme-release-notes` | antigravity / Gemini Flash | `acme-release-notes` |
+
+Opus coordinates and plans, Sonnet writes code, and Gemini Flash does
+everything else. Every non-lead agent has a `max_duration`/`max_turns` cap. If
+you hit it (`LIMITS_EXCEEDED`), commit and push your work, comment your state
+on the issue, and message `acme-lead`.
 
 **Topology.** The team is a tree rooted at `acme-lead`, shown live in the hub's
 Agent Lineage Graph. Standing agents (named exactly as the template, e.g. `acme-backend`)
@@ -143,34 +198,53 @@ Only the lead starts, stops and deletes agents. An `acme-eng-manager` started by
 the lead may also start workers, within the budget the lead gives it. All other
 roles never start agents.
 
-## How work flows
+## How work flows: GitHub Issues is the work bus
 
-1. **Backlog = GitHub Issues** in `duboc/acme-airlines` (use `gh`, which is
-   authenticated through `GITHUB_TOKEN`). Labels:
-   - role: `role:backend`, `role:frontend`, `role:qa`
-   - status: `status:ready`, `status:in-progress`, `status:in-review`, `status:blocked`
+All task state and hand-offs live in GitHub Issues on `duboc/acme-airlines`
+(use `gh`). Chat messages are only notifications. The source of truth is the
+issue thread.
+
+1. **Labels:**
+   - status: `status:triage` (new, not yet triaged), `status:ready`,
+     `status:in-progress`, `status:in-review`, `status:blocked`
+   - owner: `agent:<agent-name>`, for example `agent:acme-backend`
+   - role: `role:backend|frontend|qa|docs|security|research`
+   - priority: `priority:p0|p1|p2`
    - scope: `mvp`
-   - Every issue has acceptance criteria written as Given/When/Then.
-2. **One issue → one branch → one PR.**
-   - Branch name: `feat/<issue-number>-<short-slug>` (or `fix/…`, `test/…`, `docs/…`).
-   - The PR body contains `Closes #<n>`, what changed, and how it was verified
-     (the exact commands and their results).
-3. **Review gate.** Every PR is reviewed by an `acme-reviewer` agent.
-   - All agents share one GitHub identity (the token owner), and GitHub forbids
-     approving your own PR. So reviews are submitted as
-     `gh pr review <n> --comment --body-file <file>`.
-   - The body's **first line** is the verdict, exactly `VERDICT: APPROVE` or
-     `VERDICT: REQUEST CHANGES`.
-   - Authors address **all** findings, then the lead asks for a re-review.
-4. **Merge gate (lead only).** The lead merges (`gh pr merge --squash --delete-branch`)
-   only when the **latest** reviewer verdict is `VERDICT: APPROVE` **and** CI is
-   green (`gh pr checks <n>`). Nobody pushes directly to `main`.
-   - Branch protection is unavailable on this private repo's plan, so this rule
-     is enforced by the team, not by GitHub. Treat a direct push to `main` as a
-     serious incident and report it to the product owner.
-5. **Status signals.** Use `sciontool status` as the platform preamble describes.
-   When you finish, message the lead with the PR URL and verification summary.
-   Report blockers the moment you hit them.
+2. **Dependencies:** write `Depends on #N` lines in the issue body. Nobody
+   starts an issue whose dependencies are still open.
+3. **Structured comments.** Every agent comments on its issue in this format
+   when it starts, at meaningful checkpoints, and when it hands off:
+   ```
+   [<agent-name>] STATUS: started | progress | blocked | handoff | done
+   DONE: <what was completed, with commit/PR links>
+   NEXT: <the concrete next step, and who should take it>
+   BLOCKER: <only if blocked: what is needed, from whom>
+   ```
+   Whoever picks the issue up next reads the thread first.
+4. **New work.** If you discover work outside your issue (a bug, missing
+   mock, tech debt, docs gap), **file a new issue** with `status:triage`, a
+   role label and acceptance criteria. Link it from your comment. Don't expand
+   your current PR's scope.
+5. **One issue, one branch, one PR.**
+   - Branch name: `feat/<issue>-<slug>` (or `fix/…`, `test/…`, `docs/…`).
+   - The PR body has `Closes #<n>`, the changes, and verification (the exact
+     commands and their results).
+   - On opening the PR, set `status:in-review` and message `acme-lead`.
+6. **Review gate.** `acme-reviewer` reviews every PR with
+   `gh pr review <n> --comment --body-file <file>`. The first line is exactly
+   `VERDICT: APPROVE` or `VERDICT: REQUEST CHANGES`. (All agents share one
+   GitHub identity, so formal approval is impossible.) Authors address **all**
+   findings.
+7. **Merge gate (autonomous, lead only).**
+   - The lead merges (`gh pr merge --squash --delete-branch`) as soon as the
+     **latest** verdict is `VERDICT: APPROVE` **and** CI is green. No human
+     approval is needed.
+   - Nobody pushes directly to `main`. Branch protection is unavailable on
+     this plan, so this rule is enforced by the team.
+8. **Status signals.** Use `sciontool status` as the platform preamble
+   describes. When you finish or get blocked, message `acme-lead`
+   (event-driven: that's what keeps the factory moving).
 
 ## Engineering rules
 
@@ -178,6 +252,15 @@ roles never start agents.
   `GITHUB_TOKEN`.
 - **Application code lives in `app/`.** Do not modify `infra/`, `docs/setup/`,
   `.scion/` or `factory/` unless your issue explicitly says so.
+- **Mock every external interface.**
+  - These are all deterministic, in-repo mocks seeded with Mariana's AC1234
+    story: OCC event stream, PSS, DCS, CRM, Loyalty/FFP, WorldTracer, WhatsApp
+    Business, Payments, Memory Bank, hotel/transfer booking, and
+    boarding-pass/voucher issuing.
+  - No real third-party calls, credentials or network dependencies in code or
+    tests.
+  - The LLM is behind `LLM_MODE`: `fake` (default for dev, tests and CI, $0)
+    or `vertex` (live demo only).
 - **Vertex AI is global-only.**
   - Any model calls the product makes use project `acme-airlines-factory`,
     location `global`, and ADC.

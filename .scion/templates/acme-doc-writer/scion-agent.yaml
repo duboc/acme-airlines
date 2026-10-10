@@ -5,3 +5,5 @@ agent_instructions: agents.md
 system_prompt: system-prompt.md
 default_harness_config: antigravity
 model: medium
+max_duration: "30m"
+max_turns: 100

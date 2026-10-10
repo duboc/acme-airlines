@@ -41,4 +41,27 @@ texpect 0 "non-acme agents ignored"       1 "acme-lead|$L|[\"$U\"]
 acme-backend|b-1|[\"$U\",\"$L\"]
 smoke-x|s-1|[\"$U\"]"
 
+# models_ok <dir>: every template's harness/model matches the addendum-B mapping
+mexpect() {  # mexpect <0|1> <name> <dir>
+  if models_ok "$3" >/dev/null; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+# caps_ok <dir>: every template except acme-lead has max_duration and max_turns
+cexpect() {
+  if caps_ok "$3" >/dev/null; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+T=$(mktemp -d); mk() { mkdir -p "$T/$1/$2"; printf '%b' "$3" > "$T/$1/$2/scion-agent.yaml"; }
+mk good acme-lead 'default_harness_config: claude\nmodel: large\n'
+mk good acme-backend 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\nmax_turns: 400\n'
+mk good acme-reviewer 'default_harness_config: antigravity\nmodel: medium\nmax_duration: "45m"\nmax_turns: 150\n'
+mexpect 0 "models match mapping" "$T/good"
+cexpect 0 "caps present (lead exempt)" "$T/good"
+mk badmodel acme-reviewer 'default_harness_config: claude\nmodel: large\nmax_duration: "45m"\nmax_turns: 150\n'
+mexpect 1 "reviewer on opus rejected" "$T/badmodel"
+mk nocap acme-backend 'default_harness_config: claude\nmodel: medium\n'
+cexpect 1 "missing caps rejected" "$T/nocap"
+mexpect 1 "empty dir rejected" "$T/none"
+rm -rf "$T"
+
 if [[ "${fails}" == 0 ]]; then echo "PASS test_verify"; else echo "FAIL test_verify (${fails})"; exit 1; fi

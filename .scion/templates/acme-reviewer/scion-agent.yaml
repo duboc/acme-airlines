@@ -3,11 +3,10 @@ schema_version: "1"
 description: "ACME code reviewer — reviews every PR; never pushes code"
 agent_instructions: agents.md
 system_prompt: system-prompt.md
-default_harness_config: claude
-model: large
-env:
-  # claude-haiku-4-5 (harness default) is not enabled on Vertex; 5.5 is.
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-5-5
+default_harness_config: antigravity
+model: medium
+max_duration: "45m"
+max_turns: 150
 skills:
   # code-review absorbs the universally-applicable parts of addyosmani's
   # code-review-and-quality. That skill is deliberately NOT listed here: its severity

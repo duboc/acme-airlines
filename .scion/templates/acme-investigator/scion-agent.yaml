@@ -4,7 +4,9 @@ description: "ACME investigator — reproduces bugs and scopes issues before dev
 agent_instructions: agents.md
 system_prompt: system-prompt.md
 default_harness_config: antigravity
-model: large
+model: medium
+max_duration: "30m"
+max_turns: 100
 skills:
   - uri: "gh://scion-frontiers/agent-team/artifact-durability"
   # agents.md requires a scope tier from software-engineering-process → Sizing

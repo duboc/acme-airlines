@@ -3,8 +3,13 @@ schema_version: "1"
 description: "ACME QA / test engineer — scenario e2e tests, guardrail tests, CI gates"
 agent_instructions: agents.md
 system_prompt: system-prompt.md
-default_harness_config: antigravity
-model: large
+default_harness_config: claude
+model: medium
+max_duration: "2h"
+max_turns: 400
+env:
+  # claude-haiku-4-5 (harness default) is not enabled on Vertex; 5.5 is.
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-5-5
 skills:
   - uri: "gh://addyosmani/agent-skills/code-review-and-quality"
   - uri: "gh://addyosmani/agent-skills/debugging-and-error-recovery"
