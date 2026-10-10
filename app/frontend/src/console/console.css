@@ -1,0 +1,154 @@
+.console {
+  max-width: 72rem;
+}
+.console-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.console-head h1 {
+  margin: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.console button {
+  font: inherit;
+  padding: 0.625rem 1rem;
+  min-height: 2.75rem;
+  border: 1px solid var(--navy);
+  background: transparent;
+  color: var(--navy);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+.console button:hover:not(:disabled) {
+  background: var(--panel);
+}
+.console button.primary {
+  background: var(--navy);
+  color: var(--surface);
+}
+.console button.primary:hover:not(:disabled) {
+  background: oklch(0.36 0.07 255);
+}
+.console button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.error {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: oklch(0.95 0.03 50);
+  color: var(--ink);
+  border: 1px solid var(--signal);
+  border-radius: 0.25rem;
+}
+.console-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 2rem;
+  align-items: start;
+}
+@media (max-width: 56rem) {
+  .console-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.console .panel {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+.console h2 {
+  font-size: 1rem;
+  margin: 0.75rem 0;
+}
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+.stepper li {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.875rem;
+  color: var(--ink-soft);
+  border-bottom: 2px solid var(--line);
+}
+.stepper li[aria-current='step'] {
+  color: var(--ink);
+  font-weight: 650;
+  border-bottom-color: var(--signal);
+}
+.itinerary {
+  margin: 1rem 0 0;
+}
+.itinerary .row {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.itinerary dt {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+.itinerary dd {
+  margin: 0;
+}
+.timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.timeline > li {
+  display: grid;
+  grid-template-columns: 4.5rem 6rem 1fr;
+  gap: 0.25rem 0.75rem;
+  padding: 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.timeline time {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+.timeline .actor {
+  font-weight: 600;
+}
+.timeline .reasons {
+  grid-column: 3;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+.timeline > li[data-kind='guardrail-rejected'] {
+  background: oklch(0.95 0.03 50);
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
+}
+.timeline > li[data-kind='guardrail-approved'] {
+  background: var(--panel);
+}
+.timeline > li[data-kind='sales-suppressed'] {
+  background: var(--panel);
+  font-style: italic;
+}
+@media (max-width: 36rem) {
+  .timeline > li {
+    grid-template-columns: 4.5rem 1fr;
+  }
+  .timeline .event,
+  .timeline .reasons {
+    grid-column: 1 / -1;
+  }
+}

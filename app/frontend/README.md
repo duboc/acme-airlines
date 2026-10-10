@@ -14,3 +14,11 @@ Design context: `PRODUCT.md` and `DESIGN.md` at the repo root.
 
 `src/api/types.ts` is a hand-written stub until the OpenAPI contract (#17) merges; then it
 should be generated from `app/backend/openapi.json`. The UI talks only to the app's own API.
+
+## Operator console (`src/console/`)
+
+Trigger/Reset controls, a journey card (status stepper + itinerary) and a live timeline fed by
+SSE (`/api/journeys/{id}/events`); the card refetches `/api/journeys/{id}` on each event.
+Guardrail decisions (`actor: guardrail`, `payload.approved`, `payload.reasons[]`) and
+`sales_suppressed` events render in distinct styles with their reasons. Reason codes are mapped
+to plain text in `labels.ts`; unknown codes are shown raw. Tests mock `fetch` and `EventSource`.
