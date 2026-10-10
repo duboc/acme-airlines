@@ -98,8 +98,9 @@ export interface Endpoints {
 export async function fetchApi<K extends keyof Endpoints>(
   name: K,
   signal?: AbortSignal,
+  query = '',
 ): Promise<Endpoints[K]> {
-  const res = await fetch(`/api/${name}`, { signal });
+  const res = await fetch(`/api/${name}${query}`, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as Endpoints[K];
 }

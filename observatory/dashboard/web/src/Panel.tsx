@@ -17,6 +17,8 @@ export function formatAsOf(iso: string | null): string {
 
 interface Props<T extends Envelope> {
   id: string;
+  /** Copy shown instead of the API message when the state is empty. */
+  emptyMessage?: string;
   title: string;
   result: Result<T>;
   /** Panel body for ok and lagging data; slices #119/#120 supply it. */
@@ -24,7 +26,7 @@ interface Props<T extends Envelope> {
 }
 
 /** Shared frame: title, state chip, as_of, explicit message; body only when data exists. */
-export function Panel<T extends Envelope>({ id, title, result, children }: Props<T>) {
+export function Panel<T extends Envelope>({ id, title, result, emptyMessage, children }: Props<T>) {
   const key = result.status === 'done' ? result.data.state : result.status;
   const [glyph, label] = CHIPS[key];
   const data = result.status === 'done' ? result.data : null;
@@ -32,7 +34,7 @@ export function Panel<T extends Envelope>({ id, title, result, children }: Props
     result.status === 'error'
       ? `Could not reach the API (${result.error}). Other panels are unaffected.`
       : data?.state === 'empty'
-        ? (data.message ?? 'The source has no rows yet.')
+        ? (emptyMessage ?? data.message ?? 'The source has no rows yet.')
         : data?.state === 'lagging'
           ? `${data.message ?? 'Data is stale.'} Showing the last data received.`
           : (data?.message ?? null);
