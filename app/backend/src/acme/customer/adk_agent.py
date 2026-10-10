@@ -1,7 +1,8 @@
 """Customer agent as an ADK custom `BaseAgent` (deterministic; no `LlmAgent`, no model call).
 
 A thin wrapper (ADR 0100): `CustomerRuntime` keeps all behaviour; the agent just ingests new
-OCC events when run and reports the journeys opened. The A2A card has no skills yet (#14).
+OCC events when run and reports the journeys opened. The A2A card lists the three
+Sales-facing skills (`acme.customer.skills`).
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from a2a.types import AgentCapabilities, AgentCard
+from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
@@ -20,6 +21,22 @@ from acme.customer.runtime import CustomerRuntime
 
 AGENT_NAME = "customer_agent"
 CARD_PATH = "/.well-known/agent-card.json"
+
+
+SKILL_CARDS = [
+    AgentSkill(
+        id="list_journeys", name="List open journeys", tags=["sales"],
+        description="Open journey ids. No passenger data.",
+    ),
+    AgentSkill(
+        id="journey_status", name="Journey status", tags=["sales"],
+        description="{status, flight, resolution_acknowledged} only. No passenger data.",
+    ),
+    AgentSkill(
+        id="propose_offer", name="Propose offer", tags=["sales"],
+        description="Accepts only a structured Offer (no free text); recorded as proposed.",
+    ),
+]  # fmt: skip
 
 
 class CustomerAgent(BaseAgent):
@@ -53,5 +70,5 @@ def customer_agent_card(url: str) -> AgentCard:
         capabilities=AgentCapabilities(),
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
-        skills=[],  # #14 adds list_journeys, journey_status, propose_offer
+        skills=SKILL_CARDS,
     )
