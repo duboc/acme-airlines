@@ -403,3 +403,32 @@ Check: `infra/verify.sh observatory`.
    read -rs GH_RO && printf '%s' "$GH_RO" | gcloud secrets versions add acme-observatory-github-token \
      --project=acme-airlines-factory --data-file=- && unset GH_RO
    ```
+
+## 9. IRROPS demo platform (mocked scenarios behind IAP)
+
+The product owner wants to be able to try the IRROPS MVP with mocked scenarios. It runs as **one Cloud
+Run service behind IAP** (`acme-irrops-demo`, `LLM_MODE=fake`, in-memory state). The Observatory deployer
+only has `run.developer`, so the operator creates the platform once:
+
+```bash
+infra/90-irrops-demo-platform.sh
+```
+
+Idempotent. It creates, and grants nothing else:
+- Artifact Registry `irrops` (`us-central1`)
+- service account `acme-irrops-demo` with **no project roles** (fake mode needs no GCP access)
+- Cloud Run `acme-irrops-demo`: placeholder image, `--no-allow-unauthenticated --iap`,
+  `--max-instances=1`; IAP service agent as `run.invoker`; `iap.httpsResourceAccessor` for the domains
+  `google.com` and `duboc.altostrat.com`
+- for the existing `acme-observatory-deployer`: `artifactregistry.writer` on `irrops` and
+  `iam.serviceAccountUser` on `acme-irrops-demo`
+- GitHub Actions variables `IRROPS_DEMO_SERVICE` and `IRROPS_AR_REPO` (the existing
+  `OBSERVATORY_WIF_PROVIDER` / `OBSERVATORY_DEPLOYER_SA` are reused)
+- if the custom IAP OAuth client from `55-iap-oauth-client.sh` exists, it is applied to the new
+  service (external domains such as `google.com`); otherwise run `infra/55-iap-oauth-client.sh`
+  afterwards (it now includes `acme-irrops-demo` and skips services that do not exist yet)
+
+It prints the IAP service URL at the end. Check: `infra/verify.sh irrops-demo` (IAP on, one instance,
+not public, runtime SA without project roles). Offline checks of the script itself:
+`infra/tests/test_irrops_demo_script.sh`. Image build and deploy of the app come with the demo deploy
+workflow; the local alternative is in [deploy.md](../product/deploy.md).
