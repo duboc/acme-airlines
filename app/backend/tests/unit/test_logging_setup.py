@@ -58,3 +58,11 @@ def test_engine_set_up_configures_logging(monkeypatch):
     app = build_customer_engine_app()
     app.set_up()
     assert all(logging.getLogger(n).level >= logging.WARNING for n in NOISY)
+
+
+def test_uvicorn_access_is_pinned_so_request_urls_never_reach_logs(caplog):
+    configure_logging()
+    assert "uvicorn.access" in NOISY
+    caplog.set_level(logging.DEBUG)
+    logging.getLogger("uvicorn.access").info('GET /passengers/P-MARIANA?phone=1 "200"')
+    assert not [r for r in caplog.records if r.name == "uvicorn.access"]

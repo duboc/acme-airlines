@@ -95,7 +95,8 @@ async def test_a2a_skill_rejects_bad_requests_with_http_error_and_no_state_chang
     before = sorted(app.runtime.journeys)
     http = await http_a2a(app.runtime, skill, args)
     got = await app.a2a_skill(skill, args)
-    assert got == {"error": http["error"]}
+    assert got["error"] == http["error"]  # identical code and message
+    assert got["jsonrpc"] == "2.0"
     assert sorted(app.runtime.journeys) == before
     assert all(not r.state.offers for r in app.runtime.journeys.values())
 
@@ -114,3 +115,37 @@ def test_registered_operations_and_deploy_helpers():
     assert DISPLAY_NAME == "acme-customer-agent"
     assert any(r.startswith("google-cloud-aiplatform") for r in engine_requirements())
     assert engine_extra_packages() == ["src/acme"]
+
+
+@pytest.mark.parametrize(
+    ("env", "text"),
+    [
+        ({"LLM_MODE": "bogus"}, "LLM_MODE"),
+        ({"LLM_MODE": "vertex"}, "GOOGLE_CLOUD_PROJECT"),
+    ],
+)
+def test_bad_env_fails_at_instantiation_with_a_clear_message(monkeypatch, env, text):
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    with pytest.raises(EngineConfigError, match=text):
+        build_customer_engine_app()
+
+
+def test_vertex_with_project_and_global_location_builds(monkeypatch):
+    monkeypatch.setenv("LLM_MODE", "vertex")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "acme-airlines-factory")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "global")
+    assert build_customer_engine_app().llm_mode == "vertex"
+
+
+async def test_stream_query_inside_a_running_loop_is_a_clear_error():
+    app = engine()
+    with pytest.raises(RuntimeError, match="async_stream_query"):
+        next(app.stream_query(message="poll", user_id="u"))
+
+
+def test_stream_query_works_outside_a_loop():
+    app = engine()
+    events = list(app.stream_query(message="poll", user_id="u"))
+    assert events and events[-1]["author"] == "customer_agent"

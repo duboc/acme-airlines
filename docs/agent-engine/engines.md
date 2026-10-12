@@ -13,8 +13,8 @@ of its own. Call `set_up()` once (the engine does this itself) before use.
 
 | Operation | Mode | Behaviour |
 |---|---|---|
-| `stream_query(message, user_id, session_id)` / `async_stream_query` | stream | One ADK turn of the Customer agent. Yields JSON event dicts. |
-| `a2a_skill(skill, args) -> dict` | async | Same dispatch as HTTP `/a2a` (`CustomerSkills.handle_a2a`). Only `list_journeys`, `journey_status` and `propose_offer` are accepted, and offers are validated as structured data. Returns the skill's data, or `{"error": {"code", "message"}}` (the HTTP error object). A rejected call leaves state unchanged. |
+| `stream_query(message, user_id, session_id)` / `async_stream_query` | stream | One ADK turn of the Customer agent. Yields JSON event dicts. The sync `stream_query` raises `RuntimeError` inside a running event loop; use `async_stream_query` there. |
+| `a2a_skill(skill, args) -> dict` | async | Same dispatch as HTTP `/a2a` (`CustomerSkills.handle_a2a`). Only `list_journeys`, `journey_status` and `propose_offer` are accepted, and offers are validated as structured data. Returns the skill's data, or the JSON-RPC error body exactly as HTTP `/a2a` returns it (`{"jsonrpc", "id", "error": {"code", "message"}}`). A rejected call leaves state unchanged. |
 | `scenarios_list() -> list` | sync | The six presets (`PresetView`), as `GET /scenarios`. |
 | `scenario_start(scenario_id) -> dict` | sync | Resets the world and seeds the preset; returns `ScenarioState`. Unknown id raises `EngineOperationError`. |
 | `scenario_step() -> dict` | async | Customer half of the next scripted step, run as an ADK turn (span attributes `acme.scenario`, `acme.step`). **No Sales tick**: the demo drives Sales through the Sales engine. Returns `ScenarioState`. |
@@ -32,8 +32,8 @@ State is in memory, so a deploy must pin the Customer engine to one instance.
 
 | Variable | Default | Rule |
 |---|---|---|
-| `LLM_MODE` | `fake` | `fake` (dev/CI) or `vertex` |
-| `GOOGLE_CLOUD_PROJECT` | `acme-airlines-factory` | |
+| `LLM_MODE` | `fake` | `fake` (dev/CI) or `vertex`; any other value fails at instantiation |
+| `GOOGLE_CLOUD_PROJECT` | `acme-airlines-factory` | Must be set explicitly when `LLM_MODE=vertex`. |
 | `GOOGLE_CLOUD_LOCATION` | `global` | With `vertex` it **must** be `global`; building fails fast (`EngineConfigError`) otherwise. No API keys, no regional fallback. |
 
 ### Deploy helpers

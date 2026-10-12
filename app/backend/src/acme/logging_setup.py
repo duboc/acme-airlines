@@ -16,7 +16,7 @@ from functools import lru_cache
 
 NOISY = (
     "mcp", "httpx", "httpcore", "google_genai", "google.genai", "google.adk", "google_adk",
-    "google.auth", "urllib3", "asyncio", "a2a", "sse_starlette",
+    "google.auth", "urllib3", "asyncio", "a2a", "sse_starlette", "uvicorn.access",
 )  # fmt: skip
 MASK = "[redacted]"
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")

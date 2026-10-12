@@ -40,18 +40,6 @@ async def test_both_error_shapes_raise(reply):
         await EngineCustomerClient(Handle()).list_journeys()
 
 
-async def test_http_shaped_success_is_unwrapped():
-    class Handle:
-        async def a2a_skill(self, skill, args):
-            return {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "result": {"parts": [{"data": {"journey_ids": ["J"]}}]},
-            }
-
-    assert await EngineCustomerClient(Handle()).list_journeys() == ["J"]
-
-
 async def test_scenario_outcomes_equal_across_transports():
     outcomes = []
     for transport in ("http", "engine"):

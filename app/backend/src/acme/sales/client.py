@@ -74,12 +74,8 @@ class EngineCustomerClient:
 
     async def _skill(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
         reply = await self._engine.a2a_skill(skill, args)
-        # Error shapes: `{"error": {...}}` (engine) or a JSON-RPC body (HTTP /a2a, see #175).
-        if "error" in reply:
-            err = reply["error"]
-            raise A2AError(err.get("message", "error") if isinstance(err, dict) else str(err))
-        if "result" in reply and "jsonrpc" in reply:
-            return reply["result"]["parts"][0]["data"]
+        if "error" in reply:  # the JSON-RPC error body, identical to HTTP /a2a (#175)
+            raise A2AError(reply["error"]["message"])
         return reply
 
     async def list_journeys(self) -> list[str]:
