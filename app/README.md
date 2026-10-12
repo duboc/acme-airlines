@@ -241,6 +241,6 @@ calls `acme.logging_setup.configure_logging()`. It pins noisy third-party logger
 `httpx`, `httpcore`, `google_genai`, `google.adk`, ...) to WARNING or higher, because at DEBUG
 they dump full tool results with passenger data. It also installs a redaction backstop on the
 log record factory that masks fixture PII (passenger names, PNRs, loyalty ids), emails and phone
-numbers. Never log passenger data on purpose; the backstop is a safety net. Any new entrypoint
+numbers. The Customer engine calls it in `set_up()`. Never log passenger data on purpose; the backstop is a safety net. Any new entrypoint
 (for example the Agent Engine app) must call `configure_logging()` first.
 Test: `tests/unit/test_logging_setup.py`.

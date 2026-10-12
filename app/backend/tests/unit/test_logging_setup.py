@@ -48,3 +48,13 @@ def test_redaction_backstop_masks_fixture_pii_emails_and_phones(caplog):
     for leaked in ("Mariana", "MSLV42", "FFP-0001", "a.b@x.com", "91234"):
         assert leaked not in msg
     assert redact("plain text") == "plain text"
+
+
+def test_engine_set_up_configures_logging(monkeypatch):
+    from acme.engines.customer import build_customer_engine_app
+
+    for name in NOISY:
+        logging.getLogger(name).setLevel(logging.DEBUG)
+    app = build_customer_engine_app()
+    app.set_up()
+    assert all(logging.getLogger(n).level >= logging.WARNING for n in NOISY)
