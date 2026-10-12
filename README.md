@@ -23,6 +23,8 @@ changes as pull requests.
 ## Application quickstart
 
 > **Product Owner & Testers:** Follow the **[Try-It Guide](docs/product/try-it.md)** to test the hosted demo behind IAP or run the guided scenario presets locally.
+>
+> 🚀 **Live Hosted Demo (IAP):** **[https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app](https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app)** (Console: `/console`, WhatsApp: `/whatsapp`). Sign in with `@duboc.altostrat.com` or `@google.com`.
 
 Run the full multi-agent application locally with Docker Compose:
 
