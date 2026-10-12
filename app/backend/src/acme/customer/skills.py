@@ -22,9 +22,10 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from acme.customer.runtime import CustomerRuntime, JourneyRecord
 from acme.domain.journey import DisruptionStatus, OfferRecord
 from acme.domain.models import CabinInventory, Offer
-from acme.policy.guardrail_offer import evaluate
+from acme.policy.guardrail_offer import evaluate_traced
 from acme.sim.client import ToolError
 from acme.sim.world import SimError
+from acme.telemetry import is_safe_value, span
 
 SKILLS = ("list_journeys", "journey_status", "propose_offer")
 
@@ -106,7 +107,7 @@ class CustomerSkills:
             "sales_opportunity",
             {"flight": offer.flight, "open_seats": inventory.open_seats},
         )
-        decision = evaluate(state, offer, inventory)
+        decision = evaluate_traced(state, offer, inventory, "propose")
         self._decision_event(state, offer, decision)
         if "disruption_not_resolved" in decision.reasons:
             raise SkillError("rejected: disruption_not_resolved")
@@ -205,7 +206,8 @@ class CustomerSkills:
         inventory = await self._load_facts(rec, offer.model_dump(mode="json"))
         state.current_flight = self._current_flight(rec)
         text, context = await self._compose(rec, offer, inventory)
-        decision = evaluate(state, offer, inventory)  # time-of-use re-check: no await until send
+        # time-of-use re-check: no await until send
+        decision = evaluate_traced(state, offer, inventory, "send")
         if not decision.approved:
             record.status = "invalidated"
             self._decision_event(state, offer, decision)
@@ -288,13 +290,26 @@ class CustomerSkills:
         return {"jsonrpc": "2.0", "id": rid, "result": reply.model_dump(mode="json", by_alias=True)}
 
     async def _dispatch(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
+        # spans carry skill + journey id only, never the offer or any message text
         if skill == "list_journeys" and not args:
-            return {"journey_ids": self.list_journeys()}
+            with span("acme.a2a.list_journeys", acme__skill=skill):
+                return {"journey_ids": self.list_journeys()}
         if skill == "journey_status" and set(args) == {"journey_id"}:
-            return self.journey_status(str(args["journey_id"])).model_dump()
+            with span("acme.a2a.journey_status", acme__skill=skill, **_jid(args["journey_id"])):
+                return self.journey_status(str(args["journey_id"])).model_dump()
         if skill == "propose_offer" and set(args) == {"offer"} and isinstance(args["offer"], dict):
-            return await self.propose_and_deliver(args["offer"])
+            with span(
+                "acme.a2a.propose_offer",
+                acme__skill=skill,
+                **_jid(args["offer"].get("journey_id")),
+            ):
+                return await self.propose_and_deliver(args["offer"])
         raise SkillError(f"unknown skill or bad arguments: {skill!r}")
+
+
+def _jid(value: object) -> dict[str, str]:
+    """The journey id as a span attribute, only if it looks like an id (never echo input)."""
+    return {"acme__journey_id": value} if isinstance(value, str) and is_safe_value(value) else {}
 
 
 __all__ = ["SKILLS", "CustomerSkills", "JourneyStatusView", "SkillError", "TextPart"]

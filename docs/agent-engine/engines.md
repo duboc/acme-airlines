@@ -44,3 +44,29 @@ app = build_customer_engine_app(); app.set_up()
 print(asyncio.run(app.a2a_skill('list_journeys', {})))"
 uv run pytest tests/engines
 ```
+
+## Tracing
+
+The agents are deterministic custom `BaseAgent`s, so ADK's auto-tracing (enabled on the
+engines with `enable_tracing=True`) does not see the specialists, the guardrail or the Sales
+pitch. `acme.telemetry.span()` adds OpenTelemetry spans for them. They behave the same in local
+mode (no-op without a tracer provider) and on the engines (exported to Cloud Trace).
+
+| Span | Where | Attributes |
+|---|---|---|
+| `acme.customer.specialist.<name>` (`irrops_rebooking`, `seat`, `baggage`, `rights`, `concierge`, `change`) | around each specialist invocation | `acme.specialist`, `acme.journey_id` |
+| `acme.guardrail.decision` | every offer guardrail evaluation | `acme.journey_id`, `acme.flight`, `acme.step` (`propose`/`send`/`accept`/`recheck`), `acme.guardrail.decision` (`approve`/`reject`), `acme.guardrail.reason_code` (first reason) |
+| `acme.a2a.<skill>` (`list_journeys`, `journey_status`, `propose_offer`) | Customer side of `CustomerSkills.handle_a2a` | `acme.skill`, `acme.journey_id` (when present) |
+| `acme.sales.pitch` | Sales radar proposal | `acme.journey_id`, `acme.flight` |
+
+### PII-free allowlist
+
+Only these attribute keys are accepted: `acme.scenario`, `acme.journey_id`, `acme.flight`,
+`acme.specialist`, `acme.skill`, `acme.guardrail.decision`, `acme.guardrail.reason_code`,
+`acme.offer.kind`, `acme.step`. Values must be ids/enums (`[A-Za-z0-9_.:-]{1,64}`), never free
+text. Anything else raises `TelemetryError` in strict mode (tests, `ACME_TELEMETRY_STRICT=1`)
+and is dropped in production. Never add names, PNRs, phone numbers, emails or message bodies.
+
+Tests: `tests/unit/test_telemetry.py` (allowlist) and
+`tests/governance/test_telemetry_spans.py` (spans over the AC1234 story; PII derived from
+`acme.domain.fixtures` and the transcripts must not appear in span data or `acme` logs).

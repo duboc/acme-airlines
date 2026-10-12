@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from acme.customer.closure import close_loop
 from acme.customer.skills import CustomerSkills
 from acme.domain.journey import OfferRecord
-from acme.policy.guardrail_offer import evaluate
+from acme.policy.guardrail_offer import evaluate_traced
 from acme.sim.client import ToolError
 
 if TYPE_CHECKING:
@@ -87,7 +87,7 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     # Time-of-use re-check against the current journey and current inventory.
     inventory = await skills._load_facts(rec, offer.model_dump(mode="json"))  # noqa: SLF001
     state.current_flight = skills._current_flight(rec)  # noqa: SLF001
-    decision = evaluate(state, offer, inventory)
+    decision = evaluate_traced(state, offer, inventory, "accept")
     flight = state.current_flight or ""
     open_premium = rt.world.flights[flight].open_seats.get(inventory.cabin, []) if flight else []
     if not decision.approved or not open_premium:
@@ -125,7 +125,7 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     # The approval must still hold AFTER the money moved: a transition out of RESOLVED that
     # raced the charge (anything not holding the journey lock) voids it and changes no seat.
     state.current_flight = skills._current_flight(rec)  # noqa: SLF001
-    recheck = evaluate(state, offer, inventory)
+    recheck = evaluate_traced(state, offer, inventory, "recheck")
     if not recheck.approved:
         skills._decision_event(state, offer, recheck)  # noqa: SLF001
         await _void(rt, rec, record, charge["charge_id"], reason="journey_changed")
