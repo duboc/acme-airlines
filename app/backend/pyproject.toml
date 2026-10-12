@@ -12,6 +12,8 @@ dependencies = [
     "google-adk[a2a]>=1.10.0",
     "google-cloud-aiplatform[adk,agent-engines]>=1.112,<2",
     "opentelemetry-api>=1.27",
+    "opentelemetry-exporter-gcp-trace>=1.9",
+    "opentelemetry-sdk>=1.30",
 ]
 
 [project.scripts]
