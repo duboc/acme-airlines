@@ -15,6 +15,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, Request
 
+from acme.logging_setup import configure_logging
 from acme.sales.agent import sales_agent_card
 from acme.sales.client import A2ACustomerClient
 from acme.sales.radar import SalesRadar
@@ -54,6 +55,7 @@ def create_app(radar: SalesRadar, tick_seconds: float | None = None) -> FastAPI:
 
 
 def main() -> None:
+    configure_logging()
     token = os.environ.get("ACME_SALES_TOKEN", "")
     if not token:
         raise SystemExit("ACME_SALES_TOKEN is required (the sales credential for acme-sim)")
