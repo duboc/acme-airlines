@@ -20,9 +20,10 @@ from acme.domain.fixtures import DISRUPTION_DETECTED_AT, mariana_world
 from acme.domain.journey import DisruptionStatus as S
 from acme.domain.journey import JourneyState
 from acme.domain.models import Offer
-from acme.sales.client import A2ACustomerClient
+from acme.sales.client import A2ACustomerClient, EngineCustomerClient
 from acme.sales.radar import SalesRadar
 from acme.sim.client import SimClient, inprocess_connector
+from tests.governance.flow import engine_over
 from tests.sim.conftest import bearer, connect, sim  # noqa: F401  (fixtures re-exported)
 
 INVENTORY = mariana_world().inventory[0]
@@ -56,8 +57,8 @@ def make_journey(status=S.RESOLVED, ack=True, tier="diamond", flight="AC1252") -
     return j
 
 
-@pytest.fixture
-async def stack():
+@pytest.fixture(params=["http", "engine"])
+async def stack(request):
     """Customer app + A2A skills + Sales radar (inventory-only caller) over one seeded world."""
     app = create_app(FixedClock(DISRUPTION_DETECTED_AT))
     rt = app.state.runtime
@@ -65,7 +66,12 @@ async def stack():
     (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
     await rt.sim.rebook("MSLV42", "AC1252")
     http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://customer")
-    radar = SalesRadar(A2ACustomerClient(http), SimClient(inprocess_connector(rt.sim, "sales")))
+    customer = (
+        EngineCustomerClient(engine_over(rt))
+        if request.param == "engine"
+        else A2ACustomerClient(http)
+    )
+    radar = SalesRadar(customer, SimClient(inprocess_connector(rt.sim, "sales")))
     yield type(
         "Stack",
         (),

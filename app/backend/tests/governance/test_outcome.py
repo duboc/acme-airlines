@@ -11,9 +11,9 @@ from tests.governance.flow import Flow, offer_payload
 MARKER = "REPLY-YES-ZETA-NOW"
 
 
-@pytest.fixture
-async def flow():
-    f = Flow()
+@pytest.fixture(params=["http", "engine"])
+async def flow(request):
+    f = Flow(request.param)
     yield f
     await f.http.aclose()
 

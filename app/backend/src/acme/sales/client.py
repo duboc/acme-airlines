@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from itertools import count
 from typing import Any, Protocol
 
@@ -52,3 +54,77 @@ class A2ACustomerClient:
 
     async def propose_offer(self, offer: Offer) -> dict[str, Any]:
         return await self._skill("propose_offer", {"offer": offer.model_dump(mode="json")})
+
+
+class CustomerEngineHandle(Protocol):
+    """A handle on the Customer engine: only its `a2a_skill` operation is ever used."""
+
+    async def a2a_skill(self, skill: str, args: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class EngineCustomerClient:
+    """`CustomerPort` over the Customer engine's `a2a_skill` operation.
+
+    Exactly the three skills, no generic "call any skill" method. The Customer side enforces the
+    allowlist and the structured-offer schema; this client only unwraps the reply.
+    """
+
+    def __init__(self, engine: CustomerEngineHandle) -> None:
+        self._engine = engine
+
+    async def _skill(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
+        reply = await self._engine.a2a_skill(skill, args)
+        # Error shapes: `{"error": {...}}` (engine) or a JSON-RPC body (HTTP /a2a, see #175).
+        if "error" in reply:
+            err = reply["error"]
+            raise A2AError(err.get("message", "error") if isinstance(err, dict) else str(err))
+        if "result" in reply and "jsonrpc" in reply:
+            return reply["result"]["parts"][0]["data"]
+        return reply
+
+    async def list_journeys(self) -> list[str]:
+        return (await self._skill("list_journeys", {}))["journey_ids"]
+
+    async def journey_status(self, journey_id: str) -> dict[str, Any]:
+        return await self._skill("journey_status", {"journey_id": journey_id})
+
+    async def propose_offer(self, offer: Offer) -> dict[str, Any]:
+        return await self._skill("propose_offer", {"offer": offer.model_dump(mode="json")})
+
+
+class _AdcEngineHandle:
+    """Real handle: the deployed Customer engine, queried with ADC (never used in CI)."""
+
+    def __init__(self, resource_name: str) -> None:
+        import vertexai
+        from vertexai import agent_engines
+
+        # Engine resources live in a regional location; model calls elsewhere stay on `global`.
+        _, project, _, location, *_ = resource_name.split("/")
+        vertexai.init(project=project, location=location)
+        self._engine = agent_engines.get(resource_name)
+
+    async def a2a_skill(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
+        return await self._engine.a2a_skill(skill=skill, args=args)
+
+
+def build_customer_client(
+    env: Mapping[str, str] | None = None,
+    http: httpx.AsyncClient | None = None,
+    engine: CustomerEngineHandle | None = None,
+) -> CustomerPort:
+    """`ENGINE_MODE=local` (default): A2A over HTTP. `agent-engine`: the Customer engine."""
+    env = os.environ if env is None else env
+    mode = env.get("ENGINE_MODE") or "local"
+    if mode == "local":
+        if http is None:
+            raise ValueError("local mode needs an httpx client for the Customer A2A endpoint")
+        return A2ACustomerClient(http)
+    if mode != "agent-engine":
+        raise ValueError(f"ENGINE_MODE must be 'local' or 'agent-engine', got {mode!r}")
+    if engine is None:
+        resource = env.get("ACME_CUSTOMER_ENGINE", "")
+        if not resource.startswith("projects/") or "/reasoningEngines/" not in resource:
+            raise ValueError("ACME_CUSTOMER_ENGINE must be the full engine resource name")
+        engine = _AdcEngineHandle(resource)
+    return EngineCustomerClient(engine)
