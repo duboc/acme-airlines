@@ -155,3 +155,18 @@ Afterwards the workflow runs `gcloud run services update --update-env-vars` (eve
 If the first deploy fails on Reasoning Engine service-agent permissions, file a `needs operator: re-run infra/95-agent-engine-platform.sh` issue. Agents never change IAM.
 
 Tests (`tests/engines/test_deploy.py`) use a fake SDK and assert the workflow shape; CI never calls GCP.
+
+## Packaging and the clean-venv smoke test (#185)
+
+The SDK uploads `extra_packages` with `tar.add(path)`, so a path of `src/acme` put the code under
+`src/acme/` in `dependencies.tar.gz` and the container had no top-level `acme`: unpickling the engine
+failed with `ModuleNotFoundError: No module named 'acme'` and Agent Engine reported "failed to deploy
+and cannot serve traffic". `engine_extra_packages()` is therefore `["acme"]` and `deploy.main()` runs
+from `package_root()` (the directory that contains `acme/`).
+
+CI job `engine-smoke` guards this offline: `python -m acme.engines.stage DIR` writes the artifacts as
+the SDK uploads them (`requirements.txt`, the unpacked tarball, both pickles); a clean virtualenv with
+only those requirements (the repo's `acme` is not installed) runs `scripts/engine_smoke.py DIR`: import
+`acme` from the tarball, unpickle the Customer engine, `set_up()` it and run a query with
+`LLM_MODE=fake`; the Sales engine is loaded (its `set_up()` needs the live Customer engine). Run it
+locally the same way. Unit tests (`tests/engines/test_packaging.py`) cover the tarball layout.

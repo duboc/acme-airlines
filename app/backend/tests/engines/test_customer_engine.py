@@ -124,7 +124,7 @@ def test_registered_operations_and_deploy_helpers():
     assert "a2a_skill" in ops["async"]
     assert DISPLAY_NAME == "acme-customer-agent"
     assert any(r.startswith("google-cloud-aiplatform") for r in engine_requirements())
-    assert engine_extra_packages() == ["src/acme"]
+    assert engine_extra_packages() == ["acme"]
 
 
 @pytest.mark.parametrize(

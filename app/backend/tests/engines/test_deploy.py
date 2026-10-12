@@ -52,7 +52,7 @@ def test_updates_existing_in_place_with_the_exact_settings():
         "ACME_ENABLE_TRACING": "true",
     }
     assert any(r.startswith("google-cloud-aiplatform") for r in cust["requirements"])
-    assert cust["extra_packages"] == ["src/acme"]
+    assert cust["extra_packages"] == ["acme"]
     assert sales["env_vars"]["ENGINE_MODE"] == "agent-engine"
     assert sales["env_vars"]["ACME_CUSTOMER_ENGINE"] == PREFIX + "111"
     assert "min_instances" not in sales

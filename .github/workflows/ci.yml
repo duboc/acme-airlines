@@ -32,6 +32,33 @@ jobs:
       - run: uv run ruff format --check
       - run: uv run pytest -m "not live"
 
+  # #185: the engines crashed at container start-up (no top-level `acme` in the extra_packages
+  # tarball). Stage the deploy artifacts exactly as the SDK uploads them, then load them in a
+  # clean virtualenv that has ONLY the engine requirements, and run set_up and a query offline.
+  engine-smoke:
+    name: engine-smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: app/backend/uv.lock
+      - run: uv sync --frozen
+      - name: Stage the engine artifacts
+        run: uv run python -W ignore -m acme.engines.stage "$RUNNER_TEMP/staged"
+      - name: Clean venv with only the engine requirements
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/clean"
+          uv pip install --python "$RUNNER_TEMP/clean/bin/python" -r "$RUNNER_TEMP/staged/requirements.txt"
+      - name: Load, set_up and query the engines offline
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$RUNNER_TEMP/clean/bin/python" -W ignore "$GITHUB_WORKSPACE/app/backend/scripts/engine_smoke.py" "$RUNNER_TEMP/staged"
+
   frontend:
     name: frontend
     runs-on: ubuntu-latest

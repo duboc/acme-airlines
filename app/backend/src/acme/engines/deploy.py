@@ -1,9 +1,9 @@
 """Deploy or update both Agent Engine apps in place (#163): `python -m acme.engines.deploy`.
 
 Looks up each engine by display name (update if one exists, create if none, fail on duplicates,
-and nothing is created if either lookup fails), Customer first, then Sales pointed at it. Run from
-`app/backend` (`extra_packages` is relative to it). Authenticates with ADC only. The `sdk` is
-injected so tests never touch GCP.
+and nothing is created if either lookup fails), Customer first, then Sales pointed at it.
+`main()` runs from `package_root()` so `extra_packages=["acme"]` puts `acme/` at the tarball root
+(#185). Authenticates with ADC only. The `sdk` is injected so tests never touch GCP.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Protocol
 
 from acme.engines import customer, sales
@@ -19,6 +20,15 @@ from acme.engines import customer, sales
 # rejects the deploy with a 400 (#190). Our own non-reserved names carry the settings instead.
 TRACING_ENV = "ACME_ENABLE_TRACING"
 GENAI_LOCATION_ENV = "ACME_GENAI_LOCATION"
+
+
+def package_root() -> Path:
+    """The directory that contains the `acme` package (`app/backend/src` in the source tree).
+
+    `extra_packages` paths are resolved from here: the SDK tars them by path, and the container
+    needs `acme/` at the tarball root (#185).
+    """
+    return Path(__file__).resolve().parents[2]
 
 
 class DeployError(RuntimeError):
@@ -95,6 +105,8 @@ def main() -> int:
         location=env["AGENT_ENGINE_LOCATION"],
         staging_bucket=f"gs://{env['AGENT_ENGINE_STAGING_BUCKET'].removeprefix('gs://')}",
     )
+    previous = os.getcwd()
+    os.chdir(package_root())  # extra_packages=["acme"] is relative to here
     try:
         names = deploy(agent_engines, env)
     except DeployError as exc:
@@ -105,6 +117,8 @@ def main() -> int:
             print(f"::error::{BUCKET_HINT}", file=sys.stderr)
             return 1
         raise
+    finally:
+        os.chdir(previous)
     ids = ",".join(f"{n}={r.rsplit('/', 1)[-1]}" for n, r in names.items())
     for n, r in names.items():
         print(f"{n}: {r}")
