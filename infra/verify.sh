@@ -102,7 +102,7 @@ cron_interval_ok() {
 gh_var() {
   local i out
   for i in 1 2 3 4; do
-    out="$(gh variable list -R duboc/acme-airlines 2>/dev/null)"
+    out="$(gh variable list -R "${GITHUB_REPO}" 2>/dev/null)"
     grep -q "^$1[[:space:]]" <<<"${out}" && return 0
     sleep $((i*3))
   done
@@ -112,7 +112,7 @@ gh_var() {
 # engines_ok <reasoningEngines-list-json>: exactly one acme-customer-agent and one
 # acme-sales-agent, both running as acme-agent-engine, with no reserved GOOGLE_CLOUD_* env.
 engines_ok() {
-  local j="$1" sa="acme-agent-engine@acme-airlines-factory.iam.gserviceaccount.com" n bad
+  local j="$1" sa="acme-agent-engine@${PROJECT_ID:-acme-airlines-factory}.iam.gserviceaccount.com" n bad
   for n in acme-customer-agent acme-sales-agent; do
     [[ "$(jq --arg n "${n}" '[.reasoningEngines[]? | select(.displayName==$n)] | length' <<<"${j}")" == 1 ]] \
       || { echo "expected exactly one engine '${n}'"; return 1; }
@@ -209,16 +209,16 @@ check_hubproject() {
   # Read-only query of the hub DB on the VM. Reads the secret's *name* only.
   local out
   out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"
-    SELECT 'project', p.slug FROM projects p WHERE p.git_remote LIKE '%duboc/acme-airlines%';
+    SELECT 'project', p.slug FROM projects p WHERE p.git_remote LIKE '%${GITHUB_REPO}%';
     SELECT 'secret', s.key FROM secrets s JOIN projects p ON s.scope_id = p.id
-      WHERE s.scope = 'project' AND s.key = 'GITHUB_TOKEN' AND p.git_remote LIKE '%duboc/acme-airlines%';\"" 2>/dev/null)"
-  grep -q '^project|' <<<"${out}" || { fail hubproject "no hub project with remote duboc/acme-airlines"; return 1; }
+      WHERE s.scope = 'project' AND s.key = 'GITHUB_TOKEN' AND p.git_remote LIKE '%${GITHUB_REPO}%';\"" 2>/dev/null)"
+  grep -q '^project|' <<<"${out}" || { fail hubproject "no hub project with remote ${GITHUB_REPO}"; return 1; }
   grep -q '^secret|GITHUB_TOKEN' <<<"${out}" || { fail hubproject "project secret GITHUB_TOKEN not set"; return 1; }
   pass hubproject
 }
 check_smoke() {
   local titles a
-  titles="$(gh pr list -R duboc/acme-airlines --state all --search 'smoke: in:title' --json title -q '.[].title' 2>/dev/null)"
+  titles="$(gh pr list -R "${GITHUB_REPO}" --state all --search 'smoke: in:title' --json title -q '.[].title' 2>/dev/null)"
   for a in smoke-gemini smoke-claude; do
     grep -q "smoke: ${a}" <<<"${titles}" || { fail smoke "no PR titled 'smoke: ${a}'"; return 1; }
   done

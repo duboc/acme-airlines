@@ -14,7 +14,6 @@ set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-AGENT_TEAM_SHA="${AGENT_TEAM_SHA:-3650f1b03411116fcbf37852bfec6911db64b569}"
 UP="${REPO_ROOT}/.cache/agent-team-${AGENT_TEAM_SHA:0:7}"
 OUT="${REPO_ROOT}/factory/templates"
 TEAM="${REPO_ROOT}/factory/team"
@@ -25,7 +24,6 @@ TEAM="${REPO_ROOT}/factory/team"
 # impeccable is vendored as a TEMPLATE-MOUNTED skill (skills/impeccable/ inside the
 # template): the hub's gh:// shorthand only resolves gh://owner/repo/<name> -> skills/<name>,
 # and impeccable's built skill lives at .claude/skills/impeccable (issue #38).
-IMPECCABLE_SHA="d631a8827f99414d2b6daba4ef08b7f8701751d7"
 IMPECCABLE="mount:impeccable"
 ROLES=(
   "lead|coordinator|claude|large|||-|ACME lead / tech lead — runs the factory loop, owns the backlog, merges autonomously"

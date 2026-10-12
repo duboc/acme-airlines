@@ -23,9 +23,8 @@ set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-P="${PROJECT_ID}"; R="${REGION}"; REPO="duboc/acme-airlines"
+P="${PROJECT_ID}"; R="${REGION}"; REPO="${GITHUB_REPO}"
 PNUM="$(gcloud projects describe "${P}" --format='value(projectNumber)')"
-WEB_DOMAINS="${WEB_DOMAINS:-google.com duboc.altostrat.com}"
 SERVICE="acme-irrops-demo"
 AR_REPO="irrops"
 SA_DEMO="acme-irrops-demo@${P}.iam.gserviceaccount.com"

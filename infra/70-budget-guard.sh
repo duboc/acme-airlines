@@ -15,7 +15,6 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-BUDGET_USD="${BUDGET_USD:-1000}"
 BUDGET_NAME="acme-airlines-factory-monthly"
 TOPIC="acme-budget-alerts"
 TOKEN_SECRET="acme-guard-hub-token"
@@ -44,7 +43,7 @@ if [[ -z "$(gcloud secrets versions list "${TOKEN_SECRET}" --project="${PROJECT_
   bash "${INFRA_DIR}/30-hub-admin-access.sh" enable >/dev/null
   trap 'bash "${INFRA_DIR}/30-hub-admin-access.sh" disable >/dev/null || true' EXIT
   # Mint a project-scoped UAT and pipe it straight into Secret Manager (never printed or stored on disk).
-  hub_cli hub token create --project duboc-acme-airlines --name acme-budget-guard \
+  hub_cli hub token create --project "${HUB_PROJECT_SLUG}" --name acme-budget-guard \
       --scopes agent:list,agent:lifecycle --expires 90d --purpose "budget guard: suspend agents at 100% budget" --json 2>/dev/null \
     | jq -er '.token' | tr -d '\n' | gcloud secrets versions add "${TOKEN_SECRET}" --project="${PROJECT_ID}" --data-file=- --format=none
   # Disable explicitly (not >/dev/null) so a slow hub restart is visible, then verify.
@@ -74,7 +73,7 @@ gcloud run deploy "${SVC}" --project="${PROJECT_ID}" --region="${REGION}" \
   --build-service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
   --no-allow-unauthenticated --max-instances=1 --memory=512Mi \
   --network=default --subnet=default --vpc-egress=private-ranges-only \
-  --set-env-vars="HUB_ENDPOINT=http://${VM_IP}:8080,HUB_PROJECT=duboc-acme-airlines" \
+  --set-env-vars="HUB_ENDPOINT=http://${VM_IP}:8080,HUB_PROJECT=${HUB_PROJECT_SLUG}" \
   --set-secrets="SCION_HUB_TOKEN=${TOKEN_SECRET}:latest" --quiet
 URL="$(gcloud run services describe "${SVC}" --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
 gcloud run services add-iam-policy-binding "${SVC}" --region="${REGION}" --project="${PROJECT_ID}" \

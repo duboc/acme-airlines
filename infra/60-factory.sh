@@ -15,9 +15,8 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-PROJ_SLUG="duboc-acme-airlines"
+PROJ_SLUG="${HUB_PROJECT_SLUG}"
 TICK_NAME="acme-factory-tick"
-TICK_CRON="*/30 * * * *"
 TICK_MSG="TICK: run one factory loop pass (see the factory loop section of your instructions). If nothing changed since your last pass, only refresh the status issue timestamp."
 
 admin_on()  { bash "${INFRA_DIR}/30-hub-admin-access.sh" enable >/dev/null; trap admin_off EXIT; }

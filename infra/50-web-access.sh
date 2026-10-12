@@ -18,7 +18,6 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-WEB_DOMAINS="${WEB_DOMAINS:-google.com duboc.altostrat.com}"
 DEFAULT_USER_ROLE="${DEFAULT_USER_ROLE:-member}"
 SETTINGS=/home/scion/.scion/settings.yaml
 BEGIN="# BEGIN acme-web-access (infra/50-web-access.sh)"

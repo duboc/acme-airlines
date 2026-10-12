@@ -63,6 +63,10 @@ npm test
 npm run build
 ```
 
+## Reproduce this factory
+
+The full playbook, with scripts, to build another always-on Scion factory: **[docs/scion/](docs/scion/README.md)**.
+
 ## Start here
 
 1. [Overview](docs/setup/00-overview.md) — architecture, resources, cost.

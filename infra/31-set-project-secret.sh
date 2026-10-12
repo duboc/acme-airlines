@@ -21,6 +21,6 @@ TOK="$(gcloud auth print-identity-token 2>/dev/null)"
       IFS= read -r T; V=\$(cat)
       umask 077; H=\$(mktemp -p /dev/shm); trap 'rm -f \"\$H\"' EXIT
       printf 'Authorization: Bearer %s\n' \"\$T\" > \"\$H\"
-      V=\"\$V\" python3 -c 'import json,os;print(json.dumps({\"value\":os.environ[\"V\"],\"encoding\":\"raw\",\"scope\":\"project\",\"scopeId\":\"${PROJECT_UUID}\",\"injectionMode\":\"always\",\"type\":\"environment\",\"description\":\"GitHub fine-grained PAT for duboc/acme-airlines\"}))' | \
+      V=\"\$V\" python3 -c 'import json,os;print(json.dumps({\"value\":os.environ[\"V\"],\"encoding\":\"raw\",\"scope\":\"project\",\"scopeId\":\"${PROJECT_UUID}\",\"injectionMode\":\"always\",\"type\":\"environment\",\"description\":\"GitHub fine-grained PAT for ${GITHUB_REPO}\"}))' | \
         curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -X PUT -H @\"\$H\" -H 'Content-Type: application/json' \
           --data-binary @- 'http://localhost:8080/api/v1/secrets/${KEY}'"

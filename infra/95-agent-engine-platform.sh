@@ -15,7 +15,7 @@ set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-P="${PROJECT_ID}"; R="${REGION}"; REPO="duboc/acme-airlines"
+P="${PROJECT_ID}"; R="${REGION}"; REPO="${GITHUB_REPO}"
 PNUM="$(gcloud projects describe "${P}" --format='value(projectNumber)')"
 BUCKET="gs://${P}-agent-engine"
 SA_RT="acme-agent-engine@${P}.iam.gserviceaccount.com"

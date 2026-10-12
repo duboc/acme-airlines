@@ -39,8 +39,8 @@ case "${1:-status}" in
       - issuer_url: \"https://accounts.google.com\"
         jwks_url: \"https://www.googleapis.com/oauth2/v3/certs\"
         issuer_type: \"user\"
-        expected_audience: \"32555940559.apps.googleusercontent.com\"
-        allowed_domains: [\"duboc.altostrat.com\"]
+        expected_audience: \"${GCLOUD_CLIENT_ID}\"
+        allowed_domains: [\"${ORG_DOMAIN}\"]
   ${END}
 EOF
       sudo systemctl restart scion-hub

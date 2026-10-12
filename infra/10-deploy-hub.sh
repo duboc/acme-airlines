@@ -23,7 +23,7 @@ mkdir -p "${INFRA_DIR}/logs"
 # which was stocked out of n2-standard-16 on 2026-10-09. Make the zone
 # selection honour DEPLOY_ZONE (default us-central1-a). Idempotent; only the
 # zone-selection line in the cached clone is touched.
-DEPLOY_ZONE="${DEPLOY_ZONE:-${REGION}-a}"
+DEPLOY_ZONE="${DEPLOY_ZONE:-${REGION}-a}"   # set in factory.env
 export DEPLOY_ZONE
 DEPLOY_SH="${SCION_SRC}/scripts/single-node-vm/deploy.sh"
 if ! grep -q 'DEPLOY_ZONE' "${DEPLOY_SH}"; then

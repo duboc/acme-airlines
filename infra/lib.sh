@@ -10,6 +10,10 @@ INFRA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${INFRA_DIR}/.." && pwd)"
 CONFIG_FILE="${INFRA_DIR}/deploy-config.json"
 
+# Factory parameters (no secrets). Values below are fallbacks if factory.env lacks them.
+# shellcheck source=infra/factory.env
+[[ -f "${INFRA_DIR}/factory.env" ]] && source "${INFRA_DIR}/factory.env"
+
 # Clean Scion source checkout at the pinned release tag, used to run deploy.sh.
 # 10-deploy-hub.sh clones it here if missing (override with SCION_SRC).
 SCION_VERSION="${SCION_VERSION:-nightly-20261009}"
@@ -20,8 +24,18 @@ export CLOUDSDK_ACTIVE_CONFIG_NAME="${CLOUDSDK_ACTIVE_CONFIG_NAME:-acme-factory}
 # Never block on interactive gcloud prompts (e.g. "enable API and retry? (y/N)").
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-FOLDER_ID="543080121395"            # dubofolder
-BILLING_ACCOUNT="01820C-6329B4-8A7409"
+FOLDER_ID="${FOLDER_ID:-543080121395}"
+BILLING_ACCOUNT="${BILLING_ACCOUNT:-01820C-6329B4-8A7409}"
+ORG_DOMAIN="${ORG_DOMAIN:-duboc.altostrat.com}"
+WEB_DOMAINS="${WEB_DOMAINS:-google.com duboc.altostrat.com}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@duboc.altostrat.com}"
+GITHUB_REPO="${GITHUB_REPO:-duboc/acme-airlines}"
+HUB_PROJECT_SLUG="${HUB_PROJECT_SLUG:-duboc-acme-airlines}"
+AGENT_TEAM_SHA="${AGENT_TEAM_SHA:-3650f1b03411116fcbf37852bfec6911db64b569}"
+IMPECCABLE_SHA="${IMPECCABLE_SHA:-d631a8827f99414d2b6daba4ef08b7f8701751d7}"
+BUDGET_USD="${BUDGET_USD:-1000}"
+TICK_CRON="${TICK_CRON:-*/30 * * * *}"
+GCLOUD_CLIENT_ID="${GCLOUD_CLIENT_ID:-32555940559.apps.googleusercontent.com}"
 
 cfg() { jq -r "$1" "${CONFIG_FILE}"; }
 
@@ -71,3 +85,4 @@ hub_cli() {
 
 export PROJECT_ID REGION HUB_NAME VM_NAME VM_SA PROXY_SVC
 export REPO_ROOT FOLDER_ID BILLING_ACCOUNT SCION_SRC SCION_VERSION CONFIG_FILE
+export ORG_DOMAIN WEB_DOMAINS ADMIN_EMAIL GITHUB_REPO HUB_PROJECT_SLUG AGENT_TEAM_SHA IMPECCABLE_SHA BUDGET_USD TICK_CRON GCLOUD_CLIENT_ID

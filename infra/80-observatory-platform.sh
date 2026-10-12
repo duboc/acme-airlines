@@ -6,7 +6,7 @@
 #   SAs          acme-observatory           dashboard runtime (read-only)
 #                acme-observatory-collector collector runtime (writes factory_ops, reads 2 secrets)
 #                acme-observatory-deployer  GitHub Actions deployer via WIF (no keys)
-#   WIF          pool github / provider github-actions, repo duboc/acme-airlines on refs/heads/main only
+#   WIF          pool github / provider github-actions, repo ${GITHUB_REPO} (factory.env) on refs/heads/main only
 #   AR           docker repo "observatory"
 #   Secrets      acme-observatory-hub-token    (hub UAT: agent:list, agent:read; minted here)
 #                acme-observatory-github-token (read-only GitHub PAT; added by the product owner)
@@ -18,15 +18,14 @@ set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-P="${PROJECT_ID}"; R="${REGION}"; REPO="duboc/acme-airlines"
+P="${PROJECT_ID}"; R="${REGION}"; REPO="${GITHUB_REPO}"
 PNUM="$(gcloud projects describe "${P}" --format='value(projectNumber)')"
-WEB_DOMAINS="${WEB_DOMAINS:-google.com duboc.altostrat.com}"
 BQ_LOCATION="US"
 SA_DASH="acme-observatory@${P}.iam.gserviceaccount.com"
 SA_COLL="acme-observatory-collector@${P}.iam.gserviceaccount.com"
 SA_DEPL="acme-observatory-deployer@${P}.iam.gserviceaccount.com"
 HUB_SECRET="acme-observatory-hub-token"; GH_SECRET="acme-observatory-github-token"
-# Hub project UUID: the hub REST API (/api/v1/projects/<id>/agents) rejects the slug "duboc-acme-airlines".
+# Hub project UUID: the hub REST API (/api/v1/projects/<id>/agents) rejects the slug "${HUB_PROJECT_SLUG}".
 HUB_PROJECT_ID="${HUB_PROJECT_ID:-61b6ae3d-9335-4360-a259-5b306dc229f6}"
 PLACEHOLDER_SVC="us-docker.pkg.dev/cloudrun/container/hello"
 PLACEHOLDER_JOB="us-docker.pkg.dev/cloudrun/container/job"
@@ -85,7 +84,7 @@ done
 if [[ -z "$(gcloud secrets versions list "${HUB_SECRET}" --project="${P}" --filter=state=ENABLED --format='value(name)' | head -1)" || "${ROTATE_TOKEN:-0}" == 1 ]]; then
   bash "${INFRA_DIR}/30-hub-admin-access.sh" enable >/dev/null
   trap 'bash "${INFRA_DIR}/30-hub-admin-access.sh" disable >/dev/null || true' EXIT
-  hub_cli hub token create --project duboc-acme-airlines --name acme-observatory-collector \
+  hub_cli hub token create --project "${HUB_PROJECT_SLUG}" --name acme-observatory-collector \
       --scopes agent:list,agent:read --expires 90d --purpose "observatory collector: read agent state" --json 2>/dev/null \
     | jq -er '.token' | tr -d '\n' | gcloud secrets versions add "${HUB_SECRET}" --project="${P}" --data-file=- --format=none
   # Disable explicitly (not >/dev/null) so a slow hub restart is visible, then verify.
@@ -125,7 +124,7 @@ log "Cloud Run: acme-observatory (placeholder, IAP)"
 if ! gcloud run services describe acme-observatory --region="${R}" --project="${P}" >/dev/null 2>&1; then
   gcloud beta run deploy acme-observatory --region="${R}" --project="${P}" --image="${PLACEHOLDER_SVC}" \
     --service-account="${SA_DASH}" --no-allow-unauthenticated --iap --max-instances=2 --quiet \
-    --set-env-vars="PROJECT_ID=${P},BUDGET_USD=1000,BILLING_DATASET=billing_export,OPS_DATASET=factory_ops"
+    --set-env-vars="PROJECT_ID=${P},BUDGET_USD=${BUDGET_USD},BILLING_DATASET=billing_export,OPS_DATASET=factory_ops"
 fi
 gcloud run services add-iam-policy-binding acme-observatory --region="${R}" --project="${P}" \
   --member="serviceAccount:service-${PNUM}@gcp-sa-iap.iam.gserviceaccount.com" --role=roles/run.invoker --format=none
