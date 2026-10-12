@@ -36,6 +36,8 @@ ENGINE_REQUIREMENTS = [
     "google-adk[a2a]>=1.10.0",
     "google-genai>=2.29.0",
     "mcp>=1.9,<2",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-gcp-trace>=1.9",
     "httpx>=0.28.1",
     "pydantic>=2.14.0",
     "fastapi>=0.143.0",
@@ -108,8 +110,10 @@ class CustomerEngineApp:
         from acme.customer.runtime import CustomerRuntime
         from acme.customer.skills import CustomerSkills
         from acme.logging_setup import configure_logging
+        from acme.telemetry import configure_cloud_trace
 
         configure_logging()  # no passenger PII in Cloud Logging (#170)
+        configure_cloud_trace(DISPLAY_NAME)
         self.runtime = CustomerRuntime()  # in-process simulators, LlmPort from LLM_MODE
         self.skills = CustomerSkills(self.runtime)
         self._sessions = InMemorySessionService()

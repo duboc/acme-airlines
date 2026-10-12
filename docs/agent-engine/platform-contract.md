@@ -29,6 +29,10 @@ This is what the team can rely on for running the IRROPS ADK agents on
   - `acme-sales-agent`: the Sales agent. Its only outbound path is A2A to the
     Customer agent's three PII-free skills, and the guardrail stays enforced
     in code.
+- **Single-instance Customer engine (demo limitation):** the Customer engine holds the
+  mocked world and journeys in memory, so it is deployed with `min_instances=1` and
+  `max_instances=1`. State is lost on restart and there is no horizontal scale. Do not
+  assume durable state or more than one replica.
 - **Mocks:** the mocked enterprise systems are packaged in process inside each
   engine. No external calls, and no MCP network servers are needed on Agent
   Engine.

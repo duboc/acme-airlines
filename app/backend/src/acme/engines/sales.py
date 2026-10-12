@@ -38,8 +38,10 @@ class SalesEngineApp:
         from acme.sales.radar import SalesRadar
         from acme.sim.client import SimClient, inprocess_connector
         from acme.sim.world import SimWorld
+        from acme.telemetry import configure_cloud_trace
 
         configure_logging()  # no passenger PII in Cloud Logging (#170)
+        configure_cloud_trace(DISPLAY_NAME)
         env = {"ENGINE_MODE": "agent-engine", **self._env()}
         customer = build_customer_client(env, engine=self._customer_engine)
         sim = SimWorld.seeded()
