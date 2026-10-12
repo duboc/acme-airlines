@@ -185,3 +185,21 @@ def test_no_write_apis_used():
     src.agent_snapshots()
     called = {c[0] for c in bq.method_calls}
     assert called <= {"list_tables", "query"}
+
+
+def test_collector_runs_map_log_lines_to_status():
+    log = MagicMock()
+    log.list_entries.return_value = [
+        NS(timestamp=NOW, payload="Container called exit(2)."),
+        NS(timestamp=NOW, payload="wrote 12 rows to agent_snapshots"),
+    ]
+    rows = make(log=log).collector_runs(2)
+    assert [r["status"] for r in rows] == ["failed", "succeeded"]
+    assert "acme-observatory-collector" in log.list_entries.call_args.kwargs["filter_"]
+
+
+def test_collector_runs_error_is_unavailable():
+    log = MagicMock()
+    log.list_entries.side_effect = Forbidden("no")
+    with pytest.raises(SourceUnavailable):
+        make(log=log).collector_runs(1)

@@ -9,6 +9,8 @@ from .models import (
     AgentRow,
     AgentsResponse,
     BudgetResponse,
+    CollectorHealthResponse,
+    CollectorRun,
     Count,
     EngineRow,
     EngineTrace,
@@ -278,3 +280,41 @@ def agent_engine(src: DataSource, hours: int, project: str, trace_limit: int = 1
     except SourceUnavailable as e:
         return AgentEngineResponse(state="unavailable", hours=hours, message=str(e))
     return AgentEngineResponse(state="ok", as_of=iso(src.now()), hours=hours, engines=rows)
+
+
+def collector_health(src: DataSource) -> CollectorHealthResponse:
+    """Self-monitoring: red (healthy=False) unless the newest snapshot is under 15 min old."""
+    try:
+        snaps = [*src.agent_snapshots(), *src.github_snapshots()]
+        runs = src.collector_runs(1)
+    except SourceUnavailable as e:
+        return CollectorHealthResponse(
+            state="unavailable", message=f"Collector health unknown: {e}"
+        )
+    last = (
+        CollectorRun(
+            ts=iso(parse_ts(runs[0]["ts"])), **{k: runs[0].get(k) for k in ("status", "detail")}
+        )
+        if runs
+        else None
+    )
+    failed = " The last execution failed." if last and last.status == "failed" else ""
+    if not snaps:
+        return CollectorHealthResponse(
+            state="empty",
+            message="The collector has never written a snapshot." + failed,
+            last_execution=last,
+        )
+    newest = max(parse_ts(r["ts"]) for r in snaps)
+    age = src.now() - newest
+    stale = age > SNAPSHOT_LAG
+    return CollectorHealthResponse(
+        state="lagging" if stale else "ok",
+        as_of=iso(newest),
+        healthy=not stale,
+        snapshot_age_seconds=int(age.total_seconds()),
+        message=f"The collector has not written a snapshot for over 15 minutes.{failed}"
+        if stale
+        else None,
+        last_execution=last,
+    )

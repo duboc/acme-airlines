@@ -12,6 +12,7 @@ from .models import (
     AgentEngineResponse,
     AgentsResponse,
     BudgetResponse,
+    CollectorHealthResponse,
     GithubResponse,
     ModelsResponse,
     SpendResponse,
@@ -61,6 +62,10 @@ def create_app(
     @app.get("/api/budget")
     def budget_() -> BudgetResponse:
         return service.budget(source, budget)
+
+    @app.get("/api/collector-health")
+    def collector_health() -> CollectorHealthResponse:
+        return service.collector_health(source)
 
     @app.get("/api/agent-engine")
     def agent_engine(hours: int = Query(1, ge=1, le=168)) -> AgentEngineResponse:

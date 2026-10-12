@@ -36,6 +36,7 @@ class DataSource(Protocol):
     def github_snapshots(self) -> Rows: ...
     def merges_per_day(self, days: int) -> Rows: ...
     def guard_logs(self, limit: int) -> Rows: ...
+    def collector_runs(self, limit: int) -> Rows: ...  # newest first: {ts, status, detail}
     def agent_engines(self) -> Rows: ...  # [{name, engine_id}]
     def agent_engine_metrics(self, engine_id: str, hours: int) -> dict: ...
     def agent_engine_traces(
@@ -90,6 +91,9 @@ class FakeDataSource:
 
     def guard_logs(self, limit: int) -> Rows:
         return self._read("guard_logs")[-limit:]
+
+    def collector_runs(self, limit: int) -> Rows:
+        return self._read("collector_runs")[:limit]
 
     def _engine_data(self) -> dict:
         data = self._read("agent_engine")
