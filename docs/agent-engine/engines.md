@@ -33,8 +33,8 @@ State is in memory, so a deploy must pin the Customer engine to one instance.
 | Variable | Default | Rule |
 |---|---|---|
 | `LLM_MODE` | `fake` | `fake` (dev/CI) or `vertex`; any other value fails at instantiation |
-| `GOOGLE_CLOUD_PROJECT` | `acme-airlines-factory` | Must be set explicitly when `LLM_MODE=vertex`. |
-| `GOOGLE_CLOUD_LOCATION` | `global` | With `vertex` it **must** be `global`; building fails fast (`EngineConfigError`) otherwise. No API keys, no regional fallback. |
+| `ACME_GENAI_PROJECT` / `GOOGLE_CLOUD_PROJECT` | `acme-airlines-factory` | With `LLM_MODE=vertex` one of them must be set; `ACME_GENAI_PROJECT` wins, else the platform-injected `GOOGLE_CLOUD_PROJECT` (never set in the deploy env). |
+| `ACME_GENAI_LOCATION` | `global` | Model location. With `vertex` it **must** be `global`; building fails fast (`EngineConfigError`) otherwise. No API keys, no regional fallback. `GOOGLE_CLOUD_LOCATION` is never read: Agent Engine reserves it and injects the engine region (#190). |
 
 ### Deploy helpers
 
@@ -146,8 +146,8 @@ Deploys never overlap (`concurrency: agent-engine-deploy`).
 
 1. Looks up both engines by display name. More than one hit for a name fails the run before anything is written. One hit means update in place; none means create.
 2. Deploys `acme-customer-agent`, then `acme-sales-agent` with `ENGINE_MODE=agent-engine` and `ACME_CUSTOMER_ENGINE=<customer resource name>`.
-3. Settings: `service_account=$AGENT_ENGINE_SA`, staging bucket and location from `AGENT_ENGINE_*`, env `LLM_MODE=vertex`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`.
-4. **Tracing:** this SDK has no `enable_tracing` argument on `create`/`update` for custom templates, and it only wires `GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY` into its `AdkApp` template. The deploy therefore sets that env var to `true`, and both engines' `set_up()` call `acme.telemetry.configure_cloud_trace(<display name>)`. It installs an SDK `TracerProvider` with the Cloud Trace exporter (ADC) and `service.name` = the display name only when the var is on and no SDK provider exists yet.
+3. Settings: `service_account=$AGENT_ENGINE_SA`, staging bucket and location from `AGENT_ENGINE_*`, env `LLM_MODE=vertex`, `ACME_GENAI_LOCATION=global`, `ACME_ENABLE_TRACING=true` (no `GOOGLE_CLOUD_*` names: they are reserved, #190).
+4. **Tracing:** this SDK has no `enable_tracing` argument on `create`/`update` for custom templates, and it only wires `GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY` into its `AdkApp` template. The deploy therefore sets our own `ACME_ENABLE_TRACING=true` (a `GOOGLE_CLOUD_*` name is reserved, #190; `configure_cloud_trace` still honours the SDK flag too), and both engines' `set_up()` call `acme.telemetry.configure_cloud_trace(<display name>)`. It installs an SDK `TracerProvider` with the Cloud Trace exporter (ADC) and `service.name` = the display name only when the var is on and no SDK provider exists yet.
 5. **Instances:** the Customer engine is pinned with `min_instances=1`, `max_instances=1`. This is a **demo limitation**: its world is in memory, so state is lost on restart and it does not scale horizontally. Sales is not pinned.
 
 Afterwards the workflow runs `gcloud run services update --update-env-vars` (everything else is kept) to set `AGENT_ENGINES=acme-customer-agent=<id>,acme-sales-agent=<id>` on the `acme-observatory` service and `AGENT_ENGINE_CUSTOMER` / `AGENT_ENGINE_SALES` (full resource names) on `vars.IRROPS_DEMO_SERVICE`. It does not set `ENGINE_MODE` on the demo.

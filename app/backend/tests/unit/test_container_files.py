@@ -71,7 +71,7 @@ def test_tokens_are_required_from_the_environment_never_defaulted():
 def test_llm_is_fake_by_default_and_vertex_is_global_without_api_keys():
     env = SERVICES["customer-runtime"]["environment"]
     assert env["LLM_MODE"] == "${LLM_MODE:-fake}"
-    assert env["GOOGLE_CLOUD_LOCATION"] == "global"
+    assert env["ACME_GENAI_LOCATION"] == "global"
     assert env["GOOGLE_CLOUD_PROJECT"] == "acme-airlines-factory"
     assert "GOOGLE_API_KEY" not in (APP / "compose.yaml").read_text()
 
@@ -90,7 +90,7 @@ def test_nginx_never_exposes_the_agent_to_agent_endpoint():
 
 def test_deploy_doc_is_global_with_service_to_service_iam_and_no_api_keys():
     doc = (APP.parent / "docs/product/deploy.md").read_text()
-    assert "GOOGLE_CLOUD_LOCATION=global" in doc and "roles/run.invoker" in doc
+    assert "ACME_GENAI_LOCATION=global" in doc and "roles/run.invoker" in doc
     assert "--no-allow-unauthenticated" in doc
     assert "api key" in doc.lower() and "never" in doc.lower()
     assert not re.search(r"[a-z]+-[a-z]+\d+-aiplatform\.googleapis\.com", doc)

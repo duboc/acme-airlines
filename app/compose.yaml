@@ -21,7 +21,7 @@ services:
       ACME_CUSTOMER_HOST: 0.0.0.0
       LLM_MODE: ${LLM_MODE:-fake}
       GOOGLE_CLOUD_PROJECT: acme-airlines-factory
-      GOOGLE_CLOUD_LOCATION: global
+      ACME_GENAI_LOCATION: global
     networks: [web-net, a2a-net]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8800/openapi.json')"]

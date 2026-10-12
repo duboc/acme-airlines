@@ -89,7 +89,8 @@ def specialist_span(name: str, journey_id: str):
 
 
 # --- Cloud Trace export for the custom-template engines (#163) ---------------------------------
-TELEMETRY_ENV = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"
+TELEMETRY_ENV = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"  # SDK flag (reserved prefix)
+TRACING_ENV = "ACME_ENABLE_TRACING"  # ours: what the deploy sets (#190)
 
 
 def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
@@ -100,7 +101,9 @@ def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
     `service.name` is the engine display name (the Observatory filters traces on it). Never
     replaces an existing SDK provider. Returns True when a provider was installed.
     """
-    if os.environ.get(TELEMETRY_ENV, "").lower() not in ("true", "1"):
+    if not any(
+        os.environ.get(v, "").lower() in ("true", "1") for v in (TRACING_ENV, TELEMETRY_ENV)
+    ):
         return False
     try:
         from opentelemetry.sdk.resources import Resource

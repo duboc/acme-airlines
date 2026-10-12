@@ -49,8 +49,8 @@ from `acme.llm.build_llm()`.
 |---------|---------|
 | `LLM_MODE` | `fake` (default; deterministic, offline, used by dev/tests/CI) or `vertex` (live demo only). Anything else refuses to start. |
 | `LLM_MODEL` | Optional model ID for `vertex`. Default `gemini-2.5-flash` (confirmed on the `global` endpoint from the factory VM; `gemini-2.0-flash` is not available there). |
-| `GOOGLE_CLOUD_PROJECT` | Optional; must be `acme-airlines-factory` if set. |
-| `GOOGLE_CLOUD_LOCATION` | Optional; must be `global` if set. Regional locations are refused. |
+| `ACME_GENAI_PROJECT` / `GOOGLE_CLOUD_PROJECT` | Optional; must be `acme-airlines-factory` if set (`ACME_GENAI_PROJECT` wins; Agent Engine injects `GOOGLE_CLOUD_PROJECT`). |
+| `ACME_GENAI_LOCATION` | Model location, default and only allowed value `global` (regional is refused). `GOOGLE_CLOUD_LOCATION` is never read: on Agent Engine it is the engine region. |
 
 Vertex uses ADC only. Setting `GOOGLE_API_KEY` or `GEMINI_API_KEY` refuses to start. The hygiene
 test `tests/unit/test_no_keys_no_regions.py` fails on API keys, regional endpoints or non-global

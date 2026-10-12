@@ -1,4 +1,11 @@
-"""LLM configuration: fake by default; Vertex AI global endpoint only, ADC only."""
+"""LLM configuration: fake by default; Vertex AI global endpoint only, ADC only.
+
+The model location comes ONLY from `ACME_GENAI_LOCATION` (default `global`, anything else is
+refused). `GOOGLE_CLOUD_LOCATION` is never read: on Vertex AI Agent Engine it is reserved and
+injected by the platform as the *engine* region (e.g. `us-central1`), which is not the model
+location (#190). The project is `ACME_GENAI_PROJECT`, falling back to the platform-injected
+`GOOGLE_CLOUD_PROJECT`.
+"""
 
 from __future__ import annotations
 
@@ -35,13 +42,16 @@ def load_vertex_config(env: Mapping[str, str]) -> VertexConfig:
     for name in _API_KEY_VARS:
         if env.get(name):
             raise LlmConfigError(f"{name} is set: API keys are not allowed, use ADC only")
-    project = env.get("GOOGLE_CLOUD_PROJECT", PROJECT)
+    project = env.get("ACME_GENAI_PROJECT") or env.get("GOOGLE_CLOUD_PROJECT") or PROJECT
     if project != PROJECT:
-        raise LlmConfigError(f"GOOGLE_CLOUD_PROJECT must be {PROJECT!r}, got {project!r}")
-    location = env.get("GOOGLE_CLOUD_LOCATION", LOCATION)
+        raise LlmConfigError(
+            f"model project (ACME_GENAI_PROJECT / GOOGLE_CLOUD_PROJECT) must be {PROJECT!r}, "
+            f"got {project!r}"
+        )
+    location = env.get("ACME_GENAI_LOCATION") or LOCATION
     if location != LOCATION:
         raise LlmConfigError(
-            f"GOOGLE_CLOUD_LOCATION must be 'global' (global endpoint only), got {location!r}"
+            f"ACME_GENAI_LOCATION must be 'global' (global endpoint only), got {location!r}"
         )
     return VertexConfig(
         project=PROJECT, location=LOCATION, model=env.get("LLM_MODEL") or DEFAULT_MODEL

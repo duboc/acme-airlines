@@ -44,7 +44,7 @@ def child_env(name: str, tokens: Tokens, base: Mapping[str, str]) -> dict[str, s
     env = {k: v for k, v in base.items() if k not in ("ACME_SIM_TOKENS", "ACME_SALES_TOKEN")}
     env.setdefault("LLM_MODE", "fake")
     env.setdefault("GOOGLE_CLOUD_PROJECT", "acme-airlines-factory")
-    env.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+    env.setdefault("ACME_GENAI_LOCATION", "global")
     if name == "sim":
         env.update(
             ACME_SIM_HOST=LOOPBACK, ACME_SIM_PORT=str(SIM_PORT), ACME_SIM_TOKENS=tokens.sim_tokens
