@@ -38,6 +38,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "httpx" },
     { name = "mcp" },
+    { name = "opentelemetry-api" },
     { name = "pydantic" },
 ]
 
@@ -45,6 +46,7 @@ dependencies = [
 dev = [
     { name = "httpx" },
     { name = "hypothesis" },
+    { name = "opentelemetry-sdk" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -60,6 +62,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=2.29.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=1.9,<2" },
+    { name = "opentelemetry-api", specifier = ">=1.27" },
     { name = "pydantic", specifier = ">=2.14.0" },
 ]
 
@@ -67,6 +70,7 @@ requires-dist = [
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "hypothesis", specifier = ">=6.168.5" },
+    { name = "opentelemetry-sdk", specifier = ">=1.27" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-cov", specifier = ">=7.1.0" },

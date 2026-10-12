@@ -13,6 +13,7 @@ from acme.customer.runtime import CustomerRuntime, JourneyRecord
 from acme.customer.specialists import concierge, rights
 from acme.customer.specialists.common import RebuildResult
 from acme.domain.journey import DisruptionStatus
+from acme.telemetry import specialist_span
 
 
 def _missing(rebuild: RebuildResult) -> list[str]:
@@ -39,24 +40,26 @@ async def run_duty_of_care(rt: CustomerRuntime, rec: JourneyRecord, rebuild: Reb
     original = await rt.client.call("pss", "flights.get", flight=detected.payload["flight"])
     new = await rt.client.call("pss", "flights.get", flight=rebuild.new_flight)
     new_departure = datetime.fromisoformat(new["scheduled_departure"])
-    e = rights.assess(
-        origin=original["origin"],
-        destination=original["destination"],
-        reason=detected.payload["reason"],
-        detected_at=detected.timestamp,
-        original_departure=datetime.fromisoformat(original["scheduled_departure"]),
-        new_departure=new_departure,
-    )
-    state.append_event("rights_agent", "duty_of_care_assessed", rights.entitlements_payload(e))
+    with specialist_span("rights", state.journey_id):
+        e = rights.assess(
+            origin=original["origin"],
+            destination=original["destination"],
+            reason=detected.payload["reason"],
+            detected_at=detected.timestamp,
+            original_departure=datetime.fromisoformat(original["scheduled_departure"]),
+            new_departure=new_departure,
+        )
+        state.append_event("rights_agent", "duty_of_care_assessed", rights.entitlements_payload(e))
 
     ok = True
-    if e.hotel_required:
-        hotel_ok = await concierge.book_hotel(rt, rec, e)
-        ok &= hotel_ok
-        if hotel_ok and e.ground_transfer_required:
-            ok &= await concierge.book_transfers(rt, rec, e, original["origin"], new_departure)
-    if e.meal_vouchers:
-        ok &= await concierge.issue_meal_vouchers(rt, rec, e)
+    with specialist_span("concierge", state.journey_id):
+        if e.hotel_required:
+            hotel_ok = await concierge.book_hotel(rt, rec, e)
+            ok &= hotel_ok
+            if hotel_ok and e.ground_transfer_required:
+                ok &= await concierge.book_transfers(rt, rec, e, original["origin"], new_departure)
+        if e.meal_vouchers:
+            ok &= await concierge.issue_meal_vouchers(rt, rec, e)
     if not ok:
         return
     state.append_event("customer_agent", "duty_of_care_fulfilled", {})

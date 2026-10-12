@@ -144,6 +144,17 @@ def preset_view(p: Preset) -> PresetView:
     )  # fmt: skip
 
 
+_PASSENGER_FACING = ("sent", "accepted", "declined", "invalidated")
+
+
+def passenger_offer_status(offers: list) -> str | None:
+    """Status of the offer the passenger saw. A rejected duplicate proposal (e.g. from the
+    background Sales radar) is recorded after it and must not mask it."""
+    shown = [r for r in offers if r.status in _PASSENGER_FACING]
+    chosen = shown or offers
+    return chosen[-1].status if chosen else None
+
+
 class ScenarioRunner:
     def __init__(self, rt: CustomerRuntime) -> None:
         self.rt = rt
@@ -210,7 +221,7 @@ class ScenarioRunner:
             seat=pnr.seats[-1].seat if pnr.seats else None,
             seat_reason=seat_events[-1].payload.get("reason") if seat_events else None,
             offers_sent=sum(e.type == "offer_sent" for e in events),
-            offer_status=offers[-1].status if offers else None,
+            offer_status=passenger_offer_status(offers),
             charged=f"{rt.sim.partners.net_charged(PNR).quantize(Decimal('0.01'))}",
             needs_human=any(e.type == "needs_human" for e in events),
             last_message=out[-1].text if out else None,

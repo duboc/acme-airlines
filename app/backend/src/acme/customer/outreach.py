@@ -15,6 +15,7 @@ from acme.customer.quiet_hours import can_send_proactive
 from acme.domain.fixtures import GRU
 from acme.domain.journey import DisruptionStatus, PassengerRequest
 from acme.llm.port import Acknowledge, DepartureAfter
+from acme.telemetry import specialist_span
 
 if TYPE_CHECKING:
     from acme.customer.runtime import CustomerRuntime, JourneyRecord
@@ -135,4 +136,5 @@ async def _departure_after(rt: CustomerRuntime, rec: JourneyRecord, after: time)
     state.open_requests.append(request)
     if state.status is DisruptionStatus.RESOLVED:
         state.transition(DisruptionStatus.REPLANNING, actor="customer_agent")
-        await rt.change_agent.handle(rt, rec, request.request_id, after)
+        with specialist_span("change", state.journey_id):
+            await rt.change_agent.handle(rt, rec, request.request_id, after)
