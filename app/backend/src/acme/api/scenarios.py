@@ -178,7 +178,8 @@ class ScenarioRunner:
         )
         return self.state()
 
-    async def step(self) -> ScenarioState:
+    async def step(self, sales_tick: bool = True) -> ScenarioState:
+        """Run the next scripted action. The engine passes False: the demo drives Sales."""
         assert self.active is not None
         step, rt = self.active.steps[self.index], self.rt
         if step.kind == "cancel":
@@ -192,7 +193,8 @@ class ScenarioRunner:
             rec = rt.journey_for_passenger(PID)
             assert rec is not None
             await (accept_offer if step.kind == "accept" else decline_offer)(rt, rec)
-        await self.radar.tick()
+        if sales_tick:
+            await self.radar.tick()
         self.index += 1
         return self.state()
 
