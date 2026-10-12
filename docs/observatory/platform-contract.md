@@ -28,7 +28,7 @@ observatory/
 | Project / region | `acme-airlines-factory` / `us-central1` | |
 | Dashboard service | Cloud Run `acme-observatory` | **Behind IAP** (domains `google.com`, `duboc.altostrat.com`). It runs a placeholder until the first deploy. Keep `--no-allow-unauthenticated`; never disable IAP. |
 | Collector job | Cloud Run job `acme-observatory-collector` | Direct VPC egress to the hub. **Cloud Scheduler** `acme-observatory-collect` runs it every 5 minutes. |
-| Dashboard SA | `acme-observatory@acme-airlines-factory.iam.gserviceaccount.com` | Read-only. BigQuery `jobUser`, READER on `billing_export` and `factory_ops`, `monitoring.viewer`, `logging.viewer`, `compute.viewer` on the hub VM. |
+| Dashboard SA | `acme-observatory@acme-airlines-factory.iam.gserviceaccount.com` | Read-only. BigQuery `jobUser`, READER on `billing_export` and `factory_ops`, `monitoring.viewer`, `logging.viewer`, `cloudtrace.user` (read traces, #158), `compute.viewer` on the hub VM. |
 | Collector SA | `acme-observatory-collector@…` | BigQuery `jobUser`, WRITER on `factory_ops`, accessor on the two secrets below. |
 | Image repo | `us-central1-docker.pkg.dev/acme-airlines-factory/observatory` | Images `dashboard` and `collector`. |
 

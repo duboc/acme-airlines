@@ -286,6 +286,10 @@ check_observatory() {
   gcloud run jobs describe acme-observatory-collector --region="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" job:acme-observatory-collector"
   gcloud scheduler jobs describe acme-observatory-collect --location="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" scheduler:acme-observatory-collect"
   gh_var OBSERVATORY_WIF_PROVIDER || missing+=" gh-var:OBSERVATORY_WIF_PROVIDER"
+  gcloud projects get-iam-policy "${p}" --format=json 2>/dev/null \
+    | jq -e --arg m "serviceAccount:acme-observatory@${p}.iam.gserviceaccount.com" \
+        '.bindings[] | select(.role=="roles/cloudtrace.user") | .members | index($m)' >/dev/null \
+    || missing+=" cloudtrace.user->acme-observatory"
   [[ -z "${missing}" ]] || { fail observatory "missing:${missing}"; return 1; }
   local note=""
   gcloud secrets versions list acme-observatory-github-token --project="${p}" --filter=state=ENABLED --format='value(name)' 2>/dev/null | grep -q . \
