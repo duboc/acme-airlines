@@ -86,3 +86,20 @@ Tests: `tests/unit/test_telemetry.py` (allowlist) and
 It pins third-party loggers (`mcp`, `httpx`, `google_genai`, `google.adk`, ...) to WARNING+ and
 masks fixture PII, emails and phone numbers on every log record, so Cloud Logging never gets
 passenger data. Test: `tests/unit/test_logging_setup.py`.
+
+## `acme-sales-agent` (`acme.engines.sales`)
+
+`build_sales_engine_app()` wraps the unchanged `SalesAgent` and `SalesRadar`. Inventory comes from an in-process simulator that authenticates as `sales` only. Operation: `async_stream_query` (one radar tick).
+
+**Transport.** Sales' only outbound path is `EngineCustomerClient` (`acme.sales.client`), a `CustomerPort` over the Customer engine's `a2a_skill`. It exposes exactly `list_journeys`, `journey_status` and `propose_offer`, with no generic "call any skill". The Customer side enforces the allowlist and the structured-offer schema, and the guardrail stays in code. The client accepts both error shapes (`{"error": ...}` and a JSON-RPC body).
+
+| Variable | Value |
+|---|---|
+| `ENGINE_MODE` | `local` (default): `A2ACustomerClient` over HTTP `/a2a`. `agent-engine`: `EngineCustomerClient`. |
+| `ACME_CUSTOMER_ENGINE` | Full resource name `projects/<p>/locations/<l>/reasoningEngines/<id>`. Required when `ENGINE_MODE=agent-engine`. |
+
+The governance suites (`tests/governance`) run over **both** transports. Tests use a fake handle that routes to a local Customer engine app, with no GCP.
+
+### Security boundary
+
+Both engines run as `acme-agent-engine` (project-wide `aiplatform.user`), so IAM does not stop the Sales engine from calling the Customer engine's demo ops, which return passenger data. The boundary is enforced in code: `EngineCustomerClient` exposes only the three skills, via `a2a_skill`. The governance architecture test (`tests/governance/test_architecture.py`) checks that Sales sources never call any other Customer engine operation. This is the same posture as local mode, and it is a known, accepted residual risk (security audit of #178).

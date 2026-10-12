@@ -21,8 +21,9 @@ from acme.customer.skills import CustomerSkills
 from acme.domain.clock import FixedClock
 from acme.domain.fixtures import DISRUPTION_DETECTED_AT, GRU
 from acme.domain.journey import DisruptionStatus as S
+from acme.engines.customer import build_customer_engine_app
 from acme.llm import FakeLlm
-from acme.sales.client import A2ACustomerClient
+from acme.sales.client import A2ACustomerClient, EngineCustomerClient
 from acme.sales.radar import SalesRadar
 from acme.sim.client import SimClient, inprocess_connector
 from acme.sim.dcs import dcs_state
@@ -57,8 +58,16 @@ def offer_payload(jid: str, **over) -> dict:
     return {**base, **over}
 
 
+def engine_over(rt: CustomerRuntime):
+    """A local Customer engine app on `rt`, used as the (fake, no-GCP) engine handle."""
+    app = build_customer_engine_app()
+    app.set_up()
+    app.runtime, app.skills = rt, CustomerSkills(rt)
+    return app
+
+
 class Flow:
-    def __init__(self) -> None:
+    def __init__(self, transport: str = "http") -> None:
         self.llm = SpyLlm()
         self.rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT), llm=self.llm)
         self.skills = CustomerSkills(self.rt)
@@ -71,9 +80,12 @@ class Flow:
         self.http = httpx.AsyncClient(
             transport=httpx.MockTransport(handler), base_url="http://customer"
         )
-        self.radar = SalesRadar(
-            A2ACustomerClient(self.http), SimClient(inprocess_connector(self.rt.sim, "sales"))
+        customer = (
+            EngineCustomerClient(engine_over(self.rt))
+            if transport == "engine"
+            else A2ACustomerClient(self.http)
         )
+        self.radar = SalesRadar(customer, SimClient(inprocess_connector(self.rt.sim, "sales")))
         self.jid = ""
 
     # --- the story, one step at a time; the Sales radar ticks after every step ---------------

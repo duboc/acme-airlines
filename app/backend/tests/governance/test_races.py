@@ -13,9 +13,9 @@ from acme.sim.client import ToolError
 from tests.governance.flow import Flow, offer_payload
 
 
-@pytest.fixture
-async def flow():
-    f = Flow()
+@pytest.fixture(params=["http", "engine"])
+async def flow(request):
+    f = Flow(request.param)
     yield f
     await f.http.aclose()
 
