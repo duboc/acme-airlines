@@ -181,3 +181,20 @@ global-only rule.
 **Fix:** the contract is corrected. The model location now comes from
 `ACME_GENAI_LOCATION=global` and is passed explicitly to the client. The
 app-code change is #190 (team).
+
+## Observatory panels empty: the collector never succeeded
+
+**Symptom:** the GitHub flow and Agent runs panels were empty for days.
+`factory_ops` had no tables.
+
+**Root cause:** every collector execution exited 2:
+`Failed to initialize cache at /home/collector/.cache/uv … Permission denied`.
+The image creates its user with `--no-create-home` but runs `uv run` at runtime.
+
+**Stopgap (operator):** `gcloud run jobs update acme-observatory-collector
+--update-env-vars=UV_CACHE_DIR=/tmp/uv-cache,HOME=/tmp`. The next run wrote 12
+agent rows and 1 GitHub row. The GitHub token was also mounted (#141). The
+permanent fix and a collector-health indicator are a team p0 issue.
+
+**Lesson:** the dashboard showed "empty" instead of "my pipeline is down".
+Health checks have to cover the data pipeline, not just the service.

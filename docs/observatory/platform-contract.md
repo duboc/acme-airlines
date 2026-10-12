@@ -54,6 +54,7 @@ observatory/
 | `GITHUB_REPO` | collector | `duboc/acme-airlines` |
 | `SCION_HUB_TOKEN` | collector (secret) | `acme-observatory-hub-token`. A hub UAT with **`agent:list`, `agent:read`**, project-scoped, 90 days. Use it as `Authorization: Bearer`, or with the scion CLI (`SCION_HUB_ENDPOINT` + `SCION_HUB_TOKEN`). |
 | `GITHUB_TOKEN` | collector (secret, **add to the job on first deploy**: `--update-secrets=GITHUB_TOKEN=acme-observatory-github-token:latest`; not `--set-secrets`/`--clear-secrets`, which replace all of the job's secret mappings and would drop `SCION_HUB_TOKEN`). While the secret has no version, the deploy removes the mapping with `--remove-secrets=GITHUB_TOKEN`: a mapping to a versionless secret makes every later job deploy fail with "secret ... was not found" | A read-only GitHub PAT, provided by the product owner. Until it exists, skip the GitHub snapshot and log a warning. |
+| `UV_CACHE_DIR`, `HOME` | collector (operator **stopgap**) | `/tmp/uv-cache`, `/tmp`. Works around a `uv` cache permission error at startup; to be removed once the image runs the venv interpreter directly. |
 | `OBSERVATORY_DATA` | tests / local | `fake` makes everything read `observatory/fixtures/`. **CI must use `fake`.** |
 
 ## Deploy (GitHub Actions, keyless)
