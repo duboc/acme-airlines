@@ -236,6 +236,44 @@ class CustomerEngineApp:
         timeline = self._journey(journey_id).state.timeline
         return [e.model_dump(mode="json") for e in timeline[max(since, 0) :]]
 
+    # --- phone panel, reset and trigger (#181): the API's own functions, errors as data -------
+    async def _api(self, fn, *args) -> dict[str, Any] | list[Any]:
+        from fastapi import HTTPException
+
+        try:
+            out = await fn(self.runtime, *args)
+        except HTTPException as exc:  # remote calls lose exception types; the backend re-raises
+            return {"error": {"status": exc.status_code, "detail": exc.detail}}
+        return (
+            [m.model_dump(mode="json") for m in out]
+            if isinstance(out, list)
+            else (out.model_dump(mode="json"))
+        )
+
+    def reset(self) -> dict[str, str]:
+        self.runtime.reset()
+        return {"status": "reset"}
+
+    async def trigger_cancellation(self, flight: str, reason: str) -> dict[str, Any]:
+        from acme.api.app import do_trigger
+
+        return await self._api(do_trigger, flight, reason)
+
+    async def whatsapp_messages(self, passenger_id: str):
+        from acme.api.app import do_messages
+
+        return await self._api(do_messages, passenger_id)
+
+    async def whatsapp_reply(self, passenger_id: str, text: str) -> dict[str, Any]:
+        from acme.api.app import do_reply
+
+        return await self._api(do_reply, passenger_id, text)
+
+    async def whatsapp_action(self, passenger_id: str, action: str) -> dict[str, Any]:
+        from acme.api.app import do_action
+
+        return await self._api(do_action, passenger_id, action)
+
     def register_operations(self) -> dict[str, list[str]]:
         return {
             "": [
@@ -244,10 +282,19 @@ class CustomerEngineApp:
                 "scenario_state",
                 "journeys_list",
                 "journey_events",
+                "reset",
             ],
             "stream": ["stream_query"],
             "async_stream": ["async_stream_query"],
-            "async": ["a2a_skill", "scenario_step", "journey_detail"],
+            "async": [
+                "a2a_skill",
+                "scenario_step",
+                "journey_detail",
+                "trigger_cancellation",
+                "whatsapp_messages",
+                "whatsapp_reply",
+                "whatsapp_action",
+            ],
         }
 
 

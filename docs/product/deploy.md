@@ -67,16 +67,16 @@ the same API from the deployed Agent Engines: the supervisor starts only the API
 sim, Sales or agents), and the API calls the Customer engine (`AGENT_ENGINE_CUSTOMER`) and then
 the Sales engine (`AGENT_ENGINE_SALES`) with ADC. Both must be full resource names
 (`projects/<p>/locations/<l>/reasoningEngines/<id>`), written by the engine deploy workflow (#163);
-without them the app fails at startup. In this mode the WhatsApp and trigger/reset routes are not
-served yet (scenarios and journeys only).
+without them (or with a name outside `GOOGLE_CLOUD_PROJECT` or its number and
+`AGENT_ENGINE_LOCATION`, default `us-central1`) the app fails at startup. The full UI works in this
+mode: scenarios, journeys, the WhatsApp phone panel, reset and trigger all go to the Customer engine.
 
 `irrops-deploy.yml` sets `ENGINE_MODE` after swapping the image, using
 `app/demo/select-engine-mode.sh <HOSTED_ENGINE_MODE> <service env names>`. `HOSTED_ENGINE_MODE` is
-committed in the workflow as **`local`**, which always yields `local` (the hosted demo stays on the
-in-container agents until #181 gives agent-engine mode the phone panel, reset and trigger). Setting
-it to `auto` yields `agent-engine` only if the service already has both `AGENT_ENGINE_*` variables,
-otherwise `local`, so a missing or broken engine deploy never breaks the hosted demo. Both values
-are tested in `tests/api/test_engine_mode.py`.
+committed in the workflow as **`auto`**: `agent-engine` only if the service already has both
+`AGENT_ENGINE_*` variables, otherwise `local`, so a missing or broken engine deploy never breaks the
+hosted demo. Set it to `local` to force the in-container agents. Tested in
+`tests/api/test_engine_mode.py`.
 
 ## Cloud Run (target, not deployed)
 

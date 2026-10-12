@@ -71,14 +71,17 @@ async def run(c, sid):
         r = await c.post(f"/scenarios/{sid}/step")
         assert r.status_code == 200, r.text
         state = r.json()
-    return state, (await c.get("/journeys")).json()
+    phone = (await c.get("/whatsapp/P-MARIANA/messages")).json()
+    shape = [(m["direction"], bool(m["buttons"]), bool(m["attachments"])) for m in phone]
+    return state, (await c.get("/journeys")).json(), shape
 
 
 @pytest.mark.parametrize("sid", IDS)
 async def test_presets_through_the_http_api_match_local_mode(sid, engine_app):
     async with client(create_app()) as local, client(engine_app) as remote:
-        want, want_journeys = await run(local, sid)
-        got, got_journeys = await run(remote, sid)
+        want, want_journeys, want_phone = await run(local, sid)
+        got, got_journeys, got_phone = await run(remote, sid)
+        assert got_phone == want_phone  # the phone panel, structurally
         assert {k: got[k] for k in STRUCTURAL} == {k: want[k] for k in STRUCTURAL}
         assert got_journeys == want_journeys
         if want_journeys:
@@ -101,6 +104,35 @@ async def test_route_errors_match_local(engine_app):
         assert (await c.get("/healthz")).json()["engine"] == "agent-engine"
 
 
+async def test_phone_reset_and_trigger_routes_match_local(engine_app):
+    async with client(create_app()) as local, client(engine_app) as remote:
+        for c in (local, remote):
+            await c.post("/scenario/reset")
+            assert (
+                await c.post(
+                    "/scenario/trigger-cancellation", json={"flight": "AC9", "reason": "x"}
+                )
+            ).status_code == 404
+            assert (await c.get("/whatsapp/P-NOPE/messages")).status_code == 404
+            assert (
+                await c.post("/whatsapp/P-MARIANA/actions", json={"action": "accept_offer"})
+            ).status_code == 409
+            assert (
+                await c.post("/whatsapp/P-MARIANA/messages", json={"text": ""})
+            ).status_code == 422
+        results = []
+        for c in (local, remote):
+            r = await c.post(
+                "/scenario/trigger-cancellation", json={"flight": "AC1234", "reason": "x"}
+            )
+            await c.post("/whatsapp/P-MARIANA/messages", json={"text": "Perfect, thanks!"})
+            msgs = (await c.get("/whatsapp/P-MARIANA/messages")).json()
+            results.append((r.status_code, r.json()["journey_ids"], [m["direction"] for m in msgs]))
+        assert results[0] == results[1]
+        await remote.post("/scenario/reset")
+        assert (await remote.get("/journeys")).json() == []
+
+
 async def test_a_step_runs_a_sales_engine_turn_after_the_customer_step(engine_app):
     calls = []
     backend = engine_app.state.engine_backend
@@ -116,7 +148,7 @@ async def test_a_step_runs_a_sales_engine_turn_after_the_customer_step(engine_ap
     assert order == [("customer", "scenario_step"), ("sales", "turn")]
 
 
-GOOD = "projects/p/locations/l/reasoningEngines/1"
+GOOD = "projects/acme-airlines-factory/locations/us-central1/reasoningEngines/1"
 
 
 @pytest.mark.parametrize(
@@ -137,6 +169,14 @@ def test_agent_engine_mode_fails_fast_without_resources(monkeypatch, env):
         create_app()
 
 
+def test_valid_names_are_accepted_by_project_id_or_number(monkeypatch):
+    from acme.api.engine_backend import _resource
+
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "acme-airlines-factory")
+    env = {"X": GOOD, "Y": GOOD.replace("acme-airlines-factory", "123456789")}
+    assert _resource(env, "X") == GOOD and _resource(env, "Y")
+
+
 def test_supervisor_starts_no_local_sim_or_sales_in_agent_engine_mode():
     assert child_names({}) == ("sim", "customer")
     assert child_names({"ENGINE_MODE": "local"}) == ("sim", "customer")
@@ -149,7 +189,7 @@ BOTH = "PORT\nAGENT_ENGINE_CUSTOMER\nAGENT_ENGINE_SALES"
 @pytest.mark.parametrize(
     ("policy", "names", "mode"),
     [
-        ("local", BOTH, "local"),  # the committed default: never switches
+        ("local", BOTH, "local"),  # `local` never switches
         ("auto", BOTH, "agent-engine"),
         ("auto", "AGENT_ENGINE_CUSTOMER", "local"),
         ("auto", "", "local"),
@@ -157,13 +197,15 @@ BOTH = "PORT\nAGENT_ENGINE_CUSTOMER\nAGENT_ENGINE_SALES"
     ],
 )
 def test_deploy_mode_selection(policy, names, mode):
-    run_ = subprocess.run(["sh", str(SCRIPT), policy, names], capture_output=True, text=True)
+    run_ = subprocess.run(
+        ["sh", str(SCRIPT), policy, *names.split()], capture_output=True, text=True
+    )
     assert run_.stdout.strip() == mode
 
 
-def test_workflow_ships_hosted_engine_mode_local():
+def test_workflow_ships_hosted_engine_mode_auto():
     wf = (SCRIPT.parents[2] / ".github/workflows/irrops-deploy.yml").read_text()
-    assert "\n  HOSTED_ENGINE_MODE: local\n" in wf
+    assert "\n  HOSTED_ENGINE_MODE: auto\n" in wf
 
 
 async def test_backend_logs_no_passenger_data(engine_app, caplog):
