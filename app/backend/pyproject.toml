@@ -10,6 +10,7 @@ dependencies = [
     "google-genai>=2.29.0",
     "fastapi>=0.143.0",
     "google-adk[a2a]>=1.10.0",
+    "google-cloud-aiplatform[adk,agent-engines]>=1.112,<2",
 ]
 
 [project.scripts]
