@@ -35,7 +35,7 @@ def test_endpoint_returns_metrics_and_traces_per_engine():
 
 
 class Denied(FakeDataSource):
-    def agent_engine_traces(self, name, limit):
+    def agent_engine_traces(self, name, limit, hours):
         raise TraceNotGranted("no")
 
 
@@ -100,7 +100,7 @@ def test_gcp_traces_map_root_spans_and_hide_labels():
               labels={"user.email": "x@y.z"})  # fmt: skip
     trace = MagicMock()
     trace.list_traces.return_value = [NS(trace_id="abc", spans=[span])]
-    rows = gcp(trace=trace).agent_engine_traces("acme-customer-agent", 10)
+    rows = gcp(trace=trace).agent_engine_traces("acme-customer-agent", 10, 24)
     assert rows[0]["duration_ms"] == 2000.0 and rows[0]["status"] == "ok"
     assert "x@y.z" not in str(rows)
     assert (
@@ -113,8 +113,46 @@ def test_gcp_traces_403_raises_not_granted():
     trace = MagicMock()
     trace.list_traces.side_effect = Forbidden("nope")
     with pytest.raises(TraceNotGranted):
-        gcp(trace=trace).agent_engine_traces("acme-customer-agent", 10)
+        gcp(trace=trace).agent_engine_traces("acme-customer-agent", 10, 24)
 
 
 def test_gcp_no_config_means_no_engines():
     assert GcpDataSource("p", MagicMock(), MagicMock(), MagicMock()).agent_engines() == []
+
+
+def test_parse_engines_drops_empty_and_invalid(monkeypatch):
+    from dashboard.gcp import parse_engines
+
+    raw = 'acme-customer-agent=123,,bad=x"y,acme-sales-agent=,=5,b ad=7,ok_1=9,'
+    assert parse_engines(raw) == {"acme-customer-agent": "123", "ok_1": "9"}
+
+
+def test_constructor_skips_invalid_engines():
+    src = GcpDataSource(
+        "p", MagicMock(), MagicMock(), MagicMock(),
+        engines={"good": "1", 'bad"': "2", "x": "abc"},
+    )  # fmt: skip
+    assert src.agent_engines() == [{"name": "good", "engine_id": "1"}]
+
+
+def test_trace_window_follows_hours_capped_at_24h():
+    trace = MagicMock()
+    trace.list_traces.return_value = []
+    src = gcp(trace=trace)
+    for hours, expect in ((1, 1), (6, 6), (100, 24)):
+        src.agent_engine_traces("acme-customer-agent", 10, hours)
+        r = trace.list_traces.call_args.kwargs["request"]
+        assert r["end_time"] - r["start_time"] == timedelta(hours=expect)
+
+
+def test_http_status_400_plus_is_error():
+    start = NOW - timedelta(minutes=5)
+    trace = MagicMock()
+
+    def mk(code):
+        span = NS(name="r", start_time=start, end_time=start, labels={"/http/status_code": code})
+        return NS(trace_id=code, spans=[span])
+
+    trace.list_traces.return_value = [mk("500"), mk("200"), mk("junk")]
+    rows = gcp(trace=trace).agent_engine_traces("acme-customer-agent", 10, 1)
+    assert [r["status"] for r in rows] == ["error", "ok", "ok"]

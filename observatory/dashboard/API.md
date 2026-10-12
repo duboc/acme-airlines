@@ -86,14 +86,15 @@ log lines, newest first; `action` is `no action | agents suspended`. `budget_usd
 ```
 - **Discovery:** from config, not the `aiplatform` list API (the dashboard SA has no `aiplatform.viewer`).
   Set `AGENT_ENGINES="acme-customer-agent=<reasoning_engine_id>,acme-sales-agent=<id>"` on the service.
+  Entries with an empty or invalid name (`[a-zA-Z0-9_-]+`) or id (digits only) are skipped.
   No config means `state: "empty"` and `engines: []`.
 - **Monitoring** (resource `aiplatform.googleapis.com/ReasoningEngine`, filtered by
   `resource.labels.reasoning_engine_id`): `aiplatform.googleapis.com/reasoning_engine/request_count`
   (label `response_code`; `errors` = non-2xx, `error_rate = errors / requests`, null with no requests) and
   `.../reasoning_engine/request_latencies` (ms; `ALIGN_PERCENTILE_50/95` over the window). If several series
   match, the largest percentile is shown. Confirm the metric types against the live project on first deploy.
-- **Traces** (Cloud Trace v1, root spans, last 24h, newest first, up to 10): filter `+service.name:"<display name>"`.
-  Only trace id, root span name, start, duration and status (`error` if the span has an error label) are
+- **Traces** (Cloud Trace v1, root spans, window = `hours` capped at 24h, newest first, up to 10): filter `+service.name:"<display name>"`.
+  Only trace id, root span name, start, duration and status (`error` if the span has an `error` label or `/http/status_code` >= 400) are
   returned; no span attribute values.
 - **Degradation:** if Trace returns 403 (the SA lacks `cloudtrace.user`, issue #158) the engine has
   `"traces": null, "trace_access": "not_granted"`; metrics still return.

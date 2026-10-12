@@ -30,7 +30,27 @@ GUARD_FILTER = (
 ENGINE_REQUESTS = "aiplatform.googleapis.com/reasoning_engine/request_count"  # label response_code
 ENGINE_LATENCY = "aiplatform.googleapis.com/reasoning_engine/request_latencies"  # ms distribution
 ENGINE_LABEL = "resource.labels.reasoning_engine_id"
+NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+ID_RE = re.compile(r"^[0-9]+$")
 TABLE_RE = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def valid_engine(name: str, engine_id: str) -> bool:
+    return bool(NAME_RE.match(name) and ID_RE.match(engine_id))
+
+
+def parse_engines(raw: str) -> dict[str, str]:
+    """``name=id,name=id`` -> dict, skipping empty or invalid entries (log the name only)."""
+    out: dict[str, str] = {}
+    for part in raw.split(","):
+        name, _, engine_id = (x.strip() for x in part.partition("="))
+        if not part:
+            continue
+        if valid_engine(name, engine_id):
+            out[name] = engine_id
+        else:
+            log.warning("ignoring invalid AGENT_ENGINES entry %r", name[:60])
+    return out
 
 
 def jsonable(v):
@@ -89,7 +109,8 @@ class GcpDataSource:
         self._billing_ds, self._ops_ds = billing_dataset, ops_dataset
         self._ttl, self.now, self._monotonic = ttl, now, monotonic
         self._cache: dict = {}
-        self._engines, self._trace = engines or {}, trace_client
+        self._engines = {n: i for n, i in (engines or {}).items() if valid_engine(n, i)}
+        self._trace = trace_client
 
     @classmethod
     def from_env(cls) -> "GcpDataSource":
@@ -97,10 +118,7 @@ class GcpDataSource:
         from google.cloud import logging as cloud_logging
 
         project = os.environ["PROJECT_ID"]
-        pairs = (
-            p.split("=", 1) for p in os.environ.get("AGENT_ENGINES", "").split(",") if "=" in p
-        )
-        engines = {n.strip(): i.strip() for n, i in pairs}
+        engines = parse_engines(os.environ.get("AGENT_ENGINES", ""))
         return cls(
             project,
             bigquery.Client(project=project),
@@ -260,14 +278,14 @@ class GcpDataSource:
         return out
 
     @guarded("Agent Engine traces")
-    def agent_engine_traces(self, name: str, limit: int) -> Rows:
+    def agent_engine_traces(self, name: str, limit: int, hours: int) -> Rows:
         from google.cloud import trace_v1
 
         end = self.now()
         request = {
             "project_id": self._project,
             "view": trace_v1.ListTracesRequest.ViewType.ROOTSPAN,
-            "start_time": end - timedelta(hours=24),
+            "start_time": end - timedelta(hours=min(hours, 24)),
             "end_time": end,
             "filter": f'+service.name:"{name}"',
             "order_by": "start desc",
@@ -283,7 +301,8 @@ class GcpDataSource:
             if root is None:
                 continue
             ms = (root.end_time - root.start_time).total_seconds() * 1000
-            failed = root.labels.get("error") == "true" or "error" in root.labels
+            code = str(root.labels.get("/http/status_code", ""))
+            failed = "error" in root.labels or (code.isdigit() and int(code) >= 400)
             rows.append(
                 {
                     "trace_id": t.trace_id,

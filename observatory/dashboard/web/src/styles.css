@@ -266,3 +266,33 @@ details summary {
 .scroll:focus-visible {
   outline-offset: -3px;
 }
+.engine {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.engine h3 {
+  font-size: 0.9375rem;
+  margin: 0 0 0.25rem;
+}
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin: 0;
+}
+.metrics dt {
+  font-size: 0.75rem;
+}
+.metrics dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.traces {
+  margin: 0.5rem 0 0;
+  padding-left: 1rem;
+  font-size: 0.8125rem;
+}
+.note {
+  font-size: 0.8125rem;
+  margin: 0.25rem 0;
+}
