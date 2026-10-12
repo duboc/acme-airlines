@@ -64,6 +64,8 @@ def validate_env(env: Mapping[str, str] | None = None) -> str:
     try:
         mode = load_llm_mode(env)
         if mode == "vertex":
+            if not env.get("GOOGLE_CLOUD_PROJECT"):
+                raise EngineConfigError("GOOGLE_CLOUD_PROJECT must be set when LLM_MODE=vertex")
             load_vertex_config(env)
     except LlmConfigError as exc:
         raise EngineConfigError(str(exc)) from exc
@@ -150,6 +152,15 @@ class CustomerEngineApp:
     ) -> Iterator[dict[str, Any]]:
         import asyncio
 
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise RuntimeError(
+                "stream_query cannot run inside a running event loop; use async_stream_query"
+            )
+
         async def collect() -> list[dict[str, Any]]:
             return [
                 e async for e in self.async_stream_query(
@@ -160,7 +171,7 @@ class CustomerEngineApp:
         yield from asyncio.run(collect())
 
     async def a2a_skill(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
-        """Same dispatch as HTTP `/a2a`: returns the skill's data, or `{"error": {...}}`."""
+        """Same dispatch as HTTP `/a2a`: the skill's data, or its JSON-RPC error body as is."""
         request = {
             "jsonrpc": "2.0", "id": 1, "method": "message/send",
             "params": {"message": {
@@ -170,7 +181,7 @@ class CustomerEngineApp:
         }  # fmt: skip
         reply = await self.skills.handle_a2a(request)
         if "error" in reply:
-            return {"error": reply["error"]}
+            return reply
         return reply["result"]["parts"][0]["data"]
 
     # --- demo operations (#162): JSON-serialisable dicts, same shapes as the HTTP API ---------
