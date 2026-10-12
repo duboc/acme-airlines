@@ -76,4 +76,28 @@ kexpect 1 "* * * * *"
 kexpect 1 "0,15,30,45 * * * *"
 kexpect 1 ""
 
+eexpect() {  # eexpect <0|1> <name> <json>
+  if engines_ok "$3" >/dev/null; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+SA_OK="acme-agent-engine@acme-airlines-factory.iam.gserviceaccount.com"
+mkeng() { printf '{"displayName":"%s","name":"projects/p/locations/us-central1/reasoningEngines/%s","spec":{"serviceAccount":"%s","deploymentSpec":{"env":[%s]}}}' "$1" "$2" "$3" "$4"; }
+C="$(mkeng acme-customer-agent 1 "$SA_OK" '{"name":"LLM_MODE","value":"vertex"},{"name":"ACME_GENAI_LOCATION","value":"global"}')"
+S="$(mkeng acme-sales-agent 2 "$SA_OK" '{"name":"LLM_MODE","value":"vertex"}')"
+eexpect 0 "both engines, right SA, clean env" "{\"reasoningEngines\":[$C,$S]}"
+eexpect 1 "no engines" '{}'
+eexpect 1 "sales missing" "{\"reasoningEngines\":[$C]}"
+eexpect 1 "duplicate customer" "{\"reasoningEngines\":[$C,$C,$S]}"
+eexpect 1 "wrong SA" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 other@x '' ),$S]}"
+eexpect 1 "reserved env var" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '{"name":"GOOGLE_CLOUD_LOCATION","value":"global"}'),$S]}"
+
+texp() {  # texp <0|1> <name> <json>
+  if agent_traces_ok "$3" >/dev/null; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+texp 0 "ADK agent spans present" '{"traces":[{"spans":[{"name":"invoke_agent acme_customer"},{"name":"call_llm"}]}]}'
+texp 0 "tool span counts" '{"traces":[{"spans":[{"name":"execute_tool rebook"}]}]}'
+texp 1 "only Cloud Run request spans" '{"traces":[{"spans":[{"name":"/api/scenarios"}]}]}'
+texp 1 "no traces" '{}'
+
 if [[ "${fails}" == 0 ]]; then echo "PASS test_verify"; else echo "FAIL test_verify (${fails})"; exit 1; fi
