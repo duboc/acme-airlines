@@ -47,7 +47,8 @@ click. The full sequence, with the reasoning behind it, is in
 6. [Observability and verification](06-observability.md): `verify.sh`, the Observatory, traces
 7. [Lessons learned](07-lessons-learned.md): every gotcha we hit, with root cause and fix
 8. [New-factory checklist](08-new-factory-checklist.md)
-9. [Scripts](scripts/README.md): `bootstrap.sh`, `factory.env.example`, and the infra script map
+9. [IAP: user access to the web UIs](09-iap.md): access layers, the custom OAuth client, troubleshooting
+10. [Scripts](scripts/README.md): `bootstrap.sh`, `factory.env.example`, and the infra script map
 
 ## Related records in this repo
 

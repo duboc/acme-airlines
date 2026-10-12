@@ -25,6 +25,7 @@ Full write-ups are in [`docs/setup/03-troubleshooting.md`](../setup/03-troublesh
    `domain:google.com` bound. Google-managed OAuth clients admit only users
    inside the org. **Fix:** a custom OAuth client (External, In production),
    applied with `55-iap-oauth-client.sh`, and `verify.sh iap-oauth`.
+   Details: [09-iap.md](09-iap.md).
 7. **`deploy.sh` re-runs reset `settings.yaml`.** **Fix:** re-apply
    `50-web-access.sh` and `55-iap-oauth-client.sh --reapply` after every
    redeploy. Marked blocks make them idempotent.
