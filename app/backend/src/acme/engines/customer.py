@@ -54,8 +54,13 @@ def engine_requirements() -> list[str]:
 
 
 def engine_extra_packages() -> list[str]:
-    """`extra_packages=` for `agent_engines.create/update`, relative to `app/backend`."""
-    return ["src/acme"]
+    """`extra_packages=` for `agent_engines.create/update`, relative to `deploy.package_root()`.
+
+    The SDK tars each path as given (`tar.add(path)`), so the tarball must hold `acme/...` at its
+    root for `import acme` to work in the container (#185). Hence "acme", not "src/acme"; the
+    deploy runs from the directory that contains the package.
+    """
+    return ["acme"]
 
 
 def validate_env(env: Mapping[str, str] | None = None) -> str:
