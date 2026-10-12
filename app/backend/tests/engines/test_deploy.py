@@ -92,3 +92,28 @@ def test_workflow_has_no_pr_trigger_and_uses_wif_only():
     assert "secrets." not in text and "pull_request" not in text
     assert "--set-env-vars" not in text and "--update-env-vars" in text
     assert "ENGINE_MODE" not in text  # the demo's ENGINE_MODE belongs to #164
+
+
+def test_bucket_403_fails_fast_pointing_at_the_operator_issue(monkeypatch, capsys):
+    import sys
+    import types
+
+    from google.api_core.exceptions import Forbidden
+
+    from acme.engines import deploy as mod
+
+    class Boom:
+        def list(self, **_):
+            raise Forbidden("GET https://storage.googleapis.com/storage/v1/b/stage: 403")
+
+    fake_vertexai = types.SimpleNamespace(init=lambda **_: None, agent_engines=Boom())
+    monkeypatch.setitem(sys.modules, "vertexai", fake_vertexai)
+    monkeypatch.setitem(sys.modules, "vertexai.agent_engines", fake_vertexai.agent_engines)
+    for k, v in {
+        **ENV,
+        "AGENT_ENGINE_LOCATION": "us-central1",
+        "AGENT_ENGINE_STAGING_BUCKET": "stage",
+    }.items():
+        monkeypatch.setenv(k, v)
+    assert mod.main() == 1
+    assert "#186" in capsys.readouterr().err

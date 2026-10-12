@@ -41,3 +41,25 @@ def test_existing_sdk_provider_is_left_untouched(monkeypatch):
     rec = Recorder(monkeypatch, TracerProvider())
     assert telemetry.configure_cloud_trace("acme-sales-agent", FakeExporter) is False
     assert rec.set == []
+
+
+def test_a_failing_exporter_never_raises(monkeypatch):
+    monkeypatch.setenv(telemetry.TELEMETRY_ENV, "true")
+    Recorder(monkeypatch, object())
+
+    def boom():
+        raise RuntimeError("no ADC")
+
+    assert telemetry.configure_cloud_trace("acme-sales-agent", boom) is False
+
+
+def test_demo_entrypoints_do_not_import_the_otel_sdk_or_exporter():
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, acme.demo.supervisor, acme.api.app, acme.sales.main, acme.customer.main;"
+        "bad=[k for k in sys.modules if k.startswith('opentelemetry.sdk') or"
+        " k.startswith('opentelemetry.exporter')]; assert not bad, bad"
+    )
+    subprocess.run([sys.executable, "-W", "ignore", "-c", code], check=True)

@@ -77,6 +77,12 @@ def deploy(sdk: AgentEngineSdk, env: Mapping[str, str]) -> dict[str, str]:
     return {customer.DISPLAY_NAME: cust, sales.DISPLAY_NAME: sal}
 
 
+BUCKET_HINT = (
+    "403 on the staging bucket: the SDK calls storage.buckets.get (vertexai _agent_engines.py "
+    "_get_gcs_bucket), which the deployer SA lacks. Needs an operator grant; see issue #186."
+)
+
+
 def main() -> int:
     import vertexai
     from vertexai import agent_engines
@@ -92,6 +98,11 @@ def main() -> int:
     except DeployError as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
+    except Exception as exc:  # noqa: BLE001
+        if type(exc).__name__ == "Forbidden" and "storage.googleapis.com" in str(exc):
+            print(f"::error::{BUCKET_HINT}", file=sys.stderr)
+            return 1
+        raise
     ids = ",".join(f"{n}={r.rsplit('/', 1)[-1]}" for n, r in names.items())
     for n, r in names.items():
         print(f"{n}: {r}")
