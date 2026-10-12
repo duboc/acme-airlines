@@ -99,6 +99,31 @@ def _verification(rec: JourneyRecord) -> dict[str, bool] | None:
     return found[-1] if found else None
 
 
+def journey_summary(rec: JourneyRecord) -> JourneySummary:
+    return JourneySummary(
+        journey_id=rec.state.journey_id, passenger_id=rec.passenger_id, status=rec.state.status
+    )
+
+
+def journey_detail_view(rt: Runtime, rec: JourneyRecord) -> JourneyDetail:
+    """The `GET /journeys/{id}` body; shared with the Customer Agent Engine operations (#162)."""
+    pnr: PNR = rt.world.pnrs[rec.pnr_locator]
+    offers = [o for o in rec.state.offers if o.status not in ("invalidated", "rejected")]
+    return JourneyDetail(
+        journey_id=rec.state.journey_id,
+        passenger_id=rec.passenger_id,
+        status=rec.state.status,
+        resolution_acknowledged=rec.state.resolution_acknowledged,
+        itinerary=pnr.segments,
+        seat=pnr.seats[0] if pnr.seats else None,
+        bags=pnr.bags,
+        hotel=rec.hotel,
+        vouchers=rec.vouchers,
+        offer=_offer_view(offers[-1] if offers else None),
+        verification=_verification(rec),
+    )
+
+
 def create_app(clock: Clock | None = None) -> FastAPI:
     app = FastAPI(title="ACME Airlines runtime API", version="0.1.0")
     app.add_middleware(
@@ -172,30 +197,12 @@ def create_app(clock: Clock | None = None) -> FastAPI:
 
     @app.get("/journeys", tags=["journeys"])
     async def list_journeys() -> list[JourneySummary]:
-        return [
-            JourneySummary(journey_id=j, passenger_id=r.passenger_id, status=r.state.status)
-            for j, r in rt.journeys.items()
-        ]
+        return [journey_summary(r) for r in rt.journeys.values()]
 
     @app.get("/journeys/{journey_id}", tags=["journeys"])
     async def journey_detail(journey_id: str) -> JourneyDetail:
         await rt.tick()
-        rec = get_journey(journey_id)
-        pnr: PNR = rt.world.pnrs[rec.pnr_locator]
-        offers = [o for o in rec.state.offers if o.status not in ("invalidated", "rejected")]
-        return JourneyDetail(
-            journey_id=journey_id,
-            passenger_id=rec.passenger_id,
-            status=rec.state.status,
-            resolution_acknowledged=rec.state.resolution_acknowledged,
-            itinerary=pnr.segments,
-            seat=pnr.seats[0] if pnr.seats else None,
-            bags=pnr.bags,
-            hotel=rec.hotel,
-            vouchers=rec.vouchers,
-            offer=_offer_view(offers[-1] if offers else None),
-            verification=_verification(rec),
-        )
+        return journey_detail_view(rt, get_journey(journey_id))
 
     @app.get(
         "/journeys/{journey_id}/events",

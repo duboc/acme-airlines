@@ -5,13 +5,27 @@ A custom Agent Engine template (``set_up`` + ``register_operations``) over the u
 enterprise systems run in-process (`inprocess_connector`), so the engine makes no network calls
 of its own. Operations: ``async_stream_query`` / ``stream_query`` (ADK turn) and ``a2a_skill``
 (the same three-skill dispatch as the HTTP ``/a2a`` path, enforced server-side).
+
+Demo operations (#162): ``scenarios_list``, ``scenario_start``, ``scenario_step`` (the Customer
+half: the demo drives the Sales tick), ``scenario_state``, ``journeys_list``, ``journey_detail``
+and ``journey_events``. They reuse `acme.api.scenarios` and the API view models. Presets are
+allowed with ``LLM_MODE=vertex`` here (the API app keeps its fake-only 404 rule); the world stays
+deterministic, only the message wording comes from the LLM, and the fact check before sending is
+unchanged (`acme.customer.outreach`).
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Mapping
 from typing import Any
+
+from google.adk.agents import BaseAgent
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.events import Event
+from google.genai import types
+from opentelemetry import trace
+from pydantic import ConfigDict
 
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
 
@@ -54,6 +68,32 @@ def validate_env(env: Mapping[str, str] | None = None) -> str:
     return mode
 
 
+class EngineOperationError(ValueError):
+    """A demo operation was called in the wrong state (the API answers 404/409 for these)."""
+
+
+class ScenarioStepAgent(BaseAgent):
+    """One scripted scenario step, run as an ADK turn so it is traced like any other turn."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    scenarios: Any  # acme.api.scenarios.ScenarioRunner
+
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+        runner = self.scenarios
+        span = trace.get_current_span()
+        span.set_attribute("acme.scenario", runner.active.id)  # ids only, never passenger data
+        span.set_attribute("acme.step", runner.index)
+        state = await runner.step(sales_tick=False)
+        yield Event(
+            invocation_id=ctx.invocation_id,
+            author=self.name,
+            content=types.Content(
+                role="model",
+                parts=[types.Part(text=f"step {state.step_index}/{state.total_steps}")],
+            ),
+        )
+
+
 class CustomerEngineApp:
     def __init__(self) -> None:
         self.llm_mode = validate_env()
@@ -63,6 +103,7 @@ class CustomerEngineApp:
         from google.adk.runners import Runner
         from google.adk.sessions import InMemorySessionService
 
+        from acme.api.scenarios import ScenarioRunner
         from acme.customer.adk_agent import build_customer_agent
         from acme.customer.runtime import CustomerRuntime
         from acme.customer.skills import CustomerSkills
@@ -74,6 +115,12 @@ class CustomerEngineApp:
             app_name=APP_NAME, agent=build_customer_agent(self.runtime),
             session_service=self._sessions,
         )  # fmt: skip
+        self.scenarios = ScenarioRunner(self.runtime)
+        self._step_runner = Runner(
+            app_name=f"{APP_NAME}-scenario",
+            agent=ScenarioStepAgent(name="scenario_step", scenarios=self.scenarios),
+            session_service=self._sessions,
+        )
 
     async def async_stream_query(
         self, *, message: str, user_id: str, session_id: str | None = None
@@ -120,11 +167,85 @@ class CustomerEngineApp:
             return {"error": reply["error"]}
         return reply["result"]["parts"][0]["data"]
 
+    # --- demo operations (#162): JSON-serialisable dicts, same shapes as the HTTP API ---------
+    def _preset(self, scenario_id: str):
+        from acme.api.scenarios import BY_ID
+
+        if scenario_id not in BY_ID:
+            raise EngineOperationError(f"unknown scenario {scenario_id}")
+        return BY_ID[scenario_id]
+
+    def _journey(self, journey_id: str):
+        if journey_id not in self.runtime.journeys:
+            raise EngineOperationError(f"unknown journey {journey_id}")
+        return self.runtime.journeys[journey_id]
+
+    def scenarios_list(self) -> list[dict[str, Any]]:
+        from acme.api.scenarios import PRESETS, preset_view
+
+        return [preset_view(p).model_dump(mode="json") for p in PRESETS]
+
+    def scenario_start(self, scenario_id: str) -> dict[str, Any]:
+        return self.scenarios.start(self._preset(scenario_id)).model_dump(mode="json")
+
+    def scenario_state(self) -> dict[str, Any]:
+        if self.scenarios.active is None:
+            raise EngineOperationError("no scenario is started")
+        return self.scenarios.state().model_dump(mode="json")
+
+    async def scenario_step(self) -> dict[str, Any]:
+        """Customer half of a step as an ADK turn. The Sales tick is driven by the demo."""
+        runner = self.scenarios
+        if runner.active is None:
+            raise EngineOperationError("no scenario is started")
+        if runner.index >= len(runner.active.steps):
+            raise EngineOperationError(f"scenario {runner.active.id} is finished; start it again")
+        sid = f"scenario-{runner.active.id}"
+        if (
+            await self._sessions.get_session(
+                app_name=f"{APP_NAME}-scenario", user_id="demo", session_id=sid
+            )
+            is None
+        ):
+            await self._sessions.create_session(
+                app_name=f"{APP_NAME}-scenario", user_id="demo", session_id=sid
+            )
+        turn = types.Content(role="user", parts=[types.Part(text="step")])
+        async for _ in self._step_runner.run_async(
+            user_id="demo", session_id=sid, new_message=turn
+        ):
+            pass
+        return runner.state().model_dump(mode="json")
+
+    def journeys_list(self) -> list[dict[str, Any]]:
+        from acme.api.app import journey_summary
+
+        return [journey_summary(r).model_dump(mode="json") for r in self.runtime.journeys.values()]
+
+    async def journey_detail(self, journey_id: str) -> dict[str, Any]:
+        from acme.api.app import journey_detail_view
+
+        await self.runtime.tick()
+        rec = self._journey(journey_id)
+        return journey_detail_view(self.runtime, rec).model_dump(mode="json")
+
+    def journey_events(self, journey_id: str, since: int = 0) -> list[dict[str, Any]]:
+        """Timeline events from index ``since`` (a poll-friendly form of the SSE stream)."""
+        timeline = self._journey(journey_id).state.timeline
+        return [e.model_dump(mode="json") for e in timeline[max(since, 0) :]]
+
     def register_operations(self) -> dict[str, list[str]]:
         return {
+            "": [
+                "scenarios_list",
+                "scenario_start",
+                "scenario_state",
+                "journeys_list",
+                "journey_events",
+            ],
             "stream": ["stream_query"],
             "async_stream": ["async_stream_query"],
-            "async": ["a2a_skill"],
+            "async": ["a2a_skill", "scenario_step", "journey_detail"],
         }
 
 

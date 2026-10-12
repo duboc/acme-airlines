@@ -15,6 +15,15 @@ of its own. Call `set_up()` once (the engine does this itself) before use.
 |---|---|---|
 | `stream_query(message, user_id, session_id)` / `async_stream_query` | stream | One ADK turn of the Customer agent. Yields JSON event dicts. |
 | `a2a_skill(skill, args) -> dict` | async | Same dispatch as HTTP `/a2a` (`CustomerSkills.handle_a2a`). Only `list_journeys`, `journey_status` and `propose_offer` are accepted, and offers are validated as structured data. Returns the skill's data, or `{"error": {"code", "message"}}` (the HTTP error object). A rejected call leaves state unchanged. |
+| `scenarios_list() -> list` | sync | The six presets (`PresetView`), as `GET /scenarios`. |
+| `scenario_start(scenario_id) -> dict` | sync | Resets the world and seeds the preset; returns `ScenarioState`. Unknown id raises `EngineOperationError`. |
+| `scenario_step() -> dict` | async | Customer half of the next scripted step, run as an ADK turn (span attributes `acme.scenario`, `acme.step`). **No Sales tick**: the demo drives Sales through the Sales engine. Returns `ScenarioState`. |
+| `scenario_state() -> dict` | sync | Current `ScenarioState`. |
+| `journeys_list() -> list`, `journey_detail(journey_id) -> dict` | sync / async | `JourneySummary` / `JourneyDetail`, built by the same functions as the HTTP API. |
+| `journey_events(journey_id, since=0) -> list` | sync | Timeline events from index `since` (poll form of the SSE stream). |
+
+
+Presets are allowed on the engine even with `LLM_MODE=vertex` (the API app still answers 404 outside fake mode). The world is deterministic; only message wording comes from the LLM, and the fact check before sending (`outreach.required_facts`, template fallback) is the same code. Outcomes match local mode structurally (status, flight, seat, offers, charge), not in message text. Guardrails are unchanged.
 
 State is in memory, so a deploy must pin the Customer engine to one instance.
 
