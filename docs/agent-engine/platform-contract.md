@@ -14,7 +14,7 @@ This is what the team can rely on for running the IRROPS ADK agents on
 | Resource | Value |
 |---|---|
 | Project / Agent Engine location | `acme-airlines-factory` / `us-central1` (the resource location; regional by necessity) |
-| Model endpoint | Vertex AI **`global`**, unchanged (`GOOGLE_CLOUD_LOCATION=global` inside the agent code for `google-genai`/ADK) |
+| Model endpoint | Vertex AI **`global`**, unchanged. **On Agent Engine, `GOOGLE_CLOUD_*` env vars are reserved and injected by the platform**: `GOOGLE_CLOUD_LOCATION` there is the *engine* region (`us-central1`), not the model location. The model location must come from a non-reserved variable, `ACME_GENAI_LOCATION=global`, passed explicitly to the `google-genai`/ADK client (`location=`). |
 | Runtime service account | `acme-agent-engine@acme-airlines-factory.iam.gserviceaccount.com`. Deploy engines with `service_account=` set to it. It has `aiplatform.user`, `cloudtrace.agent`, `logging.logWriter` and `monitoring.metricWriter`. |
 | Staging bucket | `gs://acme-airlines-factory-agent-engine` |
 | Deployer (GitHub Actions, WIF) | the existing `vars.OBSERVATORY_WIF_PROVIDER` + `vars.OBSERVATORY_DEPLOYER_SA`. It can create/update reasoning engines, write to the staging bucket and read its metadata (`legacyBucketReader`, since the SDK calls `buckets.get`; #186), and act as the runtime SA. |
@@ -40,9 +40,13 @@ This is what the team can rely on for running the IRROPS ADK agents on
   and logs to Cloud Logging. Add useful span attributes, such as the scenario
   and journey id. **Never put PII** (names, PNR contents) in span attributes or
   logs.
-- **Environment on the engines:** `LLM_MODE=vertex`, `GOOGLE_CLOUD_PROJECT`,
-  and `GOOGLE_CLOUD_LOCATION=global`. CI and unit tests keep `LLM_MODE=fake`;
-  CI never deploys or calls engines from PRs.
+- **Environment on the engines:** `LLM_MODE=vertex`, `ACME_GENAI_LOCATION=global`
+  (and `ACME_GENAI_PROJECT` if needed).
+  - **Never set reserved names in `env_vars`:** `GOOGLE_CLOUD_PROJECT`,
+    `GOOGLE_CLOUD_LOCATION`, or any other `GOOGLE_CLOUD_*` variable. Agent
+    Engine rejects them with a 400 (#186 follow-up) and injects its own.
+  - CI and unit tests keep `LLM_MODE=fake`; CI never deploys or calls engines
+    from PRs.
 - **Deploy workflow:** `.github/workflows/agent-engine-deploy.yml` runs on
   push to `main` (paths: the agent packages). It authenticates with WIF and
   deploys or updates both engines. Afterwards it writes the engine resource

@@ -166,3 +166,18 @@ this bucket only) for `acme-observatory-deployer`, codified in
 `infra/95-agent-engine-platform.sh`. `verify.sh agent-engine` now asserts it.
 The same run also added the deferred Reasoning Engine service-agent token
 creation on `acme-agent-engine`.
+
+## Agent Engine deploy: "Environment variable name 'GOOGLE_CLOUD_PROJECT' is reserved" (issue #190)
+
+**Symptom:** after the #186 fix, the deploy got past the upload, then
+`create_reasoning_engine` returned 400 FAILED_PRECONDITION.
+
+**Root cause:** Agent Engine reserves and injects the `GOOGLE_CLOUD_*` variables.
+The operator's contract had wrongly told the team to set them. Agent Engine's
+injected `GOOGLE_CLOUD_LOCATION` is the engine region (`us-central1`). If the
+code had derived the Gemini location from it, it would have broken the
+global-only rule.
+
+**Fix:** the contract is corrected. The model location now comes from
+`ACME_GENAI_LOCATION=global` and is passed explicitly to the client. The
+app-code change is #190 (team).
