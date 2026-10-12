@@ -9,6 +9,7 @@ tracing can never break a journey. Behaviour is identical in local mode and on A
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Iterator
@@ -101,17 +102,21 @@ def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
     """
     if os.environ.get(TELEMETRY_ENV, "").lower() not in ("true", "1"):
         return False
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    try:
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    if isinstance(trace.get_tracer_provider(), TracerProvider):
+        if isinstance(trace.get_tracer_provider(), TracerProvider):
+            return False
+        if exporter_factory is None:
+            from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+
+            exporter_factory = CloudTraceSpanExporter  # ADC; the runtime SA has cloudtrace.agent
+        provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+        provider.add_span_processor(BatchSpanProcessor(exporter_factory()))
+        trace.set_tracer_provider(provider)
+    except Exception:  # noqa: BLE001 - tracing must never stop an engine from starting
+        logging.getLogger(__name__).warning("Cloud Trace export not configured", exc_info=True)
         return False
-    if exporter_factory is None:
-        from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
-
-        exporter_factory = CloudTraceSpanExporter  # ADC; the runtime SA has cloudtrace.agent
-    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
-    provider.add_span_processor(BatchSpanProcessor(exporter_factory()))
-    trace.set_tracer_provider(provider)
     return True
