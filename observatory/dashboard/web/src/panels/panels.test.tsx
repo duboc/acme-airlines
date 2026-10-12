@@ -51,6 +51,7 @@ function mock(over: Record<string, unknown> = {}) {
       budget: budget(528.98, 52.9),
       agents: { ...env, agents: [] },
       github: { ...env, snapshot: null, merges_per_day: [] },
+      'agent-engine': { ...env, hours: 1, engines: [] },
     };
     return { ok: true, status: 200, json: async () => over[name] ?? base[name] };
   });
