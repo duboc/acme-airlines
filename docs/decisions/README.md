@@ -16,4 +16,5 @@ Factory/infrastructure ADRs are 0001–0099. Application ADRs (written by the ag
 - [ADR 0012: Standing roster under the lead (visible team topology)](0012-standing-roster-topology.md)
 - [ADR 0013: Autonomous factory loop, model tiers and cost controls](0013-autonomous-loop-and-cost-controls.md)
 - [ADR 0014: Observatory, a factory cost and run dashboard](0014-observatory.md)
+- [ADR 0015: IRROPS agents on Vertex AI Agent Engine; proposal-based backlog](0015-agent-engine-and-proposed-backlog.md)
 - [ADR 0100: Application stack for the IRROPS MVP](0100-app-stack.md) (Accepted)

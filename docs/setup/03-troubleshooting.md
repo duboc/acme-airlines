@@ -129,3 +129,24 @@ that are outside of your organization."* The project's organization is
 **Fix:** a custom OAuth client with an **External** consent screen in
 **production**, applied to both services by `infra/55-iap-oauth-client.sh`
 (see runbook §6.3). `infra/verify.sh iap-oauth` fails until it is applied.
+
+## `verify.sh` reported a GitHub variable missing that clearly exists
+
+**Symptom:** `FAIL …: missing: gh-var:AGENT_ENGINE_SA` (and earlier a one-off
+`IRROPS_DEMO_SERVICE`), while `gh variable list` showed the variable.
+
+**Root cause:** `gh variable list | grep -q X` under `set -o pipefail`. `grep
+-q` exits at the first match, so `gh` gets SIGPIPE (exit 141) and the pipeline
+"fails". It got more likely as the number of variables grew. It is not API lag.
+
+**Fix:** capture the output first, then grep a here-string (`gh_var` in
+`verify.sh`).
+
+## New service account "does not exist" right after creation
+
+**Symptom:** `add-iam-policy-binding … Service account … does not exist`,
+seconds after `service-accounts create`.
+
+**Cause:** IAM eventual consistency.
+
+**Fix:** `retry` with backoff around IAM calls in `95-agent-engine-platform.sh`.

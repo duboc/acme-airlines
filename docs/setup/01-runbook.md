@@ -431,3 +431,28 @@ It prints the IAP service URL at the end. Check: `infra/verify.sh irrops-demo` (
 not public, runtime SA without project roles). Offline checks of the script itself:
 `infra/tests/test_irrops_demo_script.sh`. Image build and deploy of the app come with the demo deploy
 workflow; the local alternative is in [deploy.md](../product/deploy.md).
+
+## 9. IRROPS agents on Vertex AI Agent Engine (addendum D)
+
+Spec: [addendum D](../superpowers/specs/2026-10-12-addendum-d-agent-engine.md).
+The team builds against [the Agent Engine contract](../agent-engine/platform-contract.md).
+
+```bash
+infra/95-agent-engine-platform.sh      # idempotent; IAM calls retry (eventual consistency)
+```
+What it creates:
+- the staging bucket `gs://acme-airlines-factory-agent-engine`
+- runtime SA `acme-agent-engine` (`aiplatform.user`, `cloudtrace.agent`,
+  `logging.logWriter`, `monitoring.metricWriter`)
+- for the WIF deployer: `aiplatform.user`, `objectAdmin` on the bucket, and
+  actAs on the runtime SA
+- `aiplatform.user` on the demo SA, so it can query the engines
+- the GitHub Actions variables `AGENT_ENGINE_*`
+
+The Reasoning Engine service agent
+(`service-<num>@gcp-sa-aiplatform-re`) appears only after the first engine is
+created. **Re-run the script after the first deploy** to add its bindings
+(bucket read, and token creation on the runtime SA).
+
+Brief: [#157](https://github.com/duboc/acme-airlines/issues/157).
+Check: `infra/verify.sh agent-engine`.

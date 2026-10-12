@@ -97,6 +97,18 @@ cron_interval_ok() {
   (( smallest >= min ))
 }
 
+# gh_var <NAME>: repo variable exists (retries: GitHub's API lags a few seconds after `gh variable set`).
+# Capture first, then grep: `gh … | grep -q` under pipefail fails when grep exits early and gh gets SIGPIPE.
+gh_var() {
+  local i out
+  for i in 1 2 3 4; do
+    out="$(gh variable list -R duboc/acme-airlines 2>/dev/null)"
+    grep -q "^$1[[:space:]]" <<<"${out}" && return 0
+    sleep $((i*3))
+  done
+  return 1
+}
+
 check_project() {
   gcloud projects describe "${PROJECT_ID}" --format='value(projectId)' >/dev/null 2>&1 \
     || { fail project "project ${PROJECT_ID} not found"; return 1; }
@@ -273,7 +285,7 @@ check_observatory() {
   gcloud run services describe acme-observatory --region="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" run:acme-observatory"
   gcloud run jobs describe acme-observatory-collector --region="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" job:acme-observatory-collector"
   gcloud scheduler jobs describe acme-observatory-collect --location="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" scheduler:acme-observatory-collect"
-  gh variable list -R duboc/acme-airlines 2>/dev/null | grep -q '^OBSERVATORY_WIF_PROVIDER' || missing+=" gh-var:OBSERVATORY_WIF_PROVIDER"
+  gh_var OBSERVATORY_WIF_PROVIDER || missing+=" gh-var:OBSERVATORY_WIF_PROVIDER"
   [[ -z "${missing}" ]] || { fail observatory "missing:${missing}"; return 1; }
   local note=""
   gcloud secrets versions list acme-observatory-github-token --project="${p}" --filter=state=ENABLED --format='value(name)' 2>/dev/null | grep -q . \
@@ -286,7 +298,7 @@ check_irrops_demo() {
   gcloud iam service-accounts describe "${svc}@${p}.iam.gserviceaccount.com" --project="${p}" >/dev/null 2>&1 || missing+=" sa:${svc}"
   gcloud artifacts repositories describe irrops --location="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" ar:irrops"
   d="$(gcloud run services describe "${svc}" --region="${r}" --project="${p}" --format=json 2>/dev/null)" || missing+=" run:${svc}"
-  gh variable list -R duboc/acme-airlines 2>/dev/null | grep -q '^IRROPS_DEMO_SERVICE' || missing+=" gh-var:IRROPS_DEMO_SERVICE"
+  gh_var IRROPS_DEMO_SERVICE || missing+=" gh-var:IRROPS_DEMO_SERVICE"
   [[ -z "${missing}" ]] || { fail irrops-demo "missing:${missing}"; return 1; }
   ann="$(jq -r '.metadata.annotations["run.googleapis.com/iap-enabled"] // "false"' <<<"${d}")"
   scaling="$(jq -r '.spec.template.metadata.annotations["autoscaling.knative.dev/maxScale"] // ""' <<<"${d}")"
@@ -297,10 +309,14 @@ check_irrops_demo() {
        | jq -e '[.bindings[]?.members[]?] | any(. == "allUsers" or . == "allAuthenticatedUsers")' >/dev/null; then
     fail irrops-demo "${svc} is publicly invokable"; return 1
   fi
-  # The runtime SA must hold no project role.
-  if gcloud projects get-iam-policy "${p}" --format=json 2>/dev/null \
-       | jq -e --arg m "serviceAccount:${svc}@${p}.iam.gserviceaccount.com" '[.bindings[]? | select(.members | index($m))] | length > 0' >/dev/null; then
-    fail irrops-demo "${svc} SA holds a project role"; return 1
+  # The runtime SA may hold exactly one project role: roles/aiplatform.user, so it can
+  # query the Agent Engine engines (addendum D). Anything else is a least-privilege violation.
+  local extra
+  extra="$(gcloud projects get-iam-policy "${p}" --format=json 2>/dev/null \
+    | jq -r --arg m "serviceAccount:${svc}@${p}.iam.gserviceaccount.com" \
+        '[.bindings[]? | select(.members | index($m)) | .role | select(. != "roles/aiplatform.user")] | join(",")')"
+  if [[ -n "${extra}" ]]; then
+    fail irrops-demo "${svc} SA holds unexpected project role(s): ${extra}"; return 1
   fi
   pass "irrops-demo ($(jq -r '.status.url' <<<"${d}"))"
 }
@@ -315,6 +331,26 @@ check_iap_oauth() {
   done
   [[ -z "${bad}" ]] || { fail iap-oauth "no custom OAuth client on:${bad} (external domains such as google.com are refused)"; return 1; }
   pass iap-oauth
+}
+check_agent_engine() {
+  # Platform for running the IRROPS ADK agents on Vertex AI Agent Engine (addendum D).
+  local p="${PROJECT_ID}" missing="" pol rt="acme-agent-engine@${PROJECT_ID}.iam.gserviceaccount.com"
+  gcloud iam service-accounts describe "${rt}" --project="${p}" >/dev/null 2>&1 || missing+=" sa:acme-agent-engine"
+  gcloud storage buckets describe "gs://${p}-agent-engine" --format='value(name)' >/dev/null 2>&1 || missing+=" bucket:${p}-agent-engine"
+  pol="$(gcloud projects get-iam-policy "${p}" --format=json 2>/dev/null)"
+  _has() { jq -e --arg r "$1" --arg m "$2" '.bindings[] | select(.role==$r) | .members | index($m)' <<<"${pol}" >/dev/null; }
+  local role
+  for role in roles/aiplatform.user roles/cloudtrace.agent roles/logging.logWriter roles/monitoring.metricWriter; do
+    _has "${role}" "serviceAccount:${rt}" || missing+=" ${role}->acme-agent-engine"
+  done
+  _has roles/aiplatform.user "serviceAccount:acme-observatory-deployer@${p}.iam.gserviceaccount.com" || missing+=" aiplatform.user->deployer"
+  _has roles/aiplatform.user "serviceAccount:acme-irrops-demo@${p}.iam.gserviceaccount.com" || missing+=" aiplatform.user->irrops-demo"
+  gcloud iam service-accounts get-iam-policy "${rt}" --project="${p}" --format=json 2>/dev/null \
+    | jq -e '.bindings[]? | select(.role=="roles/iam.serviceAccountUser") | .members | index("serviceAccount:acme-observatory-deployer@'"${p}"'.iam.gserviceaccount.com")' >/dev/null \
+    || missing+=" deployer-actAs-acme-agent-engine"
+  gh_var AGENT_ENGINE_SA || missing+=" gh-var:AGENT_ENGINE_SA"
+  [[ -z "${missing}" ]] || { fail agent-engine "missing:${missing}"; return 1; }
+  pass agent-engine
 }
 check_lead() {
   # The lead agent's container is running on the VM.
@@ -341,9 +377,10 @@ run() {
     observatory)  check_observatory ;;
     irrops-demo)  check_irrops_demo ;;
     iap-oauth)    check_iap_oauth ;;
+    agent-engine) check_agent_engine ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth agent-engine; do run "$c" || rc=1; done
       return "$rc" ;;
     *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|all>" >&2; return 2 ;;
   esac

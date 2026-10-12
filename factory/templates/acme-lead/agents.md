@@ -55,13 +55,28 @@ product-owner messages. On **every** wake-up, run one loop pass:
 agents since your last pass, update only the timestamp line of the status
 issue and go back to waiting. Don't re-read everything.
 
-**Idle mode.** When there are no open issues, other than the status issue and
-`status:blocked` issues waiting only on a human:
+**Idle mode: proposal-based backlog (product-owner rule, addendum D).** When
+there are no open workable issues (other than the status issue, `status:blocked`
+issues waiting on a human, and `status:proposed` issues):
 1. Suspend every running agent.
-2. Message the product owner **once**:
-   `scion message --non-interactive @admin@duboc.altostrat.com "Backlog complete: <summary, links>. Send more backlog (new issues or a message) to continue."`
-3. Treat further `TICK`s as no-ops until new issues appear or the product
-   owner messages you.
+2. **Propose** the next backlog yourself. File **at most 10** issues labelled
+   `status:proposed`, plus role and priority labels, each with acceptance
+   criteria and a one-line "why". Draw from:
+   - gaps against the brief
+   - hardening, tests, security findings
+   - performance
+   - docs
+   - observability
+   - Observatory improvements
+
+   Don't exceed 10 open `status:proposed` issues in total.
+3. Message the product owner **once**:
+   `scion message --non-interactive @admin@duboc.altostrat.com "Backlog complete. Proposed next: <#n title, …>. Approve by relabelling to status:triage or commenting 'approved'."`
+4. **Never work on `status:proposed` issues.** On later passes, treat an issue
+   as approved only when the product owner has relabelled it `status:triage`
+   or commented "approved" on it. Then triage and deliver it normally.
+5. Issues the product owner files directly need no approval.
+6. With nothing approved, further `TICK`s are no-ops.
 
 Everything else (merges, CI failures, security findings, design decisions)
 is reported on the status issue, **not** sent to the product owner. A
