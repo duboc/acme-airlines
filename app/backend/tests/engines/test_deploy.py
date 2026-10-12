@@ -48,9 +48,8 @@ def test_updates_existing_in_place_with_the_exact_settings():
     assert (cust["min_instances"], cust["max_instances"]) == (1, 1)
     assert cust["env_vars"] == {
         "LLM_MODE": "vertex",
-        "GOOGLE_CLOUD_PROJECT": "acme-airlines-factory",
-        "GOOGLE_CLOUD_LOCATION": "global",
-        "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
+        "ACME_GENAI_LOCATION": "global",  # model location: not derived from GOOGLE_CLOUD_LOCATION
+        "ACME_ENABLE_TRACING": "true",
     }
     assert any(r.startswith("google-cloud-aiplatform") for r in cust["requirements"])
     assert cust["extra_packages"] == ["src/acme"]
@@ -117,3 +116,18 @@ def test_bucket_403_fails_fast_pointing_at_the_operator_issue(monkeypatch, capsy
         monkeypatch.setenv(k, v)
     assert mod.main() == 1
     assert "#186" in capsys.readouterr().err
+
+
+def test_deploy_env_has_no_reserved_google_cloud_keys():
+    """Agent Engine reserves and injects GOOGLE_CLOUD_* (a 400 otherwise, #190)."""
+    sdk = FakeSdk()
+    deploy(sdk, ENV)
+    for _, kwargs in sdk.calls:
+        keys = set(kwargs["env_vars"])
+        assert not [k for k in keys if k.startswith("GOOGLE_CLOUD_")], keys
+        assert kwargs["env_vars"]["ACME_GENAI_LOCATION"] == "global"
+        assert kwargs["env_vars"]["LLM_MODE"] == "vertex"
+
+
+def test_deploy_does_not_need_google_cloud_project_in_the_environment():
+    deploy(FakeSdk(), {"AGENT_ENGINE_SA": ENV["AGENT_ENGINE_SA"]})

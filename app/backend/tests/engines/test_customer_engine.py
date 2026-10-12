@@ -101,11 +101,21 @@ async def test_a2a_skill_rejects_bad_requests_with_http_error_and_no_state_chang
     assert all(not r.state.offers for r in app.runtime.journeys.values())
 
 
-def test_vertex_requires_global_location(monkeypatch):
+def test_vertex_requires_global_model_location(monkeypatch):
     monkeypatch.setenv("LLM_MODE", "vertex")
-    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "acme-airlines-factory")
+    monkeypatch.setenv("ACME_GENAI_LOCATION", "us-central1")
     with pytest.raises(EngineConfigError):
         build_customer_engine_app()
+
+
+def test_injected_engine_region_does_not_change_the_model_location(monkeypatch):
+    """On Agent Engine GOOGLE_CLOUD_LOCATION is the engine region (#190); it must be ignored."""
+    monkeypatch.setenv("LLM_MODE", "vertex")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "acme-airlines-factory")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    monkeypatch.delenv("ACME_GENAI_LOCATION", raising=False)
+    assert build_customer_engine_app().llm_mode == "vertex"
 
 
 def test_registered_operations_and_deploy_helpers():
@@ -135,7 +145,7 @@ def test_bad_env_fails_at_instantiation_with_a_clear_message(monkeypatch, env, t
 def test_vertex_with_project_and_global_location_builds(monkeypatch):
     monkeypatch.setenv("LLM_MODE", "vertex")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "acme-airlines-factory")
-    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "global")
+    monkeypatch.setenv("ACME_GENAI_LOCATION", "global")
     assert build_customer_engine_app().llm_mode == "vertex"
 
 

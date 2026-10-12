@@ -64,8 +64,11 @@ def validate_env(env: Mapping[str, str] | None = None) -> str:
     try:
         mode = load_llm_mode(env)
         if mode == "vertex":
-            if not env.get("GOOGLE_CLOUD_PROJECT"):
-                raise EngineConfigError("GOOGLE_CLOUD_PROJECT must be set when LLM_MODE=vertex")
+            if not (env.get("ACME_GENAI_PROJECT") or env.get("GOOGLE_CLOUD_PROJECT")):
+                raise EngineConfigError(
+                    "GOOGLE_CLOUD_PROJECT (injected by the platform) or ACME_GENAI_PROJECT "
+                    "must be set when LLM_MODE=vertex"
+                )
             load_vertex_config(env)
     except LlmConfigError as exc:
         raise EngineConfigError(str(exc)) from exc

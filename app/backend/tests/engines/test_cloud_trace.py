@@ -63,3 +63,11 @@ def test_demo_entrypoints_do_not_import_the_otel_sdk_or_exporter():
         " k.startswith('opentelemetry.exporter')]; assert not bad, bad"
     )
     subprocess.run([sys.executable, "-W", "ignore", "-c", code], check=True)
+
+
+def test_acme_enable_tracing_flag_installs_the_exporter_without_a_google_cloud_name(monkeypatch):
+    monkeypatch.delenv(telemetry.TELEMETRY_ENV, raising=False)
+    monkeypatch.setenv("ACME_ENABLE_TRACING", "true")
+    rec = Recorder(monkeypatch, object())
+    assert telemetry.configure_cloud_trace("acme-customer-agent", FakeExporter) is True
+    assert len(rec.set) == 1

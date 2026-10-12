@@ -15,7 +15,10 @@ from typing import Any, Protocol
 
 from acme.engines import customer, sales
 
-TELEMETRY_ENV = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"
+# Never put GOOGLE_CLOUD_* names in the engine env: Agent Engine reserves and injects them and
+# rejects the deploy with a 400 (#190). Our own non-reserved names carry the settings instead.
+TRACING_ENV = "ACME_ENABLE_TRACING"
+GENAI_LOCATION_ENV = "ACME_GENAI_LOCATION"
 
 
 class DeployError(RuntimeError):
@@ -47,9 +50,8 @@ def _settings(env: Mapping[str, str], name: str, extra_env: dict[str, str]) -> d
         "service_account": env["AGENT_ENGINE_SA"],
         "env_vars": {
             "LLM_MODE": "vertex",
-            "GOOGLE_CLOUD_PROJECT": env["GOOGLE_CLOUD_PROJECT"],
-            "GOOGLE_CLOUD_LOCATION": "global",  # model calls stay on the global endpoint
-            TELEMETRY_ENV: "true",  # tracing to Cloud Trace (this SDK has no enable_tracing arg)
+            GENAI_LOCATION_ENV: "global",  # model calls stay on the global endpoint
+            TRACING_ENV: "true",  # Cloud Trace export, installed by acme.telemetry
             **extra_env,
         },
     }

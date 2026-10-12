@@ -32,7 +32,7 @@ from the same seed but a separate state; an accepted upgrade is not reflected in
 LLM_MODE=vertex docker compose -f app/compose.yaml up --build
 ```
 
-Vertex uses ADC only (no API keys, ever), project `acme-airlines-factory`, **`GOOGLE_CLOUD_LOCATION=global`**
+Vertex uses ADC only (no API keys, ever), project `acme-airlines-factory`, **`ACME_GENAI_LOCATION=global`**
 (regional locations make the service refuse to start). Provide ADC by mounting your credentials
 read-only into `customer-runtime` and setting `GOOGLE_APPLICATION_CREDENTIALS` in a local override file,
 never in this repo.
@@ -92,14 +92,14 @@ gcloud run deploy acme-sim --image <registry>/acme-backend --command acme-sim --
   --set-secrets ACME_SIM_TOKENS=acme-sim-tokens:latest
 gcloud run deploy customer-runtime --image <registry>/acme-backend --command acme-customer --no-allow-unauthenticated \
   --service-account customer-runtime@$PROJECT.iam.gserviceaccount.com \
-  --set-env-vars ACME_CUSTOMER_HOST=0.0.0.0,LLM_MODE=vertex,GOOGLE_CLOUD_PROJECT=$PROJECT,GOOGLE_CLOUD_LOCATION=global
+  --set-env-vars ACME_CUSTOMER_HOST=0.0.0.0,LLM_MODE=vertex,GOOGLE_CLOUD_PROJECT=$PROJECT,ACME_GENAI_LOCATION=global
 gcloud run deploy sales-agent --image <registry>/acme-backend --command acme-sales --no-allow-unauthenticated \
   --service-account sales-agent@$PROJECT.iam.gserviceaccount.com \
   --set-env-vars ACME_SALES_HOST=0.0.0.0,ACME_SIM_URL=<acme-sim url>,ACME_CUSTOMER_URL=<customer-runtime url> \
   --set-secrets ACME_SALES_TOKEN=acme-sales-token:latest
 ```
 
-Env: `GOOGLE_CLOUD_LOCATION=global` always; **never** set `GOOGLE_API_KEY` or `GEMINI_API_KEY`
+Env: `ACME_GENAI_LOCATION=global` always; **never** set `GOOGLE_API_KEY` or `GEMINI_API_KEY`
 (the app refuses to start); model access is through the service account (ADC), granted
 `roles/aiplatform.user` on the `customer-runtime` service account only.
 
