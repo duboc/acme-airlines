@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from . import service
 from .gcp import GcpDataSource
 from .models import (
+    AgentEngineResponse,
     AgentsResponse,
     BudgetResponse,
     GithubResponse,
@@ -17,6 +18,7 @@ from .models import (
 )
 from .source import DataSource, FakeDataSource
 
+PROJECT_DEFAULT = "acme-airlines-factory"
 DEFAULT_STATIC = Path(__file__).resolve().parents[2] / "web" / "dist"
 
 
@@ -59,6 +61,10 @@ def create_app(
     @app.get("/api/budget")
     def budget_() -> BudgetResponse:
         return service.budget(source, budget)
+
+    @app.get("/api/agent-engine")
+    def agent_engine(hours: int = Query(1, ge=1, le=168)) -> AgentEngineResponse:
+        return service.agent_engine(source, hours, os.environ.get("PROJECT_ID", PROJECT_DEFAULT))
 
     static = (
         static_dir

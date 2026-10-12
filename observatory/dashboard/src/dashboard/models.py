@@ -116,3 +116,29 @@ class BudgetResponse(Envelope):
     percent: float = 0.0
     markers: list[Marker] = []
     guard_actions: list[GuardAction] = []
+
+
+class EngineTrace(BaseModel):
+    trace_id: str
+    name: str  # root span name only; no attribute values are exposed
+    start_time: str
+    duration_ms: float
+    status: str  # "ok" | "error"
+    console_url: str
+
+
+class EngineRow(BaseModel):
+    name: str
+    engine_id: str
+    requests: int = 0
+    errors: int = 0
+    error_rate: float | None = None  # non-2xx / total, null when there were no requests
+    latency_p50_ms: float | None = None
+    latency_p95_ms: float | None = None
+    trace_access: str = "granted"  # "granted" | "not_granted"
+    traces: list[EngineTrace] | None = None  # null when trace_access is "not_granted"
+
+
+class AgentEngineResponse(Envelope):
+    hours: int
+    engines: list[EngineRow] = []

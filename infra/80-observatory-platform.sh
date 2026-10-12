@@ -65,6 +65,7 @@ log "IAM: dashboard (read-only)"
 proj_role "${SA_DASH}" roles/bigquery.jobUser
 proj_role "${SA_DASH}" roles/monitoring.viewer
 proj_role "${SA_DASH}" roles/logging.viewer
+proj_role "${SA_DASH}" roles/cloudtrace.user   # read traces for the Agent Engine panel (#158)
 ds_role billing_export READER "${SA_DASH}"
 ds_role factory_ops READER "${SA_DASH}"
 gcloud compute instances add-iam-policy-binding "${VM_NAME}" --zone="$(resolve_zone)" --project="${P}" \

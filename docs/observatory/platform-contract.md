@@ -28,7 +28,7 @@ observatory/
 | Project / region | `acme-airlines-factory` / `us-central1` | |
 | Dashboard service | Cloud Run `acme-observatory` | **Behind IAP** (domains `google.com`, `duboc.altostrat.com`). It runs a placeholder until the first deploy. Keep `--no-allow-unauthenticated`; never disable IAP. |
 | Collector job | Cloud Run job `acme-observatory-collector` | Direct VPC egress to the hub. **Cloud Scheduler** `acme-observatory-collect` runs it every 5 minutes. |
-| Dashboard SA | `acme-observatory@acme-airlines-factory.iam.gserviceaccount.com` | Read-only. BigQuery `jobUser`, READER on `billing_export` and `factory_ops`, `monitoring.viewer`, `logging.viewer`, `compute.viewer` on the hub VM. |
+| Dashboard SA | `acme-observatory@acme-airlines-factory.iam.gserviceaccount.com` | Read-only. BigQuery `jobUser`, READER on `billing_export` and `factory_ops`, `monitoring.viewer`, `logging.viewer`, `cloudtrace.user` (read traces, #158), `compute.viewer` on the hub VM. |
 | Collector SA | `acme-observatory-collector@…` | BigQuery `jobUser`, WRITER on `factory_ops`, accessor on the two secrets below. |
 | Image repo | `us-central1-docker.pkg.dev/acme-airlines-factory/observatory` | Images `dashboard` and `collector`. |
 
@@ -39,6 +39,7 @@ observatory/
 | `billing_export` (US) | Cloud Billing **standard usage cost export** | Table `gcp_billing_export_v1_<BILLING_ACCOUNT_ID with _>`. **Data lags a few hours to a day.** The table appears only after the product owner turns on the export. Handle "table not found" gracefully. |
 | `factory_ops` (US) | the collector (you create the tables) | Suggested: `agent_snapshots` (ts, name, template, role, tier, phase, activity, container_status, started_at, last_activity, harness, model) and `github_snapshots` (ts, issues by status/label, open PRs, merges in the last 24h, latest verdict per PR, CI conclusion counts). Partition by `DATE(ts)`. |
 | Cloud Monitoring | Vertex AI | `aiplatform.googleapis.com/publisher/online_serving/token_count`, `…/model_invocation_count` (labels include the model). Query with the Monitoring API using the dashboard SA. |
+| Cloud Monitoring / Cloud Trace | Agent Engine | `GET /api/agent-engine`: `aiplatform.googleapis.com/reasoning_engine/request_count` and `request_latencies`, plus Cloud Trace root spans. Engines come from the `AGENT_ENGINES` env var (`name=reasoning_engine_id,...`). **Trace needs `cloudtrace.user` on the dashboard SA (#158)**; until then the API reports `trace_access: "not_granted"` and still serves metrics. See `observatory/dashboard/API.md`. |
 | Cloud Logging | budget guard | `resource.labels.service_name="acme-budget-guard"`, `textPayload:"cost="`. Each line reads `cost=X budget=Y -> no action|agents suspended`. |
 
 ## Environment variables (set on the placeholders; keep them when deploying)
