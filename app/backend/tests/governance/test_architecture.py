@@ -86,10 +86,23 @@ def test_sales_code_has_no_passenger_channel():
 # --- Sales may only reach the Customer engine through `a2a_skill` (#161) -----------------------
 SRC = Path(__file__).resolve().parents[2] / "src/acme"
 SALES_SOURCES = [*sorted((SRC / "sales").glob("*.py")), SRC / "engines/sales.py"]
-DEMO_OPS = {
-    "scenarios_list", "scenario_start", "scenario_state", "scenario_step",
-    "journeys_list", "journey_detail", "journey_events",
-}  # fmt: skip
+
+
+def _customer_engine_ops() -> set[str]:
+    """Every operation the Customer engine registers, except the ones Sales may use.
+
+    Derived, so a newly registered op is forbidden to Sales automatically. `stream_query` and
+    `async_stream_query` are checked separately (the Sales engine defines its own).
+    """
+    from acme.engines.customer import build_customer_engine_app
+
+    registered = {
+        o for ops in build_customer_engine_app().register_operations().values() for o in ops
+    }
+    return registered - {"a2a_skill", "stream_query", "async_stream_query"}
+
+
+DEMO_OPS = _customer_engine_ops()
 HANDLES = {"self._engine", "engine", "self._customer_engine", "handle", "customer_engine"}
 
 
@@ -114,6 +127,12 @@ def engine_op_violations(source: str) -> list[str]:
     return found
 
 
+def test_every_new_customer_engine_op_is_forbidden_to_sales():
+    assert {"whatsapp_messages", "whatsapp_reply", "whatsapp_action", "trigger_cancellation",
+            "reset", "scenario_step", "journey_detail"} <= DEMO_OPS  # fmt: skip
+    assert "a2a_skill" not in DEMO_OPS
+
+
 def test_sales_sources_only_call_the_customer_engine_through_a2a_skill():
     assert len(SALES_SOURCES) >= 2
     for path in SALES_SOURCES:
@@ -127,6 +146,9 @@ def test_sales_sources_only_call_the_customer_engine_through_a2a_skill():
         "async def f(engine):\n    return await engine.async_stream_query(message='x')",
         "async def f(self):\n    return await self._engine.scenario_step()",
         "OP = 'journeys_list'",
+        "OP = 'whatsapp_messages'",
+        "async def f(self):\n    await self._engine.whatsapp_action('P', 'accept_offer')",
+        "async def f(self):\n    await self._customer_engine.trigger_cancellation('AC1', 'x')",
         "def f(customer):\n    customer.stream_query(message='x')",
     ],
 )

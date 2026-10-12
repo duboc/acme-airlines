@@ -62,7 +62,7 @@ Access is protected by Google Identity-Aware Proxy (IAP). Any Google account bel
 The hosted demo runs either `local` (agents in the container) or `agent-engine` (agents on Vertex
 AI Agent Engine). `GET /api/healthz` shows `"engine": "agent-engine"` in the second case. The
 scenario presets and journeys behave the same in both modes; message wording may differ when the
-live LLM is used. In `agent-engine` mode the phone panel is not wired yet.
+live LLM is used.
 
 ### Option B: Running Locally
 

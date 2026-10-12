@@ -124,6 +124,42 @@ def journey_detail_view(rt: Runtime, rec: JourneyRecord) -> JourneyDetail:
     )
 
 
+def require_passenger(rt: Runtime, passenger_id: str) -> None:
+    if passenger_id not in rt.world.passengers:
+        raise HTTPException(404, f"unknown passenger {passenger_id}")
+
+
+async def do_trigger(rt: Runtime, flight: str, reason: str) -> TriggerResult:
+    if flight not in rt.world.flights:
+        raise HTTPException(404, f"unknown flight {flight}")
+    return TriggerResult(journey_ids=await rt.trigger_cancellation(flight, reason))
+
+
+async def do_messages(rt: Runtime, passenger_id: str) -> list[WhatsAppMessage]:
+    require_passenger(rt, passenger_id)
+    await rt.tick()
+    return rt.messages.get(passenger_id, [])
+
+
+async def do_reply(rt: Runtime, passenger_id: str, text: str) -> WhatsAppMessage:
+    require_passenger(rt, passenger_id)
+    return await rt.handle_inbound(passenger_id, text)
+
+
+async def do_action(rt: Runtime, passenger_id: str, action: str) -> ActionResult:
+    """Accept/decline go through `acme.customer.conversion` (guardrail re-check included)."""
+    require_passenger(rt, passenger_id)
+    rec = rt.journey_for_passenger(passenger_id)
+    if rec is None:
+        raise HTTPException(409, "no offer has been sent to this passenger")
+    try:
+        if action == "accept_offer":
+            return ActionResult(offer_status=await accept_offer(rt, rec))
+        return ActionResult(offer_status=await decline_offer(rt, rec))
+    except NoSentOffer:
+        raise HTTPException(409, "no offer has been sent to this passenger") from None
+
+
 def create_app(clock: Clock | None = None) -> FastAPI:
     if (os.environ.get("ENGINE_MODE") or "local") == "agent-engine":
         from acme.api.engine_backend import create_engine_app  # noqa: PLC0415
@@ -145,10 +181,6 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
             raise HTTPException(404, f"unknown journey {journey_id}")
         return rt.journeys[journey_id]
 
-    def require_passenger(passenger_id: str) -> None:
-        if passenger_id not in rt.world.passengers:
-            raise HTTPException(404, f"unknown passenger {passenger_id}")
-
     @app.get(CARD_PATH, include_in_schema=False)
     async def agent_card(request: Request) -> dict:
         card = customer_agent_card(str(request.base_url))
@@ -169,9 +201,7 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
 
     @app.post("/scenario/trigger-cancellation", tags=["scenario"])
     async def trigger_cancellation(body: TriggerCancellation) -> TriggerResult:
-        if body.flight not in rt.world.flights:
-            raise HTTPException(404, f"unknown flight {body.flight}")
-        return TriggerResult(journey_ids=await rt.trigger_cancellation(body.flight, body.reason))
+        return await do_trigger(rt, body.flight, body.reason)
 
     runner = ScenarioRunner(rt)
 
@@ -240,26 +270,14 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
 
     @app.get("/whatsapp/{passenger_id}/messages", tags=["whatsapp"])
     async def whatsapp_messages(passenger_id: str) -> list[WhatsAppMessage]:
-        require_passenger(passenger_id)
-        await rt.tick()
-        return rt.messages.get(passenger_id, [])
+        return await do_messages(rt, passenger_id)
 
     @app.post("/whatsapp/{passenger_id}/messages", status_code=201, tags=["whatsapp"])
     async def whatsapp_reply(passenger_id: str, body: PassengerReply) -> WhatsAppMessage:
-        require_passenger(passenger_id)
-        return await rt.handle_inbound(passenger_id, body.text)
+        return await do_reply(rt, passenger_id, body.text)
 
     @app.post("/whatsapp/{passenger_id}/actions", tags=["whatsapp"])
     async def whatsapp_action(passenger_id: str, body: PassengerAction) -> ActionResult:
-        require_passenger(passenger_id)
-        rec = rt.journey_for_passenger(passenger_id)
-        if rec is None:
-            raise HTTPException(409, "no offer has been sent to this passenger")
-        try:
-            if body.action == "accept_offer":
-                return ActionResult(offer_status=await accept_offer(rt, rec))
-            return ActionResult(offer_status=await decline_offer(rt, rec))
-        except NoSentOffer:
-            raise HTTPException(409, "no offer has been sent to this passenger") from None
+        return await do_action(rt, passenger_id, body.action)
 
     return app
