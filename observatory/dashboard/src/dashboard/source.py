@@ -38,7 +38,9 @@ class DataSource(Protocol):
     def guard_logs(self, limit: int) -> Rows: ...
     def agent_engines(self) -> Rows: ...  # [{name, engine_id}]
     def agent_engine_metrics(self, engine_id: str, hours: int) -> dict: ...
-    def agent_engine_traces(self, name: str, limit: int) -> Rows: ...  # may raise TraceNotGranted
+    def agent_engine_traces(
+        self, name: str, limit: int, hours: int
+    ) -> Rows: ...  # may raise TraceNotGranted
 
 
 FIXTURES = Path(
@@ -99,5 +101,5 @@ class FakeDataSource:
     def agent_engine_metrics(self, engine_id: str, hours: int) -> dict:
         return self._engine_data()["metrics"][engine_id]
 
-    def agent_engine_traces(self, name: str, limit: int) -> Rows:
+    def agent_engine_traces(self, name: str, limit: int, hours: int) -> Rows:
         return self._engine_data()["traces"].get(name, [])[:limit]
