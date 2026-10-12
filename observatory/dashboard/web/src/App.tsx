@@ -3,6 +3,7 @@ import { BudgetBody } from './panels/BudgetPanel';
 import { ModelsPanel } from './panels/ModelsPanel';
 import { SpendBody } from './panels/SpendPanel';
 import { BILLING_EMPTY, GITHUB_EMPTY } from './format';
+import { AgentEnginePanel } from './panels/AgentEnginePanel';
 import { AgentsBody } from './panels/AgentsPanel';
 import { GithubBody } from './panels/GithubPanel';
 import { useApi } from './useApi';
@@ -39,6 +40,7 @@ export default function App() {
         <Panel id="agents" title="Agents" result={agents} emptyMessage="No agent snapshots yet.">
           {(d) => <AgentsBody data={d} />}
         </Panel>
+        <AgentEnginePanel />
         <Panel id="github" title="GitHub" result={github} emptyMessage={GITHUB_EMPTY}>
           {(d) => <GithubBody data={d} />}
         </Panel>

@@ -87,12 +87,37 @@ export interface BudgetResponse extends Envelope {
   guard_actions: { ts: string; cost_usd: number; budget_usd: number; action: string }[];
 }
 
+export interface EngineTrace {
+  trace_id: string;
+  name: string;
+  start_time: string;
+  duration_ms: number;
+  status: 'ok' | 'error';
+  console_url: string;
+}
+export interface AgentEngine {
+  name: string;
+  engine_id: string;
+  requests: number;
+  errors: number;
+  error_rate: number | null;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  trace_access: 'granted' | 'not_granted';
+  traces: EngineTrace[] | null;
+}
+export interface AgentEngineResponse extends Envelope {
+  hours: number;
+  engines: AgentEngine[];
+}
+
 export interface Endpoints {
   spend: SpendResponse;
   models: ModelsResponse;
   agents: AgentsResponse;
   github: GithubResponse;
   budget: BudgetResponse;
+  'agent-engine': AgentEngineResponse;
 }
 
 export async function fetchApi<K extends keyof Endpoints>(
