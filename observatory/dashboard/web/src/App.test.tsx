@@ -88,4 +88,28 @@ describe('App shell', () => {
     expect(within(panel).getByRole('status')).toHaveTextContent('Could not reach the API');
     expect(await screen.findAllByText('Live')).toHaveLength(5);
   });
+
+  it('shows a red collector health banner when the pipeline is down', async () => {
+    mockApi({
+      'collector-health': {
+        ...ok,
+        state: 'lagging',
+        healthy: false,
+        message: 'The collector has not written a snapshot for over 15 minutes.',
+        last_execution: { ts: '2026-10-10T12:00:00Z', status: 'failed', detail: null },
+      },
+    });
+    render(<App />);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Collector down');
+    expect(alert).toHaveTextContent('over 15 minutes');
+    expect(alert).toHaveTextContent('last execution failed');
+  });
+
+  it('shows collector health ok without an alert', async () => {
+    mockApi({ 'collector-health': { ...ok, healthy: true, snapshot_age_seconds: 30 } });
+    render(<App />);
+    expect(await screen.findByText(/Collector healthy/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
 });

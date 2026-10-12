@@ -111,7 +111,14 @@ export interface AgentEngineResponse extends Envelope {
   engines: AgentEngine[];
 }
 
+export interface CollectorHealthResponse extends Envelope {
+  healthy: boolean;
+  snapshot_age_seconds: number | null;
+  last_execution: { ts: string; status: string; detail: string | null } | null;
+}
+
 export interface Endpoints {
+  'collector-health': CollectorHealthResponse;
   spend: SpendResponse;
   models: ModelsResponse;
   agents: AgentsResponse;

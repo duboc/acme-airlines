@@ -150,3 +150,6 @@ jobs:
       - name: Build image (no push)
         if: steps.detect.outputs.present == 'true'
         run: docker build -t "observatory-${{ matrix.image }}:ci" "observatory/${{ matrix.image }}"
+      - name: Smoke test (non-root, read-only filesystem, no uv)
+        if: steps.detect.outputs.present == 'true'
+        run: bash observatory/deploy/smoke-image.sh "observatory-${{ matrix.image }}:ci" "${{ matrix.image }}"

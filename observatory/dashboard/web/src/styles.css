@@ -296,3 +296,16 @@ details summary {
   font-size: 0.8125rem;
   margin: 0.25rem 0;
 }
+.health {
+  margin: 0;
+  padding: 0.4rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.health-red {
+  background: #7a1414;
+  color: #fff;
+}
+.health-ok {
+  color: var(--muted, inherit);
+}

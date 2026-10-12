@@ -52,6 +52,7 @@ function mock(over: Record<string, unknown> = {}) {
       agents: { ...env, agents: [] },
       github: { ...env, snapshot: null, merges_per_day: [] },
       'agent-engine': { ...env, hours: 1, engines: [] },
+      'collector-health': { ...env, healthy: true, snapshot_age_seconds: 30, last_execution: null },
     };
     return { ok: true, status: 200, json: async () => over[name] ?? base[name] };
   });

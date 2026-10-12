@@ -21,7 +21,7 @@ It sets `OBSERVATORY_DATA=fake`, uses no secrets and no GCP auth, and needs only
 | `collector` | `observatory/collector` | `uv sync --frozen`, `ruff check`, `ruff format --check`, `pytest` |
 | `dashboard-api` | `observatory/dashboard` | same as `collector` |
 | `dashboard-web` | `observatory/dashboard/web` | `npm ci`, `npm run lint`, `npm test`, `npm run build` |
-| `docker-build` | `collector`, `dashboard` | `docker build` (no push) |
+| `docker-build` | `collector`, `dashboard` | `docker build` (no push), then `deploy/smoke-image.sh`: runs the image non-root, read-only, unwritable `$HOME`, `OBSERVATORY_DATA=fake`, and fails if the image runs `uv` at runtime (#191) |
 
 A job whose project (or Dockerfile) does not exist yet logs `SKIPPED: ...` and passes.
 Once the project exists, every step is enforced.
@@ -89,6 +89,14 @@ OBSERVATORY_DATA=fake uv run pytest
 uv run ruff check && uv run ruff format --check
 docker build observatory/collector
 ```
+
+## Collector health
+
+The collector image runs `/app/.venv/bin/python -m collector` directly: `uv` needs a writable
+`$HOME` cache, which the no-home job user lacks (#191). The dashboard header shows **Collector
+healthy** or a red **Collector down** alert, from `GET /api/collector-health`: red when the newest
+agent/GitHub snapshot is over 15 minutes old (or none exists), naming the last execution's status
+(read from the job's Cloud Logging lines; needs only the log read access the dashboard already has).
 
 ## Schema contract (`collector/schema.py`)
 

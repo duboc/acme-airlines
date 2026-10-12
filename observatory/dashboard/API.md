@@ -23,6 +23,16 @@ Payload fields below are always present (empty list / zero / null when there is 
 ## `GET /healthz`
 `{"status": "ok"}`
 
+## `GET /api/collector-health`
+```json
+{"state":"lagging","as_of":"2026-10-10T11:00:00Z","message":"The collector has not written a snapshot for over 15 minutes. The last execution failed.",
+ "healthy":false,"snapshot_age_seconds":3630,
+ "last_execution":{"ts":"2026-10-10T12:00:00Z","status":"failed","detail":"Container called exit(2)."}}
+```
+`healthy` is false (render red) when the newest agent/GitHub snapshot is over 15 min old: `state`
+is `lagging`; `empty` when none exists ("never written"); `unavailable` when it cannot be read.
+`last_execution.status` is `succeeded | failed` (null when no job logs are found).
+
 ## `GET /api/spend?days=30` (1..365)
 ```json
 {"state":"ok","as_of":"2026-10-09T00:00:00Z","message":null,"days":30,"currency":"USD",

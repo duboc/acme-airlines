@@ -27,6 +27,10 @@ GUARD_FILTER = (
     'resource.labels.service_name="acme-budget-guard" AND textPayload:"cost=" '
     'AND timestamp>="{since}"'
 )
+COLLECTOR_FILTER = (
+    'resource.type="cloud_run_job" AND resource.labels.job_name="acme-observatory-collector" '
+    '(textPayload:"wrote " OR textPayload:"Container called exit(") AND timestamp>="{since}"'
+)
 ENGINE_REQUESTS = "aiplatform.googleapis.com/reasoning_engine/request_count"  # label response_code
 ENGINE_LATENCY = "aiplatform.googleapis.com/reasoning_engine/request_latencies"  # ms distribution
 ENGINE_LABEL = "resource.labels.reasoning_engine_id"
@@ -225,6 +229,26 @@ class GcpDataSource:
         )
         return [
             {"ts": e.timestamp.isoformat(), "text": e.payload}
+            for e in entries
+            if isinstance(e.payload, str)
+        ]
+
+    @guarded("Collector executions")
+    def collector_runs(self, limit: int) -> Rows:
+        """Newest first: 'wrote N rows' means succeeded, 'Container called exit(N)' means failed."""
+        since = (self.now() - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        entries = self._log.list_entries(
+            filter_=COLLECTOR_FILTER.format(since=since),
+            order_by="timestamp desc",
+            max_results=limit,
+            resource_names=[f"projects/{self._project}"],
+        )
+        return [
+            {
+                "ts": e.timestamp.isoformat(),
+                "status": "failed" if "Container called exit(" in e.payload else "succeeded",
+                "detail": e.payload[:200],
+            }
             for e in entries
             if isinstance(e.payload, str)
         ]
