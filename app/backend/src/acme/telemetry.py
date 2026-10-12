@@ -54,6 +54,8 @@ def set_strict(value: bool) -> None:
 def _clean(attrs: dict[str, object]) -> dict[str, str]:
     clean: dict[str, str] = {}
     for key, value in attrs.items():
+        if value is None:
+            continue
         key = key.replace("__", ".")
         text = str(value)
         if key not in ALLOWED_ATTRIBUTES or not is_safe_value(text):
@@ -71,6 +73,11 @@ def span(name: str, **attrs: object) -> Iterator[Span]:
     clean = _clean(attrs)
     with tracer.start_as_current_span(name, attributes=clean) as s:
         yield s
+
+
+def set_attributes(s: Span, **attrs: object) -> None:
+    """Set allowlisted attributes on a live span (same rules as `span()`)."""
+    s.set_attributes(_clean(attrs))
 
 
 def specialist_span(name: str, journey_id: str):

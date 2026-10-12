@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from acme.domain.journey import DisruptionStatus, JourneyState
 from acme.domain.models import CabinInventory, Offer
 from acme.policy.margin_opt import recovery_quote
-from acme.telemetry import span
+from acme.telemetry import set_attributes, span
 
 _BLOCKING_OTHER_STATUSES = frozenset({"approved", "sent", "accepted", "declined"})
 
@@ -130,6 +130,9 @@ def evaluate_traced(
         acme__step=step,
     ) as s:
         decision = evaluate(journey, offer, inventory)
-        s.set_attribute("acme.guardrail.decision", "approve" if decision.approved else "reject")
-        s.set_attribute("acme.guardrail.reason_code", decision.reasons[0])
+        set_attributes(
+            s,
+            acme__guardrail__decision="approve" if decision.approved else "reject",
+            acme__guardrail__reason_code=decision.reasons[0],
+        )
         return decision

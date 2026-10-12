@@ -33,3 +33,10 @@ def test_production_drops_bad_attributes_and_keeps_the_span(spans):
         pass
     (s,) = spans.get_finished_spans()
     assert dict(s.attributes) == {"acme.flight": "AC1"}
+
+
+def test_none_values_are_dropped(spans):
+    with telemetry.span("acme.x", acme__journey_id=None, acme__flight="AC1"):
+        pass
+    (s,) = spans.get_finished_spans()
+    assert dict(s.attributes) == {"acme.flight": "AC1"}
