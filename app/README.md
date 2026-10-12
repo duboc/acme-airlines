@@ -233,3 +233,14 @@ taken, hotel unavailable, upgrade race). `POST /scenarios/{id}/start` resets the
 the variant; `POST /scenarios/{id}/step` performs the next scripted passenger action and returns
 the resulting state. With `LLM_MODE=vertex` these endpoints return 404. See
 `app/backend/src/acme/api/scenarios.py`.
+
+## Logging and PII
+
+Every runtime entrypoint (`acme-customer`, `acme-sales`, `acme-sim`, `acme-demo`, `acme.api.main`)
+calls `acme.logging_setup.configure_logging()`. It pins noisy third-party loggers (`mcp`,
+`httpx`, `httpcore`, `google_genai`, `google.adk`, ...) to WARNING or higher, because at DEBUG
+they dump full tool results with passenger data. It also installs a redaction backstop on the
+log record factory that masks fixture PII (passenger names, PNRs, loyalty ids), emails and phone
+numbers. The Customer engine calls it in `set_up()`. Never log passenger data on purpose; the backstop is a safety net. Any new entrypoint
+(for example the Agent Engine app) must call `configure_logging()` first.
+Test: `tests/unit/test_logging_setup.py`.

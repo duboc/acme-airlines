@@ -79,3 +79,10 @@ and is dropped in production. Never add names, PNRs, phone numbers, emails or me
 Tests: `tests/unit/test_telemetry.py` (allowlist) and
 `tests/governance/test_telemetry_spans.py` (spans over the AC1234 story; PII derived from
 `acme.domain.fixtures` and the transcripts must not appear in span data or `acme` logs).
+
+## Logging
+
+`acme.logging_setup.configure_logging()` runs in every entrypoint and in the engine's `set_up()`.
+It pins third-party loggers (`mcp`, `httpx`, `google_genai`, `google.adk`, ...) to WARNING+ and
+masks fixture PII, emails and phone numbers on every log record, so Cloud Logging never gets
+passenger data. Test: `tests/unit/test_logging_setup.py`.

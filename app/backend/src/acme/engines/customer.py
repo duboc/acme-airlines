@@ -107,7 +107,9 @@ class CustomerEngineApp:
         from acme.customer.adk_agent import build_customer_agent
         from acme.customer.runtime import CustomerRuntime
         from acme.customer.skills import CustomerSkills
+        from acme.logging_setup import configure_logging
 
+        configure_logging()  # no passenger PII in Cloud Logging (#170)
         self.runtime = CustomerRuntime()  # in-process simulators, LlmPort from LLM_MODE
         self.skills = CustomerSkills(self.runtime)
         self._sessions = InMemorySessionService()

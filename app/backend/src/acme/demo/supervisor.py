@@ -21,6 +21,7 @@ import httpx
 import uvicorn
 
 from acme.demo.front import create_front
+from acme.logging_setup import configure_logging
 
 LOOPBACK = "127.0.0.1"
 SIM_PORT, CUSTOMER_PORT, SALES_PORT = 8700, 8800, 8801
@@ -73,6 +74,7 @@ def _wait_ready(port: int, timeout: float = 60) -> None:
 
 
 def main() -> None:
+    configure_logging()
     tokens = make_tokens()
     procs = [
         subprocess.Popen([_COMMANDS[n]], env=child_env(n, tokens, os.environ))  # noqa: S603

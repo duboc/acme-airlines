@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
+from acme.logging_setup import configure_logging
 from acme.sim import dcs, loyalty, partners, servers
 from acme.sim.auth import AccessControlMiddleware, load_tokens
 from acme.sim.world import SimWorld
@@ -59,6 +60,7 @@ def create_app(
 def main() -> None:
     import uvicorn
 
+    configure_logging()
     port = int(os.environ.get("ACME_SIM_PORT", "8700"))
     if not os.environ.get("ACME_SIM_TOKENS"):
         print(
