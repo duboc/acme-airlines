@@ -112,6 +112,28 @@ local mode. Bodies are never logged. See `docs/product/deploy.md`.
 
 Both engines run as `acme-agent-engine` (project-wide `aiplatform.user`), so IAM does not stop the Sales engine from calling the Customer engine's demo ops, which return passenger data. The boundary is enforced in code: `EngineCustomerClient` exposes only the three skills, via `a2a_skill`. The governance architecture test (`tests/governance/test_architecture.py`) checks that Sales sources never call any other Customer engine operation. This is the same posture as local mode, and it is a known, accepted residual risk (security audit of #178).
 
+## Proof
+
+`tests/live/test_agent_engine_traces.py` is an opt-in live check (#167), never run in CI. It
+drives presets 1-5 (`ACME_PROOF_PRESETS` overrides) through the **deployed** engines with
+`EngineBackend`, asserts every step's state is structurally equal to local mode, and queries
+Cloud Trace (v1 REST, ADC) for each turn. Per turn it needs the Customer `scenario_step` trace
+(root span with `acme.scenario`). Across the run it needs `acme.customer.specialist.*`,
+`acme.guardrail.decision`, `acme.a2a.*` and `acme.sales.pitch`. No span name or attribute value
+may contain fixture PII. Ingestion lags, so it polls up to 2 minutes per turn. It then prints a
+Markdown table (scenario, turn, trace id, console link) to stdout, or to `ACME_PROOF_TABLE`.
+
+```bash
+cd app/backend
+ACME_LIVE_AGENT_ENGINE=1 AGENT_ENGINE_CUSTOMER=projects/.../reasoningEngines/<id> \
+  AGENT_ENGINE_SALES=projects/.../reasoningEngines/<id> \
+  uv run pytest tests/live/test_agent_engine_traces.py -m live -s
+```
+
+Or run the `workflow_dispatch`-only `agent-engine-live-proof.yml` (WIF as the deployer SA, from
+`main`); the table lands in the job summary. The assertion logic has fake-based unit tests
+(`tests/live/test_agent_engine_proof_logic.py`) that run in CI without GCP.
+
 ## Deploy
 
 `.github/workflows/agent-engine-deploy.yml` runs on push to `main` (paths: `app/backend/src/acme/**`,
