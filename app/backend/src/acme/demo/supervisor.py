@@ -73,15 +73,31 @@ def _wait_ready(port: int, timeout: float = 60) -> None:
     raise SystemExit("customer runtime did not become ready")
 
 
+def engine_mode(env: Mapping[str, str]) -> str:
+    return env.get("ENGINE_MODE") or "local"
+
+
+def child_names(env: Mapping[str, str]) -> tuple[str, ...]:
+    """`agent-engine`: only the API child (backed by the engines); no local sim/Sales/agents."""
+    return ("customer",) if engine_mode(env) == "agent-engine" else ("sim", "customer")
+
+
 def main() -> None:
     configure_logging()
     tokens = make_tokens()
+    if engine_mode(os.environ) == "agent-engine":
+        from acme.api.engine_backend import EngineBackend  # noqa: PLC0415
+
+        EngineBackend.from_env()  # fail fast with a clear message before serving anything
     procs = [
         subprocess.Popen([_COMMANDS[n]], env=child_env(n, tokens, os.environ))  # noqa: S603
-        for n in ("sim", "customer")
+        for n in child_names(os.environ)
     ]
     _wait_ready(CUSTOMER_PORT)
-    procs.append(subprocess.Popen([_COMMANDS["sales"]], env=child_env("sales", tokens, os.environ)))  # noqa: S603
+    if engine_mode(os.environ) != "agent-engine":
+        procs.append(
+            subprocess.Popen([_COMMANDS["sales"]], env=child_env("sales", tokens, os.environ))  # noqa: S603
+        )
 
     def stop(*_: object) -> None:
         for p in procs:

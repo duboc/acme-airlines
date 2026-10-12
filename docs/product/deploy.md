@@ -60,6 +60,21 @@ docker build -f app/demo/Dockerfile -t acme-demo app && docker run --rm -p 127.0
 warns and succeeds. The `containers` CI job builds the image and smokes it (cancellation -> RESOLVED,
 `/api/a2a` -> 404).
 
+### Engine mode (`ENGINE_MODE`)
+
+`ENGINE_MODE=local` (default) runs the agents in the container. `ENGINE_MODE=agent-engine` serves
+the same API from the deployed Agent Engines: the supervisor starts only the API child (no local
+sim, Sales or agents), and the API calls the Customer engine (`AGENT_ENGINE_CUSTOMER`) and then
+the Sales engine (`AGENT_ENGINE_SALES`) with ADC. Both must be full resource names
+(`projects/<p>/locations/<l>/reasoningEngines/<id>`), written by the engine deploy workflow (#163);
+without them the app fails at startup. In this mode the WhatsApp and trigger/reset routes are not
+served yet (scenarios and journeys only).
+
+`irrops-deploy.yml` sets `ENGINE_MODE` after swapping the image, using
+`app/demo/select-engine-mode.sh`: `agent-engine` only if the Cloud Run service already has both
+`AGENT_ENGINE_*` variables, otherwise `local`. A missing or broken engine deploy therefore never
+breaks the hosted demo (tested in `tests/api/test_engine_mode.py`).
+
 ## Cloud Run (target, not deployed)
 
 One Cloud Run service per container, one service account per service, **no unauthenticated access**:
