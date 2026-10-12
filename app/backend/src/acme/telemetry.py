@@ -85,3 +85,33 @@ def specialist_span(name: str, journey_id: str):
     return span(
         f"acme.customer.specialist.{name}", acme__specialist=name, acme__journey_id=journey_id
     )
+
+
+# --- Cloud Trace export for the custom-template engines (#163) ---------------------------------
+TELEMETRY_ENV = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"
+
+
+def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
+    """Install a Cloud Trace exporter when the engine asks for telemetry and none exists yet.
+
+    The SDK only wires `GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY` into its `AdkApp` template;
+    our engines are custom templates, so without this their spans would never be exported.
+    `service.name` is the engine display name (the Observatory filters traces on it). Never
+    replaces an existing SDK provider. Returns True when a provider was installed.
+    """
+    if os.environ.get(TELEMETRY_ENV, "").lower() not in ("true", "1"):
+        return False
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    if isinstance(trace.get_tracer_provider(), TracerProvider):
+        return False
+    if exporter_factory is None:
+        from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+
+        exporter_factory = CloudTraceSpanExporter  # ADC; the runtime SA has cloudtrace.agent
+    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+    provider.add_span_processor(BatchSpanProcessor(exporter_factory()))
+    trace.set_tracer_provider(provider)
+    return True

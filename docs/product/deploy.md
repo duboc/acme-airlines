@@ -126,3 +126,7 @@ Known gaps to close before a real deployment (follow-ups, not done here):
    config blocks it, but an app-level check of the caller identity on `/a2a` (the `sales-agent` service
    account only) is still needed (#101).
 3. The runtime's in-process simulators must be replaced by `acme-sim` calls for a split deployment (#102).
+
+## Agent Engine
+
+The IRROPS agents can also run on Vertex AI Agent Engine, deployed by `.github/workflows/agent-engine-deploy.yml` on push to `main`. See [Agent Engine apps: Deploy](../agent-engine/engines.md#deploy) and the [platform contract](../agent-engine/platform-contract.md).
