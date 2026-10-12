@@ -19,7 +19,7 @@ IDS = ["happy-path", "declines-upgrade", "unsatisfiable-request", "seat-taken", 
        "upgrade-race"]  # fmt: skip
 STRUCTURAL = ("scenario_id", "step_index", "total_steps", "done", "journey_status", "flight",
               "seat", "offers_sent", "offer_status", "charged", "needs_human")  # fmt: skip
-SCRIPT = Path(__file__).resolve().parents[3] / "demo" / "select-engine-mode.sh"
+SCRIPT = Path(__file__).resolve().parents[4] / "app/demo/select-engine-mode.sh"
 
 
 @pytest.fixture(autouse=True)
@@ -143,19 +143,27 @@ def test_supervisor_starts_no_local_sim_or_sales_in_agent_engine_mode():
     assert child_names({"ENGINE_MODE": "agent-engine"}) == ("customer",)
 
 
+BOTH = "PORT\nAGENT_ENGINE_CUSTOMER\nAGENT_ENGINE_SALES"
+
+
 @pytest.mark.parametrize(
-    ("names", "mode"),
+    ("policy", "names", "mode"),
     [
-        ("A B", "local"),
-        ("AGENT_ENGINE_CUSTOMER", "local"),
-        ("AGENT_ENGINE_SALES\nENGINE_MODE", "local"),
-        ("PORT\nAGENT_ENGINE_CUSTOMER\nAGENT_ENGINE_SALES", "agent-engine"),
-        ("", "local"),
+        ("local", BOTH, "local"),  # the committed default: never switches
+        ("auto", BOTH, "agent-engine"),
+        ("auto", "AGENT_ENGINE_CUSTOMER", "local"),
+        ("auto", "", "local"),
+        ("", BOTH, "local"),
     ],
 )
-def test_deploy_selects_agent_engine_only_with_both_resources(names, mode):
-    out = subprocess.run(["sh", str(SCRIPT), names], capture_output=True, text=True, check=True)
-    assert out.stdout.strip() == mode
+def test_deploy_mode_selection(policy, names, mode):
+    run_ = subprocess.run(["sh", str(SCRIPT), policy, names], capture_output=True, text=True)
+    assert run_.stdout.strip() == mode
+
+
+def test_workflow_ships_hosted_engine_mode_local():
+    wf = (SCRIPT.parents[2] / ".github/workflows/irrops-deploy.yml").read_text()
+    assert "\n  HOSTED_ENGINE_MODE: local\n" in wf
 
 
 async def test_backend_logs_no_passenger_data(engine_app, caplog):

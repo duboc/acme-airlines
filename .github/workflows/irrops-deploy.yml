@@ -20,6 +20,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # `local` until #181 (phone/reset/trigger parity) lands; then flip to `auto`.
+  HOSTED_ENGINE_MODE: local
   AR_REPO: ${{ vars.IRROPS_AR_REPO }}
   SERVICE: ${{ vars.IRROPS_DEMO_SERVICE }}
   REGION: ${{ vars.OBSERVATORY_REGION }}
@@ -74,7 +76,7 @@ jobs:
         run: |
           names=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT" \
             --format=json | jq -r '.spec.template.spec.containers[0].env[]?.name')
-          mode=$(sh app/demo/select-engine-mode.sh $names)
+          mode=$(sh app/demo/select-engine-mode.sh "$HOSTED_ENGINE_MODE" $names)
           echo "ENGINE_MODE=$mode"
           gcloud run services update "$SERVICE" --update-env-vars "ENGINE_MODE=$mode" \
             --region "$REGION" --project "$PROJECT" --quiet

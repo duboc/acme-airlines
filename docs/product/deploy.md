@@ -71,9 +71,12 @@ without them the app fails at startup. In this mode the WhatsApp and trigger/res
 served yet (scenarios and journeys only).
 
 `irrops-deploy.yml` sets `ENGINE_MODE` after swapping the image, using
-`app/demo/select-engine-mode.sh`: `agent-engine` only if the Cloud Run service already has both
-`AGENT_ENGINE_*` variables, otherwise `local`. A missing or broken engine deploy therefore never
-breaks the hosted demo (tested in `tests/api/test_engine_mode.py`).
+`app/demo/select-engine-mode.sh <HOSTED_ENGINE_MODE> <service env names>`. `HOSTED_ENGINE_MODE` is
+committed in the workflow as **`local`**, which always yields `local` (the hosted demo stays on the
+in-container agents until #181 gives agent-engine mode the phone panel, reset and trigger). Setting
+it to `auto` yields `agent-engine` only if the service already has both `AGENT_ENGINE_*` variables,
+otherwise `local`, so a missing or broken engine deploy never breaks the hosted demo. Both values
+are tested in `tests/api/test_engine_mode.py`.
 
 ## Cloud Run (target, not deployed)
 
