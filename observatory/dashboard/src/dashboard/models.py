@@ -142,3 +142,17 @@ class EngineRow(BaseModel):
 class AgentEngineResponse(Envelope):
     hours: int
     engines: list[EngineRow] = []
+
+
+class CollectorRun(BaseModel):
+    ts: str
+    status: str  # "succeeded" | "failed"
+    detail: str | None = None
+
+
+class CollectorHealthResponse(Envelope):
+    """as_of is the newest collector snapshot; healthy is false (red) when it is over 15 min old."""
+
+    healthy: bool = False
+    snapshot_age_seconds: int | None = None
+    last_execution: CollectorRun | None = None

@@ -114,3 +114,46 @@ def test_unavailable_has_empty_payload(scenario_client):
     body = scenario_client("unavailable").get("/api/spend").json()
     assert body["series"] == [] and body["totals"]["total"] == 0
     assert scenario_client("unavailable").get("/api/github").json()["snapshot"] is None
+
+
+def test_collector_health_ok(client):
+    body = client.get("/api/collector-health").json()
+    assert body["state"] == "ok" and body["healthy"] is True
+    assert body["as_of"] == "2026-10-10T12:00:00Z"
+    assert body["snapshot_age_seconds"] == 30
+    assert body["last_execution"]["status"] == "succeeded"
+
+
+def test_collector_health_red_when_snapshots_older_than_15_minutes(scenario_client):
+    body = scenario_client("lagging").get("/api/collector-health").json()
+    assert body["state"] == "lagging" and body["healthy"] is False
+    assert "collector" in body["message"].lower()
+
+
+def test_collector_health_never_ran_is_red_not_silent(scenario_client):
+    body = scenario_client("empty").get("/api/collector-health").json()
+    assert body["state"] == "empty" and body["healthy"] is False
+    assert body["last_execution"] is None
+    assert "never" in body["message"].lower()
+
+
+def test_collector_health_unavailable_is_red(scenario_client):
+    body = scenario_client("unavailable").get("/api/collector-health").json()
+    assert body["state"] == "unavailable" and body["healthy"] is False
+
+
+def test_collector_health_failed_execution_is_named(client, monkeypatch):
+    from dashboard import app as app_module  # noqa: F401
+    from dashboard.app import create_app
+    from dashboard.source import FakeDataSource
+
+    class Failing(FakeDataSource):
+        def collector_runs(self, limit):
+            return [{"ts": "2026-10-10T12:00:00+00:00", "status": "failed",
+                     "detail": "Container called exit(2)."}]  # fmt: skip
+
+    from fastapi.testclient import TestClient
+
+    body = TestClient(create_app(Failing("lagging"))).get("/api/collector-health").json()
+    assert body["last_execution"]["status"] == "failed"
+    assert body["healthy"] is False and "failed" in body["message"]

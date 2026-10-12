@@ -6,6 +6,7 @@ import { BILLING_EMPTY, GITHUB_EMPTY } from './format';
 import { AgentEnginePanel } from './panels/AgentEnginePanel';
 import { AgentsBody } from './panels/AgentsPanel';
 import { GithubBody } from './panels/GithubPanel';
+import { CollectorHealth } from './CollectorHealth';
 import { useApi } from './useApi';
 
 const MODE = import.meta.env.VITE_DATA_MODE as string | undefined;
@@ -32,6 +33,7 @@ export default function App() {
           <span>Latest data {formatAsOf(newest)}</span>
         </p>
       </header>
+      <CollectorHealth />
       <main id="main" className="grid">
         <Panel id="spend" title="Spend" result={spend} emptyMessage={BILLING_EMPTY}>
           {(d) => <SpendBody data={d} />}
