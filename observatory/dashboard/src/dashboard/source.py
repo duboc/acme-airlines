@@ -24,6 +24,10 @@ class SourceEmpty(Exception):
     """Nothing to read yet, with a reason for the UI (e.g. billing export not enabled)."""
 
 
+class TraceNotGranted(Exception):
+    """The dashboard SA may not read Cloud Trace (needs ``cloudtrace.user``, issue #158)."""
+
+
 class DataSource(Protocol):
     def now(self) -> datetime: ...
     def billing_rows(self, start: date) -> Rows: ...
@@ -32,6 +36,9 @@ class DataSource(Protocol):
     def github_snapshots(self) -> Rows: ...
     def merges_per_day(self, days: int) -> Rows: ...
     def guard_logs(self, limit: int) -> Rows: ...
+    def agent_engines(self) -> Rows: ...  # [{name, engine_id}]
+    def agent_engine_metrics(self, engine_id: str, hours: int) -> dict: ...
+    def agent_engine_traces(self, name: str, limit: int) -> Rows: ...  # may raise TraceNotGranted
 
 
 FIXTURES = Path(
@@ -81,3 +88,16 @@ class FakeDataSource:
 
     def guard_logs(self, limit: int) -> Rows:
         return self._read("guard_logs")[-limit:]
+
+    def _engine_data(self) -> dict:
+        data = self._read("agent_engine")
+        return data or {"engines": [], "metrics": {}, "traces": {}}
+
+    def agent_engines(self) -> Rows:
+        return self._engine_data()["engines"]
+
+    def agent_engine_metrics(self, engine_id: str, hours: int) -> dict:
+        return self._engine_data()["metrics"][engine_id]
+
+    def agent_engine_traces(self, name: str, limit: int) -> Rows:
+        return self._engine_data()["traces"].get(name, [])[:limit]

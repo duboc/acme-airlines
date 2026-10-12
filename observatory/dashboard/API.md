@@ -75,6 +75,29 @@ is ascending, up to 14 days.
 `mtd_usd` is billing spend since the 1st (UTC). `guard_actions`: up to 20 most recent budget-guard
 log lines, newest first; `action` is `no action | agents suspended`. `budget_usd` comes from `BUDGET_USD`.
 
+## `GET /api/agent-engine?hours=1` (1..168)
+```json
+{"state":"ok","as_of":"2026-10-10T12:00:30Z","message":null,"hours":1,
+ "engines":[{"name":"acme-customer-agent","engine_id":"1111111111","requests":200,"errors":10,
+   "error_rate":0.05,"latency_p50_ms":850.0,"latency_p95_ms":2400.0,"trace_access":"granted",
+   "traces":[{"trace_id":"4bf9...","name":"invoke_agent","start_time":"2026-10-10T11:58:00Z",
+     "duration_ms":1830.5,"status":"ok",
+     "console_url":"https://console.cloud.google.com/traces/list?project=acme-airlines-factory&tid=4bf9..."}]}]}
+```
+- **Discovery:** from config, not the `aiplatform` list API (the dashboard SA has no `aiplatform.viewer`).
+  Set `AGENT_ENGINES="acme-customer-agent=<reasoning_engine_id>,acme-sales-agent=<id>"` on the service.
+  No config means `state: "empty"` and `engines: []`.
+- **Monitoring** (resource `aiplatform.googleapis.com/ReasoningEngine`, filtered by
+  `resource.labels.reasoning_engine_id`): `aiplatform.googleapis.com/reasoning_engine/request_count`
+  (label `response_code`; `errors` = non-2xx, `error_rate = errors / requests`, null with no requests) and
+  `.../reasoning_engine/request_latencies` (ms; `ALIGN_PERCENTILE_50/95` over the window). If several series
+  match, the largest percentile is shown. Confirm the metric types against the live project on first deploy.
+- **Traces** (Cloud Trace v1, root spans, last 24h, newest first, up to 10): filter `+service.name:"<display name>"`.
+  Only trace id, root span name, start, duration and status (`error` if the span has an error label) are
+  returned; no span attribute values.
+- **Degradation:** if Trace returns 403 (the SA lacks `cloudtrace.user`, issue #158) the engine has
+  `"traces": null, "trace_access": "not_granted"`; metrics still return.
+
 ## Fake mode and scenarios
 
 `OBSERVATORY_DATA=fake` reads `observatory/fixtures/` (override with `OBSERVATORY_FIXTURES`), with a

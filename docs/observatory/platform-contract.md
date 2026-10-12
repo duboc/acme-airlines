@@ -39,6 +39,7 @@ observatory/
 | `billing_export` (US) | Cloud Billing **standard usage cost export** | Table `gcp_billing_export_v1_<BILLING_ACCOUNT_ID with _>`. **Data lags a few hours to a day.** The table appears only after the product owner turns on the export. Handle "table not found" gracefully. |
 | `factory_ops` (US) | the collector (you create the tables) | Suggested: `agent_snapshots` (ts, name, template, role, tier, phase, activity, container_status, started_at, last_activity, harness, model) and `github_snapshots` (ts, issues by status/label, open PRs, merges in the last 24h, latest verdict per PR, CI conclusion counts). Partition by `DATE(ts)`. |
 | Cloud Monitoring | Vertex AI | `aiplatform.googleapis.com/publisher/online_serving/token_count`, `…/model_invocation_count` (labels include the model). Query with the Monitoring API using the dashboard SA. |
+| Cloud Monitoring / Cloud Trace | Agent Engine | `GET /api/agent-engine`: `aiplatform.googleapis.com/reasoning_engine/request_count` and `request_latencies`, plus Cloud Trace root spans. Engines come from the `AGENT_ENGINES` env var (`name=reasoning_engine_id,...`). **Trace needs `cloudtrace.user` on the dashboard SA (#158)**; until then the API reports `trace_access: "not_granted"` and still serves metrics. See `observatory/dashboard/API.md`. |
 | Cloud Logging | budget guard | `resource.labels.service_name="acme-budget-guard"`, `textPayload:"cost="`. Each line reads `cost=X budget=Y -> no action|agents suspended`. |
 
 ## Environment variables (set on the placeholders; keep them when deploying)
