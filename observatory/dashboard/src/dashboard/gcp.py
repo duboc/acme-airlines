@@ -13,9 +13,9 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from functools import wraps
 
-from google.api_core.exceptions import NotFound
+from google.api_core.exceptions import Forbidden, NotFound
 
-from .source import Rows, SourceEmpty, SourceUnavailable
+from .source import Rows, SourceEmpty, SourceUnavailable, TraceNotGranted
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +27,9 @@ GUARD_FILTER = (
     'resource.labels.service_name="acme-budget-guard" AND textPayload:"cost=" '
     'AND timestamp>="{since}"'
 )
+ENGINE_REQUESTS = "aiplatform.googleapis.com/reasoning_engine/request_count"  # label response_code
+ENGINE_LATENCY = "aiplatform.googleapis.com/reasoning_engine/request_latencies"  # ms distribution
+ENGINE_LABEL = "resource.labels.reasoning_engine_id"
 TABLE_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
@@ -54,7 +57,7 @@ def guarded(what: str):
                 return hit[1]
             try:
                 value = fn(self, *args)
-            except (SourceEmpty, SourceUnavailable):
+            except (SourceEmpty, SourceUnavailable, TraceNotGranted):
                 raise
             except Exception as e:
                 log.warning("%s failed: %s", what, type(e).__name__)
@@ -77,6 +80,8 @@ class GcpDataSource:
         billing_dataset: str = "billing_export",
         ops_dataset: str = "factory_ops",
         ttl: float = 60.0,
+        engines: dict[str, str] | None = None,
+        trace_client=None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -84,13 +89,18 @@ class GcpDataSource:
         self._billing_ds, self._ops_ds = billing_dataset, ops_dataset
         self._ttl, self.now, self._monotonic = ttl, now, monotonic
         self._cache: dict = {}
+        self._engines, self._trace = engines or {}, trace_client
 
     @classmethod
     def from_env(cls) -> "GcpDataSource":
-        from google.cloud import bigquery, monitoring_v3
+        from google.cloud import bigquery, monitoring_v3, trace_v1
         from google.cloud import logging as cloud_logging
 
         project = os.environ["PROJECT_ID"]
+        pairs = (
+            p.split("=", 1) for p in os.environ.get("AGENT_ENGINES", "").split(",") if "=" in p
+        )
+        engines = {n.strip(): i.strip() for n, i in pairs}
         return cls(
             project,
             bigquery.Client(project=project),
@@ -98,6 +108,8 @@ class GcpDataSource:
             cloud_logging.Client(project=project),
             os.environ.get("BILLING_DATASET", "billing_export"),
             os.environ.get("OPS_DATASET", "factory_ops"),
+            engines=engines,
+            trace_client=trace_v1.TraceServiceClient(),
         )
 
     def _query(self, sql: str, **params) -> Rows:
@@ -198,3 +210,87 @@ class GcpDataSource:
             for e in entries
             if isinstance(e.payload, str)
         ]
+
+    def agent_engines(self) -> Rows:
+        return [{"name": n, "engine_id": i} for n, i in self._engines.items()]
+
+    @guarded("Agent Engine metrics")
+    def agent_engine_metrics(self, engine_id: str, hours: int) -> dict:
+        from google.cloud import monitoring_v3
+
+        end = self.now()
+        interval = monitoring_v3.TimeInterval(end_time=end, start_time=end - timedelta(hours=hours))
+        flt = f'metric.type="{{}}" AND {ENGINE_LABEL}="{engine_id}"'
+        aligner = monitoring_v3.Aggregation.Aligner
+
+        def series(metric: str, per_series, reducer=None, group=()):
+            agg = monitoring_v3.Aggregation(
+                alignment_period={"seconds": hours * 3600},
+                per_series_aligner=per_series,
+                cross_series_reducer=reducer or monitoring_v3.Aggregation.Reducer.REDUCE_NONE,
+                group_by_fields=list(group),
+            )
+            request = {
+                "name": f"projects/{self._project}",
+                "filter": flt.format(metric),
+                "interval": interval,
+                "aggregation": agg,
+            }
+            return list(self._mon.list_time_series(request=request))
+
+        requests = errors = 0
+        sum_reducer = monitoring_v3.Aggregation.Reducer.REDUCE_SUM
+        for ts in series(
+            ENGINE_REQUESTS, aligner.ALIGN_SUM, sum_reducer, ["metric.label.response_code"]
+        ):
+            n = sum(p.value.int64_value for p in ts.points)
+            requests += n
+            if not str(ts.metric.labels.get("response_code", "")).startswith("2"):
+                errors += n
+        out = {"requests": requests, "errors": errors}
+        for key, al in (
+            ("p50_ms", aligner.ALIGN_PERCENTILE_50),
+            ("p95_ms", aligner.ALIGN_PERCENTILE_95),
+        ):
+            # percentiles cannot be combined across series; report the worst series (conservative)
+            vals = [
+                ts.points[0].value.double_value for ts in series(ENGINE_LATENCY, al) if ts.points
+            ]
+            out[key] = max(vals) if vals else None
+        return out
+
+    @guarded("Agent Engine traces")
+    def agent_engine_traces(self, name: str, limit: int) -> Rows:
+        from google.cloud import trace_v1
+
+        end = self.now()
+        request = {
+            "project_id": self._project,
+            "view": trace_v1.ListTracesRequest.ViewType.ROOTSPAN,
+            "start_time": end - timedelta(hours=24),
+            "end_time": end,
+            "filter": f'+service.name:"{name}"',
+            "order_by": "start desc",
+            "page_size": limit,
+        }
+        try:
+            traces = list(self._trace.list_traces(request=request))[:limit]
+        except Forbidden as e:  # also covers gRPC PermissionDenied
+            raise TraceNotGranted("cloudtrace.user is not granted to the dashboard SA") from e
+        rows = []
+        for t in traces:
+            root = t.spans[0] if t.spans else None
+            if root is None:
+                continue
+            ms = (root.end_time - root.start_time).total_seconds() * 1000
+            failed = root.labels.get("error") == "true" or "error" in root.labels
+            rows.append(
+                {
+                    "trace_id": t.trace_id,
+                    "name": root.name,
+                    "start_time": root.start_time.isoformat(),
+                    "duration_ms": ms,
+                    "status": "error" if failed else "ok",
+                }
+            )
+        return rows

@@ -5,10 +5,13 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
 from .models import (
+    AgentEngineResponse,
     AgentRow,
     AgentsResponse,
     BudgetResponse,
     Count,
+    EngineRow,
+    EngineTrace,
     GithubResponse,
     GithubSnapshot,
     GuardAction,
@@ -20,7 +23,7 @@ from .models import (
     SpendDay,
     SpendResponse,
 )
-from .source import DataSource, SourceEmpty, SourceUnavailable
+from .source import DataSource, SourceEmpty, SourceUnavailable, TraceNotGranted
 
 BILLING_LAG = timedelta(days=2)  # billing export lags up to a day; older than 2 days is stale
 SNAPSHOT_LAG = timedelta(minutes=15)  # the collector runs every 5 minutes
@@ -232,3 +235,46 @@ def budget(src: DataSource, budget_usd: float) -> BudgetResponse:
         ],  # fmt: skip
         guard_actions=actions,
     )
+
+
+TRACE_URL = "https://console.cloud.google.com/traces/list?project={project}&tid={tid}"
+
+
+def agent_engine(src: DataSource, hours: int, project: str, trace_limit: int = 10):
+    try:
+        engines = src.agent_engines()
+        if not engines:
+            return AgentEngineResponse(
+                state="empty", hours=hours, message="No Agent Engines deployed yet."
+            )
+        rows = []
+        for e in engines:
+            m = src.agent_engine_metrics(e["engine_id"], hours)
+            try:
+                traces = [
+                    EngineTrace(
+                        **{**t, "start_time": _iso_str(t["start_time"])},
+                        console_url=TRACE_URL.format(project=project, tid=t["trace_id"]),
+                    )
+                    for t in src.agent_engine_traces(e["name"], trace_limit)
+                ]
+                access = "granted"
+            except TraceNotGranted:
+                traces, access = None, "not_granted"
+            total = m["requests"]
+            rows.append(
+                EngineRow(
+                    name=e["name"],
+                    engine_id=e["engine_id"],
+                    requests=total,
+                    errors=m["errors"],
+                    error_rate=m["errors"] / total if total else None,
+                    latency_p50_ms=m["p50_ms"],
+                    latency_p95_ms=m["p95_ms"],
+                    trace_access=access,
+                    traces=traces,
+                )
+            )
+    except SourceUnavailable as e:
+        return AgentEngineResponse(state="unavailable", hours=hours, message=str(e))
+    return AgentEngineResponse(state="ok", as_of=iso(src.now()), hours=hours, engines=rows)
