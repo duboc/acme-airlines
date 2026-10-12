@@ -256,7 +256,7 @@ def agent_engine(src: DataSource, hours: int, project: str, trace_limit: int = 1
                         **{**t, "start_time": _iso_str(t["start_time"])},
                         console_url=TRACE_URL.format(project=project, tid=t["trace_id"]),
                     )
-                    for t in src.agent_engine_traces(e["name"], trace_limit)
+                    for t in src.agent_engine_traces(e["name"], trace_limit, hours)
                 ]
                 access = "granted"
             except TraceNotGranted:
