@@ -109,6 +109,36 @@ gh_var() {
   return 1
 }
 
+# engines_ok <reasoningEngines-list-json>: exactly one acme-customer-agent and one
+# acme-sales-agent, both running as acme-agent-engine, with no reserved GOOGLE_CLOUD_* env.
+engines_ok() {
+  local j="$1" sa="acme-agent-engine@acme-airlines-factory.iam.gserviceaccount.com" n bad
+  for n in acme-customer-agent acme-sales-agent; do
+    [[ "$(jq --arg n "${n}" '[.reasoningEngines[]? | select(.displayName==$n)] | length' <<<"${j}")" == 1 ]] \
+      || { echo "expected exactly one engine '${n}'"; return 1; }
+  done
+  bad="$(jq -r --arg sa "${sa}" '[.reasoningEngines[]? | select(.displayName|startswith("acme-"))
+          | select((.spec.serviceAccount // "") != $sa) | .displayName] | join(",")' <<<"${j}")"
+  [[ -z "${bad}" ]] || { echo "engines not running as acme-agent-engine: ${bad}"; return 1; }
+  bad="$(jq -r '[.reasoningEngines[]? | .spec.deploymentSpec.env[]? | .name | select(startswith("GOOGLE_CLOUD_"))] | join(",")' <<<"${j}")"
+  [[ -z "${bad}" ]] || { echo "reserved env vars on engines: ${bad}"; return 1; }
+  echo "engines: $(jq -r '[.reasoningEngines[]? | .displayName] | join(", ")' <<<"${j}")"
+}
+
+# agent_traces_ok <cloudtrace-v1-list-json>: at least one trace containing an ADK agent span
+# (invoke_agent / call_llm / execute_tool), as opposed to plain Cloud Run request spans.
+agent_traces_ok() {
+  local n
+  n="$(jq '[.traces[]? | select([.spans[]?.name] | any(test("^(invoke_agent|call_llm|execute_tool|agent_run)")))] | length' <<<"$1")"
+  (( n > 0 )) || { echo "no ADK agent spans"; return 1; }
+  echo "${n} traces with agent spans"
+}
+
+_gapi() {  # _gapi <url>: GET with the operator's gcloud token
+  curl -s -H "Authorization: Bearer $(gcloud auth print-access-token 2>/dev/null)" \
+       -H "x-goog-user-project: ${PROJECT_ID}" "$1"
+}
+
 check_project() {
   gcloud projects describe "${PROJECT_ID}" --format='value(projectId)' >/dev/null 2>&1 \
     || { fail project "project ${PROJECT_ID} not found"; return 1; }
@@ -371,6 +401,26 @@ check_agent_engine() {
   [[ -z "${missing}" ]] || { fail agent-engine "missing:${missing}"; return 1; }
   pass agent-engine
 }
+check_engines() {
+  local msg
+  if msg="$(engines_ok "$(_gapi "https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/reasoningEngines")")"; then
+    pass "engines (${msg})"; else fail engines "${msg}"; fi
+}
+check_traces() {
+  # Agent spans in Cloud Trace within the last 24h.
+  local start msg
+  start="$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+  if msg="$(agent_traces_ok "$(_gapi "https://cloudtrace.googleapis.com/v1/projects/${PROJECT_ID}/traces?view=COMPLETE&pageSize=100&startTime=${start}")")"; then
+    pass "traces (${msg})"; else fail traces "${msg} in the last 24h"; fi
+}
+check_demo_engine() {
+  # The hosted demo is configured to drive the deployed engines.
+  local env
+  env="$(gcloud run services describe acme-irrops-demo --region="${REGION}" --project="${PROJECT_ID}" --format=json 2>/dev/null \
+         | jq -r '[.spec.template.spec.containers[0].env[]? | "\(.name)=\(.value // "")"] | join(" ")')"
+  [[ "${env}" == *"ENGINE_MODE=agent-engine"* ]] || { fail demo-engine "demo ENGINE_MODE is not agent-engine (${env})"; return 1; }
+  pass "demo-engine"
+}
 check_lead() {
   # The lead agent's container is running on the VM.
   vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
@@ -397,9 +447,16 @@ run() {
     irrops-demo)  check_irrops_demo ;;
     iap-oauth)    check_iap_oauth ;;
     agent-engine) check_agent_engine ;;
+    engines)      check_engines ;;
+    traces)       check_traces ;;
+    demo-engine)  check_demo_engine ;;
     all)
       local rc=0
       for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth agent-engine; do run "$c" || rc=1; done
+      return "$rc" ;;
+    e2e)
+      local rc=0
+      for c in lead loop engines traces demo-engine; do run "$c" || rc=1; done
       return "$rc" ;;
     *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|all>" >&2; return 2 ;;
   esac
