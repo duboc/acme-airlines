@@ -352,6 +352,21 @@ check_agent_engine() {
   gcloud iam service-accounts get-iam-policy "${rt}" --project="${p}" --format=json 2>/dev/null \
     | jq -e '.bindings[]? | select(.role=="roles/iam.serviceAccountUser") | .members | index("serviceAccount:acme-observatory-deployer@'"${p}"'.iam.gserviceaccount.com")' >/dev/null \
     || missing+=" deployer-actAs-acme-agent-engine"
+  # Bucket-level: the Vertex SDK calls storage.buckets.get before uploading (#186).
+  local bpol
+  bpol="$(gcloud storage buckets get-iam-policy "gs://${p}-agent-engine" --format=json 2>/dev/null)"
+  jq -e --arg m "serviceAccount:acme-observatory-deployer@${p}.iam.gserviceaccount.com" \
+     '.bindings[] | select(.role=="roles/storage.legacyBucketReader") | .members | index($m)' <<<"${bpol}" >/dev/null \
+    || missing+=" legacyBucketReader->deployer(bucket)"
+  # Once the Reasoning Engine service agent exists, it must be able to mint tokens for the runtime SA.
+  local re pnum
+  pnum="$(gcloud projects describe "${p}" --format='value(projectNumber)')"
+  re="service-${pnum}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+  if jq -e --arg m "serviceAccount:${re}" '.bindings[] | .members | index($m)' <<<"${bpol}" >/dev/null; then
+    gcloud iam service-accounts get-iam-policy "${rt}" --project="${p}" --format=json 2>/dev/null \
+      | jq -e --arg m "serviceAccount:${re}" '.bindings[]? | select(.role=="roles/iam.serviceAccountTokenCreator") | .members | index($m)' >/dev/null \
+      || missing+=" tokenCreator(re-agent)->acme-agent-engine"
+  fi
   gh_var AGENT_ENGINE_SA || missing+=" gh-var:AGENT_ENGINE_SA"
   [[ -z "${missing}" ]] || { fail agent-engine "missing:${missing}"; return 1; }
   pass agent-engine

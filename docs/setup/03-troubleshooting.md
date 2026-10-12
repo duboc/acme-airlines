@@ -150,3 +150,19 @@ seconds after `service-accounts create`.
 **Cause:** IAM eventual consistency.
 
 **Fix:** `retry` with backoff around IAM calls in `95-agent-engine-platform.sh`.
+
+## Agent Engine deploy: 403 on the staging bucket (issue #186)
+
+**Symptom:** the `Agent Engine Deploy` workflow failed before creating any
+engine, with 403 Forbidden from Cloud Storage.
+
+**Root cause:** the Vertex AI SDK calls `storage.buckets.get` (bucket metadata)
+before uploading engine packages (`_get_gcs_bucket()`). The deployer only had
+`roles/storage.objectAdmin` on the bucket, and that role has no bucket-level
+permissions. The team diagnosed this correctly.
+
+**Fix:** `roles/storage.legacyBucketReader` (`buckets.get` and list, read-only,
+this bucket only) for `acme-observatory-deployer`, codified in
+`infra/95-agent-engine-platform.sh`. `verify.sh agent-engine` now asserts it.
+The same run also added the deferred Reasoning Engine service-agent token
+creation on `acme-agent-engine`.

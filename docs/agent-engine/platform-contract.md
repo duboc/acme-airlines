@@ -17,7 +17,7 @@ This is what the team can rely on for running the IRROPS ADK agents on
 | Model endpoint | Vertex AI **`global`**, unchanged (`GOOGLE_CLOUD_LOCATION=global` inside the agent code for `google-genai`/ADK) |
 | Runtime service account | `acme-agent-engine@acme-airlines-factory.iam.gserviceaccount.com`. Deploy engines with `service_account=` set to it. It has `aiplatform.user`, `cloudtrace.agent`, `logging.logWriter` and `monitoring.metricWriter`. |
 | Staging bucket | `gs://acme-airlines-factory-agent-engine` |
-| Deployer (GitHub Actions, WIF) | the existing `vars.OBSERVATORY_WIF_PROVIDER` + `vars.OBSERVATORY_DEPLOYER_SA`. It can create/update reasoning engines, write to the staging bucket, and act as the runtime SA. |
+| Deployer (GitHub Actions, WIF) | the existing `vars.OBSERVATORY_WIF_PROVIDER` + `vars.OBSERVATORY_DEPLOYER_SA`. It can create/update reasoning engines, write to the staging bucket and read its metadata (`legacyBucketReader`, since the SDK calls `buckets.get`; #186), and act as the runtime SA. |
 | Querying engines | `acme-irrops-demo` (the Cloud Run SA) has `aiplatform.user`. The demo API calls the engines with ADC. |
 | GitHub variables | `AGENT_ENGINE_SA`, `AGENT_ENGINE_STAGING_BUCKET`, `AGENT_ENGINE_LOCATION` |
 

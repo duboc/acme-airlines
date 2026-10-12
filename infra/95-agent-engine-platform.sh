@@ -5,7 +5,8 @@
 #   Runtime SA       acme-agent-engine: aiplatform.user (Gemini, global), cloudtrace.agent,
 #                    logging.logWriter, monitoring.metricWriter. Nothing else.
 #   Deployer (WIF)   acme-observatory-deployer: aiplatform.user (create/update reasoning engines),
-#                    storage.objectAdmin on the staging bucket, actAs acme-agent-engine
+#                    storage.objectAdmin + storage.legacyBucketReader (buckets.get, #186) on the
+#                    staging bucket, actAs acme-agent-engine
 #   Service agent    service-<num>@gcp-sa-aiplatform-re: objectViewer on the bucket and
 #                    TokenCreator on acme-agent-engine (needed to run engines as a custom SA)
 #   Demo SA          acme-irrops-demo: aiplatform.user (query the engines via stream_query)
@@ -46,6 +47,10 @@ log "Deployer (WIF) permissions"
 proj_role "${SA_DEPL}" roles/aiplatform.user
 retry gcloud storage buckets add-iam-policy-binding "${BUCKET}" --member="serviceAccount:${SA_DEPL}" \
   --role=roles/storage.objectAdmin --format=none
+# The Vertex AI SDK reads bucket metadata (storage.buckets.get) before uploading engine
+# packages; objectAdmin has no bucket-level permissions (#186). Read-only, this bucket only.
+retry gcloud storage buckets add-iam-policy-binding "${BUCKET}" --member="serviceAccount:${SA_DEPL}" \
+  --role=roles/storage.legacyBucketReader --format=none
 retry gcloud iam service-accounts add-iam-policy-binding "${SA_RT}" --project="${P}" \
   --member="serviceAccount:${SA_DEPL}" --role=roles/iam.serviceAccountUser --format=none
 
