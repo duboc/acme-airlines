@@ -20,6 +20,7 @@ from acme.domain.models import CabinInventory, Offer, Tier
 from acme.policy.margin_opt import recovery_quote
 from acme.sales.client import CustomerPort
 from acme.sim.client import SimClient, ToolError
+from acme.telemetry import span
 
 CABIN = "premium_business"
 COURTESY_TIER: Tier = "diamond"
@@ -50,7 +51,8 @@ class SalesRadar:
             if offer is None:
                 continue
             self._sent.add(key)  # at most once per run, even if the proposal fails
-            await self._customer.propose_offer(offer)
+            with span("acme.sales.pitch", acme__journey_id=journey_id, acme__flight=flight):
+                await self._customer.propose_offer(offer)
             proposed.append(offer)
         return proposed
 

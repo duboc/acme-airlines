@@ -11,6 +11,7 @@ from acme.customer.specialists.irrops import IrropsRebooking, RebookRequest
 from acme.customer.specialists.seat import SeatRequest, SeatSpecialist
 from acme.policy.connection_check import check_connection
 from acme.sim.client import SimClient
+from acme.telemetry import specialist_span
 
 if TYPE_CHECKING:
     from acme.customer.runtime import JourneyRecord
@@ -40,30 +41,34 @@ async def rebuild_journey(
         )
     onward_departure = datetime.fromisoformat(onward["scheduled_departure"]) if onward else None
 
-    rebook = await IrropsRebooking(client).handle(
-        RebookRequest(
-            pnr=rec.pnr_locator, origin=cancelled["origin"], destination=cancelled["destination"],
-            after=datetime.fromisoformat(cancelled["scheduled_departure"]),
-            onward_departure=onward_departure,
-        ),
-        emit_as("irrops_rebooking"),
-    )  # fmt: skip
+    with specialist_span("irrops_rebooking", state.journey_id):
+        rebook = await IrropsRebooking(client).handle(
+            RebookRequest(
+                pnr=rec.pnr_locator, origin=cancelled["origin"],
+                destination=cancelled["destination"],
+                after=datetime.fromisoformat(cancelled["scheduled_departure"]),
+                onward_departure=onward_departure,
+            ),
+            emit_as("irrops_rebooking"),
+        )  # fmt: skip
     if rebook.status != "rebooked":
         return RebuildResult(new_flight=None, seat_done=False, bag_done=False)
 
     seat_done = old_seat is None  # nothing to carry over
     if old_seat:
-        seat = await SeatSpecialist(client).handle(
-            SeatRequest(
-                pnr=rec.pnr_locator, flight=rebook.flight, preferred_seat=old_seat, tier=tier
-            ),
-            emit_as("seat"),
-        )  # fmt: skip
+        with specialist_span("seat", state.journey_id):
+            seat = await SeatSpecialist(client).handle(
+                SeatRequest(
+                    pnr=rec.pnr_locator, flight=rebook.flight, preferred_seat=old_seat, tier=tier
+                ),
+                emit_as("seat"),
+            )  # fmt: skip
         seat_done = seat.status == "assigned"
     tags = [b["tag"] for b in pnr["bags"]]
-    bags = await BaggageSpecialist(client).handle(
-        BagRequest(flight=rebook.flight, tags=tags), emit_as("baggage")
-    )
+    with specialist_span("baggage", state.journey_id):
+        bags = await BaggageSpecialist(client).handle(
+            BagRequest(flight=rebook.flight, tags=tags), emit_as("baggage")
+        )
     bag_done = set(bags.rerouted) == set(tags)
     if onward and onward_departure and rebook.arrival:
         check = check_connection(onward["origin"], rebook.arrival, onward_departure)

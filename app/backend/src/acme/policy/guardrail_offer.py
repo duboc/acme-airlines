@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from acme.domain.journey import DisruptionStatus, JourneyState
 from acme.domain.models import CabinInventory, Offer
 from acme.policy.margin_opt import recovery_quote
+from acme.telemetry import set_attributes, span
 
 _BLOCKING_OTHER_STATUSES = frozenset({"approved", "sent", "accepted", "declined"})
 
@@ -115,3 +116,23 @@ def evaluate(journey: JourneyState, offer: Offer, inventory: CabinInventory) -> 
     rule("origin_and_flight_verified", f6)
 
     return GuardrailDecision(approved=not failed, reasons=failed if failed else ok)
+
+
+def evaluate_traced(
+    journey: JourneyState, offer: Offer, inventory: CabinInventory, step: str
+) -> GuardrailDecision:
+    """`evaluate` inside an `acme.guardrail.decision` span (decision + first reason code only).
+    `step` names the call site: propose, send, accept or recheck."""
+    with span(
+        "acme.guardrail.decision",
+        acme__journey_id=journey.journey_id,
+        acme__flight=offer.flight,
+        acme__step=step,
+    ) as s:
+        decision = evaluate(journey, offer, inventory)
+        set_attributes(
+            s,
+            acme__guardrail__decision="approve" if decision.approved else "reject",
+            acme__guardrail__reason_code=decision.reasons[0],
+        )
+        return decision
