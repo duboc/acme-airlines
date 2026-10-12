@@ -64,6 +64,7 @@ default config is never changed.
   metadata token.
 
 ### 4–5. Access
+The full guide is [09-iap.md](09-iap.md).
 - **External domains:** Google-managed IAP OAuth clients admit **only users
   inside the project's org**. For external domains, configure a **custom OAuth
   client**:
