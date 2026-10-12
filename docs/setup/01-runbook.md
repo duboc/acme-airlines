@@ -285,11 +285,10 @@ troubleshooting). One-time console steps (they can't be scripted), in project
    Create it, then add this authorized redirect URI:
    `https://iap.googleapis.com/v1/oauth/clientIds/<CLIENT_ID>:handleRedirect`.
    Copy the client ID and secret.
-4. Apply the client to both IAP services. The secret goes over stdin and is
-   kept in Secret Manager:
+4. Apply the client to both IAP services. The script prompts for the client
+   ID (shown) and the secret (hidden), and stores both in Secret Manager:
    ```bash
-   read -rs SECRET && printf '%s' "$SECRET" | \
-     IAP_CLIENT_ID=<CLIENT_ID> infra/55-iap-oauth-client.sh; unset SECRET
+   infra/55-iap-oauth-client.sh
    ```
 
 Check: `infra/verify.sh iap-oauth`. Re-apply after a hub re-deploy with

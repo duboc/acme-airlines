@@ -11,7 +11,7 @@
 #   https://iap.googleapis.com/v1/oauth/clientIds/<CLIENT_ID>:handleRedirect
 #
 # Usage (secret via stdin, never argv):
-#   read -rs SECRET && printf '%s' "$SECRET" | IAP_CLIENT_ID=<id>.apps.googleusercontent.com infra/55-iap-oauth-client.sh; unset SECRET
+#   infra/55-iap-oauth-client.sh               # prompts for client ID and (hidden) secret
 #   infra/55-iap-oauth-client.sh --reapply     # re-apply from Secret Manager (e.g. after a re-deploy)
 set -euo pipefail
 # shellcheck source=infra/lib.sh
@@ -25,9 +25,17 @@ ensure_secret() { gcloud secrets describe "$1" --project="${P}" >/dev/null 2>&1 
   gcloud secrets create "$1" --project="${P}" --replication-policy=automatic; }
 
 if [[ "${1:-}" != "--reapply" ]]; then
+  if [[ -t 0 ]]; then
+    # Interactive: prompt (client ID visible, secret hidden). Nothing lands in argv or history.
+    [[ -n "${IAP_CLIENT_ID:-}" ]] || read -rp "OAuth client ID (ends with .apps.googleusercontent.com): " IAP_CLIENT_ID
+    read -rsp "OAuth client secret (hidden): " SECRET; echo
+  else
+    SECRET="$(cat)"
+  fi
   : "${IAP_CLIENT_ID:?set IAP_CLIENT_ID=<id>.apps.googleusercontent.com}"
-  [[ "${IAP_CLIENT_ID}" == *.apps.googleusercontent.com ]] || { echo "IAP_CLIENT_ID looks wrong" >&2; exit 1; }
-  SECRET="$(cat)"; [[ -n "${SECRET}" ]] || { echo "client secret expected on stdin" >&2; exit 1; }
+  IAP_CLIENT_ID="$(printf '%s' "${IAP_CLIENT_ID}" | tr -d '[:space:]')"
+  [[ "${IAP_CLIENT_ID}" == *.apps.googleusercontent.com ]] || { echo "client ID must end with .apps.googleusercontent.com" >&2; exit 1; }
+  [[ -n "${SECRET}" ]] || { echo "client secret is empty" >&2; exit 1; }
   ensure_secret "${ID_SECRET}"; ensure_secret "${SECRET_SECRET}"
   printf '%s' "${IAP_CLIENT_ID}" | gcloud secrets versions add "${ID_SECRET}" --project="${P}" --data-file=- --format=none
   printf '%s' "${SECRET}" | gcloud secrets versions add "${SECRET_SECRET}" --project="${P}" --data-file=- --format=none
