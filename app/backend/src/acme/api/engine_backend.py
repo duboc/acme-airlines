@@ -12,18 +12,36 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from collections.abc import AsyncIterator, Mapping
 from typing import Any, Protocol
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from acme.api.app import JourneyDetail, JourneySummary
+from acme.api.app import (
+    ActionResult,
+    JourneyDetail,
+    JourneySummary,
+    PassengerAction,
+    PassengerReply,
+    TriggerCancellation,
+    TriggerResult,
+)
 from acme.api.events import TimelineEvent
 from acme.api.scenarios import BY_ID, PresetView, ScenarioState
+from acme.customer.runtime import WhatsAppMessage
 
 ENV_CUSTOMER, ENV_SALES = "AGENT_ENGINE_CUSTOMER", "AGENT_ENGINE_SALES"
-ASYNC_OPS = {"scenario_step", "journey_detail", "a2a_skill"}  # registered with mode "async"
+ASYNC_OPS = {
+    "scenario_step",
+    "journey_detail",
+    "a2a_skill",
+    "trigger_cancellation",
+    "whatsapp_messages",
+    "whatsapp_reply",
+    "whatsapp_action",
+}  # registered with mode "async"
 POLL_SECONDS = 0.5
 
 
@@ -58,13 +76,26 @@ class _AdcEngine:
 
 
 def _resource(env: Mapping[str, str], key: str) -> str:
+    """The full resource name, pinned to our project and the engine location (fail fast)."""
+    project = re.escape(env.get("GOOGLE_CLOUD_PROJECT") or "acme-airlines-factory")
+    location = re.escape(env.get("AGENT_ENGINE_LOCATION") or "us-central1")
     value = env.get(key, "")
-    if not value.startswith("projects/") or "/reasoningEngines/" not in value:
+    if not re.fullmatch(
+        rf"projects/({project}|\d+)/locations/{location}/reasoningEngines/\d+", value
+    ):
         raise EngineConfigError(
-            f"ENGINE_MODE=agent-engine needs {key} set to the full engine resource name "
-            "(projects/<p>/locations/<l>/reasoningEngines/<id>); it is written by the deploy."
+            f"ENGINE_MODE=agent-engine needs {key} set to the engine resource name "
+            f"projects/<{project} or its number>/locations/{location}/reasoningEngines/<digits>; "
+            "it is written by the deploy."
         )
     return value
+
+
+def ok(reply: Any) -> Any:
+    """Engine ops return API errors as data (`{"error": {"status", "detail"}}`): re-raise them."""
+    if isinstance(reply, dict) and "error" in reply:
+        raise HTTPException(reply["error"]["status"], reply["error"]["detail"])
+    return reply
 
 
 class EngineBackend:
@@ -110,6 +141,14 @@ class EngineBackend:
     async def journey_events(self, journey_id: str, since: int = 0) -> list[dict]:
         return await self._customer.call("journey_events", journey_id=journey_id, since=since)
 
+    async def reset(self) -> dict:
+        self._active = None
+        return await self._customer.call("reset")
+
+    async def api(self, op: str, **kwargs: Any) -> Any:
+        """Phone panel and trigger ops, which return API errors as data."""
+        return ok(await self._customer.call(op, **kwargs))
+
 
 def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     """Same scenario and journey routes (and shapes) as `acme.api.app`, served from the engines."""
@@ -120,6 +159,29 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
         return {"status": "ok", "engine": "agent-engine"}
+
+    @app.post("/scenario/reset", tags=["scenario"])
+    async def reset() -> dict[str, str]:
+        return await backend.reset()
+
+    @app.post("/scenario/trigger-cancellation", tags=["scenario"])
+    async def trigger_cancellation(body: TriggerCancellation) -> TriggerResult:
+        return TriggerResult(**await backend.api("trigger_cancellation", **body.model_dump()))
+
+    @app.get("/whatsapp/{passenger_id}/messages", tags=["whatsapp"])
+    async def whatsapp_messages(passenger_id: str) -> list[WhatsAppMessage]:
+        msgs = await backend.api("whatsapp_messages", passenger_id=passenger_id)
+        return [WhatsAppMessage(**m) for m in msgs]
+
+    @app.post("/whatsapp/{passenger_id}/messages", status_code=201, tags=["whatsapp"])
+    async def whatsapp_reply(passenger_id: str, body: PassengerReply) -> WhatsAppMessage:
+        reply = await backend.api("whatsapp_reply", passenger_id=passenger_id, text=body.text)
+        return WhatsAppMessage(**reply)
+
+    @app.post("/whatsapp/{passenger_id}/actions", tags=["whatsapp"])
+    async def whatsapp_action(passenger_id: str, body: PassengerAction) -> ActionResult:
+        reply = await backend.api("whatsapp_action", passenger_id=passenger_id, action=body.action)
+        return ActionResult(**reply)
 
     @app.get("/scenarios", tags=["scenarios"])
     async def list_scenarios() -> list[PresetView]:

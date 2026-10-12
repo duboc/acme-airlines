@@ -20,6 +20,7 @@ of its own. Call `set_up()` once (the engine does this itself) before use.
 | `scenario_step() -> dict` | async | Customer half of the next scripted step, run as an ADK turn (span attributes `acme.scenario`, `acme.step`). **No Sales tick**: the demo drives Sales through the Sales engine. Returns `ScenarioState`. |
 | `scenario_state() -> dict` | sync | Current `ScenarioState`. |
 | `journeys_list() -> list`, `journey_detail(journey_id) -> dict` | sync / async | `JourneySummary` / `JourneyDetail`, built by the same functions as the HTTP API. |
+| `reset()`, `trigger_cancellation(flight, reason)`, `whatsapp_messages(passenger_id)`, `whatsapp_reply(passenger_id, text)`, `whatsapp_action(passenger_id, action)` | sync / async | The phone panel, reset and trigger, calling the API's own functions (`acme.api.app.do_*`, so offer accept/decline still use `acme.customer.conversion` and its guardrail re-check). API errors come back as `{"error": {"status", "detail"}}` and `EngineBackend` re-raises them as HTTP errors. |
 | `journey_events(journey_id, since=0) -> list` | sync | Timeline events from index `since` (poll form of the SSE stream). |
 
 
