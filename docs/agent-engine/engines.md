@@ -100,6 +100,14 @@ passenger data. Test: `tests/unit/test_logging_setup.py`.
 
 The governance suites (`tests/governance`) run over **both** transports. Tests use a fake handle that routes to a local Customer engine app, with no GCP.
 
+### Demo in `agent-engine` mode (#164)
+
+`acme.api.engine_backend.EngineBackend` has the scenario and journey interface the API routes use.
+A step is the Customer `scenario_step`, then one Sales engine `stream_query` turn (its own trace).
+Env: `AGENT_ENGINE_CUSTOMER`, `AGENT_ENGINE_SALES` (full resource names; startup fails without
+them). CI routes the calls to the local engine apps, and the six presets are structurally equal to
+local mode. Bodies are never logged. See `docs/product/deploy.md`.
+
 ### Security boundary
 
 Both engines run as `acme-agent-engine` (project-wide `aiplatform.user`), so IAM does not stop the Sales engine from calling the Customer engine's demo ops, which return passenger data. The boundary is enforced in code: `EngineCustomerClient` exposes only the three skills, via `a2a_skill`. The governance architecture test (`tests/governance/test_architecture.py`) checks that Sales sources never call any other Customer engine operation. This is the same posture as local mode, and it is a known, accepted residual risk (security audit of #178).

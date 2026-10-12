@@ -125,6 +125,14 @@ def journey_detail_view(rt: Runtime, rec: JourneyRecord) -> JourneyDetail:
 
 
 def create_app(clock: Clock | None = None) -> FastAPI:
+    if (os.environ.get("ENGINE_MODE") or "local") == "agent-engine":
+        from acme.api.engine_backend import create_engine_app  # noqa: PLC0415
+
+        return create_engine_app()  # fails fast without AGENT_ENGINE_* (#164)
+    return create_local_app(clock)
+
+
+def create_local_app(clock: Clock | None = None) -> FastAPI:
     app = FastAPI(title="ACME Airlines runtime API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"]

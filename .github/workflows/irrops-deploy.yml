@@ -1,7 +1,7 @@
 name: IRROPS Demo Deploy
 
 # Keyless deploy via Workload Identity Federation (same OBSERVATORY_* variables as
-# observatory-deploy). WIF trusts only refs/heads/main. Only --image is swapped on the existing
+# observatory-deploy). WIF trusts only refs/heads/main. Only --image is swapped (plus ENGINE_MODE, chosen by app/demo/select-engine-mode.sh) on the existing
 # Cloud Run service; if the platform script has not created it yet, the job warns and succeeds.
 
 on:
@@ -20,6 +20,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # `local` until #181 (phone/reset/trigger parity) lands; then flip to `auto`.
+  HOSTED_ENGINE_MODE: local
   AR_REPO: ${{ vars.IRROPS_AR_REPO }}
   SERVICE: ${{ vars.IRROPS_DEMO_SERVICE }}
   REGION: ${{ vars.OBSERVATORY_REGION }}
@@ -67,6 +69,16 @@ jobs:
         if: steps.exists.outputs.present == 'true'
         run: |
           gcloud run deploy "$SERVICE" --image "$AR_REPO/irrops-demo:$GITHUB_SHA" \
+            --region "$REGION" --project "$PROJECT" --quiet
+
+      - name: Select ENGINE_MODE
+        if: steps.exists.outputs.present == 'true'
+        run: |
+          names=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT" \
+            --format=json | jq -r '.spec.template.spec.containers[0].env[]?.name')
+          mode=$(sh app/demo/select-engine-mode.sh "$HOSTED_ENGINE_MODE" $names)
+          echo "ENGINE_MODE=$mode"
+          gcloud run services update "$SERVICE" --update-env-vars "ENGINE_MODE=$mode" \
             --region "$REGION" --project "$PROJECT" --quiet
 
       - name: Verify the deployed image SHA
