@@ -103,3 +103,24 @@ The governance suites (`tests/governance`) run over **both** transports. Tests u
 ### Security boundary
 
 Both engines run as `acme-agent-engine` (project-wide `aiplatform.user`), so IAM does not stop the Sales engine from calling the Customer engine's demo ops, which return passenger data. The boundary is enforced in code: `EngineCustomerClient` exposes only the three skills, via `a2a_skill`. The governance architecture test (`tests/governance/test_architecture.py`) checks that Sales sources never call any other Customer engine operation. This is the same posture as local mode, and it is a known, accepted residual risk (security audit of #178).
+
+## Deploy
+
+`.github/workflows/agent-engine-deploy.yml` runs on push to `main` (paths: `app/backend/src/acme/**`,
+`pyproject.toml`, `uv.lock`, the workflow) and on `workflow_dispatch`. It has no `pull_request`
+trigger, uses WIF only (`OBSERVATORY_WIF_PROVIDER` + `OBSERVATORY_DEPLOYER_SA`) and holds no keys.
+Deploys never overlap (`concurrency: agent-engine-deploy`).
+
+`python -m acme.engines.deploy` (run in `app/backend`):
+
+1. Looks up both engines by display name. More than one hit for a name fails the run before anything is written. One hit means update in place; none means create.
+2. Deploys `acme-customer-agent`, then `acme-sales-agent` with `ENGINE_MODE=agent-engine` and `ACME_CUSTOMER_ENGINE=<customer resource name>`.
+3. Settings: `service_account=$AGENT_ENGINE_SA`, staging bucket and location from `AGENT_ENGINE_*`, env `LLM_MODE=vertex`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`.
+4. **Tracing:** the installed SDK (`google-cloud-aiplatform` 1.x) has no `enable_tracing` argument on `create`/`update` for custom templates, so tracing is switched on with the engine env var `GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY=true`.
+5. **Instances:** the Customer engine is pinned with `min_instances=1`, `max_instances=1`. This is a **demo limitation**: its world is in memory, so state is lost on restart and it does not scale horizontally. Sales is not pinned.
+
+Afterwards the workflow runs `gcloud run services update --update-env-vars` (everything else is kept) to set `AGENT_ENGINES=acme-customer-agent=<id>,acme-sales-agent=<id>` on the `acme-observatory` service and `AGENT_ENGINE_CUSTOMER` / `AGENT_ENGINE_SALES` (full resource names) on `vars.IRROPS_DEMO_SERVICE`. It does not set `ENGINE_MODE` on the demo.
+
+If the first deploy fails on Reasoning Engine service-agent permissions, file a `needs operator: re-run infra/95-agent-engine-platform.sh` issue. Agents never change IAM.
+
+Tests (`tests/engines/test_deploy.py`) use a fake SDK and assert the workflow shape; CI never calls GCP.
