@@ -124,3 +124,13 @@ async def test_sales_engine_app_proposes_through_the_customer_engine():
     assert DISPLAY_NAME == "acme-sales-agent"
     assert app.register_operations() == {"async_stream": ["async_stream_query"]}
     await f.http.aclose()
+
+
+def test_sales_engine_set_up_configures_pii_safe_logging(monkeypatch):
+    import acme.logging_setup as logging_setup
+
+    customer = engine_over(Flow().rt)  # its own set_up also configures logging
+    calls = []
+    monkeypatch.setattr(logging_setup, "configure_logging", lambda: calls.append(1))
+    build_sales_engine_app(customer).set_up()
+    assert calls == [1]

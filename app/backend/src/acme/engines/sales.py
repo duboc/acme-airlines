@@ -33,11 +33,13 @@ class SalesEngineApp:
         from google.adk.runners import Runner
         from google.adk.sessions import InMemorySessionService
 
+        from acme.logging_setup import configure_logging
         from acme.sales.agent import build_sales_agent
         from acme.sales.radar import SalesRadar
         from acme.sim.client import SimClient, inprocess_connector
         from acme.sim.world import SimWorld
 
+        configure_logging()  # no passenger PII in Cloud Logging (#170)
         env = {"ENGINE_MODE": "agent-engine", **self._env()}
         customer = build_customer_client(env, engine=self._customer_engine)
         sim = SimWorld.seeded()
