@@ -92,14 +92,16 @@ def _customer_engine_ops() -> set[str]:
     """Every operation the Customer engine registers, except the ones Sales may use.
 
     Derived, so a newly registered op is forbidden to Sales automatically. `stream_query` and
-    `async_stream_query` are checked separately (the Sales engine defines its own).
+    `async_stream_query` are checked separately (the Sales engine defines its own), and so is
+    `diagnostics` (each engine reports its OWN start-up status, #185); calling it on the Customer
+    engine handle is still caught by the handle rule below.
     """
     from acme.engines.customer import build_customer_engine_app
 
     registered = {
         o for ops in build_customer_engine_app().register_operations().values() for o in ops
     }
-    return registered - {"a2a_skill", "stream_query", "async_stream_query"}
+    return registered - {"a2a_skill", "stream_query", "async_stream_query", "diagnostics"}
 
 
 DEMO_OPS = _customer_engine_ops()
@@ -150,6 +152,7 @@ def test_sales_sources_only_call_the_customer_engine_through_a2a_skill():
         "async def f(self):\n    await self._engine.whatsapp_action('P', 'accept_offer')",
         "async def f(self):\n    await self._customer_engine.trigger_cancellation('AC1', 'x')",
         "def f(customer):\n    customer.stream_query(message='x')",
+        "async def f(self):\n    return self._engine.diagnostics()",
     ],
 )
 def test_the_engine_op_check_catches_violations(snippet):

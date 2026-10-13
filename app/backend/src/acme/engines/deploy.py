@@ -15,11 +15,13 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from acme.engines import customer, sales
+from acme.llm import config as llm_config
 
 # Never put GOOGLE_CLOUD_* names in the engine env: Agent Engine reserves and injects them and
 # rejects the deploy with a 400 (#190). Our own non-reserved names carry the settings instead.
 TRACING_ENV = "ACME_ENABLE_TRACING"
 GENAI_LOCATION_ENV = "ACME_GENAI_LOCATION"
+GENAI_PROJECT_ENV = "ACME_GENAI_PROJECT"
 
 
 def package_root() -> Path:
@@ -39,6 +41,7 @@ class AgentEngineSdk(Protocol):  # the surface of `vertexai.agent_engines` that 
     def list(self, *, filter: str = "") -> Any: ...  # noqa: A002
     def create(self, **kwargs: Any) -> Any: ...
     def update(self, resource_name: str, **kwargs: Any) -> Any: ...
+    def get(self, resource_name: str) -> Any: ...
 
 
 def _find(sdk: AgentEngineSdk, display_name: str) -> str | None:
@@ -61,6 +64,7 @@ def _settings(env: Mapping[str, str], name: str, extra_env: dict[str, str]) -> d
         "env_vars": {
             "LLM_MODE": "vertex",
             GENAI_LOCATION_ENV: "global",  # model calls stay on the global endpoint
+            GENAI_PROJECT_ENV: llm_config.PROJECT,  # the injected GOOGLE_CLOUD_PROJECT is a number
             TRACING_ENV: "true",  # Cloud Trace export, installed by acme.telemetry
             **extra_env,
         },
@@ -89,6 +93,19 @@ def deploy(sdk: AgentEngineSdk, env: Mapping[str, str]) -> dict[str, str]:
     return {customer.DISPLAY_NAME: cust, sales.DISPLAY_NAME: sal}
 
 
+def verify_started(sdk: AgentEngineSdk, names: Mapping[str, str]) -> None:
+    """Ask every deployed engine for its `diagnostics`; a failed start-up fails the deploy and
+    prints the (scrubbed) error, so a broken engine never counts as green (#185)."""
+    for display, resource in names.items():
+        try:
+            diag = sdk.get(resource).diagnostics()
+        except Exception as exc:  # noqa: BLE001
+            raise DeployError(f"{display}: diagnostics call failed: {exc}") from exc
+        if diag.get("startup_error") or diag.get("status") != "ready":
+            status, error = diag.get("status"), diag.get("startup_error")
+            raise DeployError(f"{display} did not start (status {status}):\n{error}")
+
+
 BUCKET_HINT = (
     "403 on the staging bucket: the SDK calls storage.buckets.get (vertexai _agent_engines.py "
     "_get_gcs_bucket), which the deployer SA lacks. Needs an operator grant; see issue #186."
@@ -109,6 +126,7 @@ def main() -> int:
     os.chdir(package_root())  # extra_packages=["acme"] is relative to here
     try:
         names = deploy(agent_engines, env)
+        verify_started(agent_engines, names)
     except DeployError as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1

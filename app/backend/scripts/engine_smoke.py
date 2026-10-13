@@ -16,6 +16,7 @@ from pathlib import Path
 staged = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(staged / "extracted"))
 os.environ.setdefault("LLM_MODE", "fake")
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "493084803309")  # Agent Engine injects the NUMBER
 
 import cloudpickle  # noqa: E402
 
@@ -32,6 +33,8 @@ def load(name: str):
 async def main() -> None:
     customer = load("customer")
     customer.set_up()
+    diag = customer.diagnostics()
+    assert diag["status"] == "ready", diag  # set_up() swallows errors into diagnostics (#185)
     events = [e async for e in customer.async_stream_query(message="poll", user_id="smoke")]
     assert events, "the Customer engine returned no events"
     ops = customer.register_operations()

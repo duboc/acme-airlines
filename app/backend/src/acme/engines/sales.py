@@ -7,11 +7,14 @@ comes from an in-process simulator authenticated as `sales` only. No network cal
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from acme.diagnostics import format_error
 from acme.engines.customer import (
     EngineConfigError,
+    EngineOperationError,
     engine_extra_packages,
     engine_requirements,
     validate_env,
@@ -25,11 +28,42 @@ __all__ = ["DISPLAY_NAME", "EngineConfigError", "engine_extra_packages", "engine
 
 
 class SalesEngineApp:
+    _STARTED = ("radar", "_runner", "_sessions")
+
     def __init__(self, customer_engine: CustomerEngineHandle | None = None) -> None:
-        validate_env()
+        self.llm_mode = validate_env()
         self._customer_engine = customer_engine  # tests inject a fake handle
+        self.startup_error: str | None = None
+        self.started = False
+
+    def __getattr__(self, name: str) -> Any:
+        if name in SalesEngineApp._STARTED:
+            if self.startup_error:
+                raise EngineOperationError(
+                    "the engine failed to start; call `diagnostics` for the error"
+                )
+            raise EngineOperationError("the engine is not started yet (set_up() has not run)")
+        raise AttributeError(name)
 
     def set_up(self) -> None:
+        """Failures are captured (scrubbed) and exposed by `diagnostics`."""
+        try:
+            self._set_up()
+            self.started, self.startup_error = True, None
+        except Exception as exc:  # noqa: BLE001 - reported by deploy.verify_started
+            self.started, self.startup_error = False, format_error(exc)
+            logging.getLogger(__name__).error("engine start-up failed: %s", self.startup_error)
+
+    def diagnostics(self) -> dict[str, Any]:
+        status = "ready" if self.started else ("failed" if self.startup_error else "starting")
+        return {
+            "engine": DISPLAY_NAME,
+            "status": status,
+            "startup_error": self.startup_error,
+            "llm_mode": self.llm_mode,
+        }
+
+    def _set_up(self) -> None:
         from google.adk.runners import Runner
         from google.adk.sessions import InMemorySessionService
 
@@ -73,7 +107,7 @@ class SalesEngineApp:
             yield event.model_dump(mode="json", exclude_none=True)
 
     def register_operations(self) -> dict[str, list[str]]:
-        return {"async_stream": ["async_stream_query"]}
+        return {"": ["diagnostics"], "async_stream": ["async_stream_query"]}
 
 
 def build_sales_engine_app(customer_engine: CustomerEngineHandle | None = None) -> SalesEngineApp:

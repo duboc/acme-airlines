@@ -83,3 +83,27 @@ def test_vertex_refuses_other_project():
 
 def test_model_is_configurable():
     assert load_vertex_config({"LLM_MODEL": "gemini-x"}).model == "gemini-x"
+
+
+def test_project_number_of_the_same_project_is_accepted_and_normalised():
+    """Agent Engine injects GOOGLE_CLOUD_PROJECT as the project NUMBER (#185)."""
+    cfg = load_vertex_config({"GOOGLE_CLOUD_PROJECT": "493084803309"})
+    assert cfg.project == PROJECT  # the client always gets the project id
+    assert load_vertex_config({"ACME_GENAI_PROJECT": "493084803309"}).project == PROJECT
+
+
+@pytest.mark.parametrize("other", ["111111111111", "493084803310", "other-project", "4930848033"])
+def test_other_projects_and_numbers_are_refused(other):
+    with pytest.raises(LlmConfigError, match="project"):
+        load_vertex_config({"GOOGLE_CLOUD_PROJECT": other})
+    with pytest.raises(LlmConfigError, match="project"):
+        load_vertex_config({"ACME_GENAI_PROJECT": other})
+
+
+def test_acme_genai_project_wins_over_the_injected_number():
+    cfg = load_vertex_config(
+        {"ACME_GENAI_PROJECT": PROJECT, "GOOGLE_CLOUD_PROJECT": "493084803309"}
+    )
+    assert cfg.project == PROJECT
+    with pytest.raises(LlmConfigError, match="project"):
+        load_vertex_config({"ACME_GENAI_PROJECT": "other", "GOOGLE_CLOUD_PROJECT": "493084803309"})
