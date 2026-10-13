@@ -87,3 +87,19 @@ Tier discount table (`RECOVERY_DISCOUNT_PCT`):
 
 The guardrail is evaluated at proposal time, and re-evaluated in full at send time and accept time under the per-journey lock (`CustomerRuntime.journey_lock`).
 
+
+## Service closure without an offer (#229)
+
+Service advocacy outranks revenue, so closing a journey must not depend on the revenue path. A journey
+that is `RESOLVED`, acknowledged by the passenger, has no open request and **no offer in play** (none
+proposed/approved/sent, none decided) is verified and closed once the **offer window** has passed since
+the acknowledgement (`CustomerRuntime.offer_window`, default 10 minutes on the injected `Clock`): flight,
+seat, hotel, baggage and "no upgrade, nothing charged" are verified, then the CRM log, the NPS prompt, the
+analytics record (`event: no_offer`, `converted: false`), `CLOSED` and the Memory Bank commit, preceded by
+a `service_closure` timeline entry. It runs from `CustomerRuntime.tick()` under the per-journey lock, so
+it never waits on Sales and concurrent polls close it once. It covers every no-offer branch: Sales down or
+suppressed, no premium inventory or seats, ineligible tier, guardrail rejection. A sent offer awaiting the
+passenger is never closed over (the accept/decline flow closes it). A failed verification leaves the
+journey `RESOLVED` (`verification_failed`) and retries after another window, not on every poll. After
+closure the guardrail rejects any late proposal (`disruption_not_resolved`) and Sales no longer lists the
+journey.

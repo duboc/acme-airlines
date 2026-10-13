@@ -143,6 +143,10 @@ class SeatReleasedPayload(Payload):
     replaced_by: str
 
 
+class ServiceClosurePayload(Payload):
+    reason: Literal["offer_window_elapsed"]
+
+
 class RequestClosedPayload(Payload):
     request_id: str
     outcome: Literal["satisfied", "unsatisfiable"]
@@ -250,6 +254,7 @@ PAYLOADS: dict[str, type[BaseModel]] = {
     "resolution_acknowledged": Empty,
     "change_handoff": ChangeHandoffPayload,
     "request_closed": RequestClosedPayload,
+    "service_closure": ServiceClosurePayload,
     "seat_released": SeatReleasedPayload,
     "voucher_issued": VoucherIssuedPayload,
     "resolution_blocked": ResolutionBlockedPayload,

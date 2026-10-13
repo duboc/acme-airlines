@@ -2085,6 +2085,50 @@
         "title": "Segment",
         "type": "object"
       },
+      "ServiceClosureEvent": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/ServiceClosurePayload"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "type": {
+            "const": "service_closure",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "timestamp",
+          "type",
+          "payload"
+        ],
+        "title": "ServiceClosureEvent",
+        "type": "object"
+      },
+      "ServiceClosurePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "const": "offer_window_elapsed",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ServiceClosurePayload",
+        "type": "object"
+      },
       "StatusChangedEvent": {
         "properties": {
           "actor": {
@@ -2746,6 +2790,7 @@
                         "sales_suppressed": "#/components/schemas/SalesSuppressedEvent",
                         "seat_held": "#/components/schemas/SeatHeldEvent",
                         "seat_released": "#/components/schemas/SeatReleasedEvent",
+                        "service_closure": "#/components/schemas/ServiceClosureEvent",
                         "status_changed": "#/components/schemas/StatusChangedEvent",
                         "transfer_arranged": "#/components/schemas/TransferArrangedEvent",
                         "upgrade_confirmed": "#/components/schemas/UpgradeConfirmedEvent",
@@ -2806,6 +2851,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/RequestClosedEvent"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ServiceClosureEvent"
                       },
                       {
                         "$ref": "#/components/schemas/SeatReleasedEvent"
