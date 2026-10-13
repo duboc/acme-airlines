@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 from collections.abc import AsyncIterator
@@ -27,6 +28,7 @@ from acme.api.scenarios import (
 )
 from acme.customer.adk_agent import CARD_PATH, customer_agent_card
 from acme.customer.conversion import NoSentOffer, accept_offer, decline_offer
+from acme.customer.loop import CustomerLoop
 from acme.customer.skills import CustomerSkills
 from acme.domain.clock import Clock
 from acme.domain.journey import OfferRecord
@@ -139,7 +141,6 @@ async def do_trigger(rt: Runtime, flight: str, reason: str) -> TriggerResult:
 
 async def do_messages(rt: Runtime, passenger_id: str) -> list[WhatsAppMessage]:
     require_passenger(rt, passenger_id)
-    await rt.tick()
     return rt.messages.get(passenger_id, [])
 
 
@@ -171,13 +172,27 @@ def create_app(clock: Clock | None = None) -> FastAPI:
 
 
 def create_local_app(clock: Clock | None = None) -> FastAPI:
-    app = FastAPI(title="ACME Airlines runtime API", version="0.1.0")
+    rt = Runtime(clock)
+    loop = CustomerLoop(rt)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # The runtime acts on its own (OCC subscription, scheduled outreach, no-offer closure);
+        # GET endpoints are read-only (#228). ACME_CUSTOMER_LOOP=0 turns it off.
+        if os.environ.get("ACME_CUSTOMER_LOOP", "1") != "0":
+            loop.start()
+        try:
+            yield
+        finally:
+            await loop.stop()
+
+    app = FastAPI(title="ACME Airlines runtime API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"]
     )
     metrics.add_http_metrics(app)
-    rt = Runtime(clock)
     app.state.runtime = rt
+    app.state.loop = loop
     add_error_handlers(app)
 
     def get_journey(journey_id: str) -> JourneyRecord:
@@ -243,7 +258,6 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
 
     @app.get("/journeys/{journey_id}", tags=["journeys"])
     async def journey_detail(journey_id: str) -> JourneyDetail:
-        await rt.tick()
         return journey_detail_view(rt, get_journey(journey_id))
 
     @app.get(

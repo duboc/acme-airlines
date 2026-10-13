@@ -189,11 +189,14 @@ async def test_notification_and_acknowledgement_through_the_api():
     from acme.domain.fixtures import DISRUPTION_DETECTED_AT
 
     clock = FixedClock(DISRUPTION_DETECTED_AT)
-    transport = httpx.ASGITransport(app=create_app(clock))
+    app = create_app(clock)
+    transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
         (jid,) = await trigger(c)
         assert (await c.get(f"/whatsapp/{PID}/messages")).json() == []  # 22:03, quiet
         clock.advance(timedelta(minutes=6))  # 22:09
+        assert (await c.get(f"/whatsapp/{PID}/messages")).json() == []  # GETs are read-only (#228)
+        await app.state.loop.step()  # what the background loop does on its own
         msgs = (await c.get(f"/whatsapp/{PID}/messages")).json()
         assert len(msgs) == 1 and "AC1240" in msgs[0]["text"]
         assert "meal_voucher" in msgs[0]["attachments"]

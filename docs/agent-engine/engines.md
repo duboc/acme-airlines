@@ -329,3 +329,21 @@ loyalty member ids (`FFP-...`). Names of non-fixture passengers cannot be matche
 passenger free text must still never be logged at all: the operator timeline (SSE `passenger_message`
 events) carries it to the console behind IAP only, and a test asserts it never appears in any log
 record. `acme.diagnostics.scrub` (engine start-up errors) uses the same `redact`.
+
+## Customer background loop (#228)
+
+The local Customer runtime (`acme-customer`, `create_local_app`) runs its own loop for the lifetime of
+the app (`acme.customer.loop.CustomerLoop`, started in the FastAPI lifespan; `ACME_CUSTOMER_LOOP=0`
+disables it): every second it ingests new OCC events from the mock stream (`CustomerRuntime.poll`) and
+runs `CustomerRuntime.tick()`, which sends each due proactive WhatsApp (22:09 in the scenario) and
+advances the #229 no-offer closure, all driven by the runtime's `Clock`. Scenarios 1 and 3 therefore
+happen with no API client connected. The loop shares the per-journey and runtime locks with every other
+path. A failing iteration is logged (exception type only) and retried with exponential backoff and
+jitter (1 s doubling to 30 s, reset by a success); it never ends the loop, and shutdown cancels it
+cleanly. **GET endpoints are read-only**: `/whatsapp/{id}/messages` and `/journeys/{id}` no longer tick.
+Presets still drive time explicitly (the `notify` step calls `tick()`), and the scenario driver's
+`advance_clock` does too.
+
+Agent Engine: there is no background loop (processes are throttled between requests), so the engine's
+`journey_detail` operation still ticks, as before; that is the one read that writes, by design, and the
+demo's polling keeps notifications and closure moving in that mode.
