@@ -41,7 +41,7 @@ class PriceQuote(BaseModel):
 
 def recovery_quote(inventory: CabinInventory, tier: Tier | None) -> PriceQuote | None:
     """Return the recovery price for `tier`, or None if the tier is not eligible."""
-    pct = RECOVERY_DISCOUNT_PCT.get(tier) if tier else None  # pragma: no mutate
+    pct = RECOVERY_DISCOUNT_PCT.get(tier) if tier else None
     if pct is None:
         return None
     standard = inventory.standard_upgrade_fare
