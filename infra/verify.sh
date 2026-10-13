@@ -120,7 +120,10 @@ engines_ok() {
   bad="$(jq -r --arg sa "${sa}" '[.reasoningEngines[]? | select(.displayName|startswith("acme-"))
           | select((.spec.serviceAccount // "") != $sa) | .displayName] | join(",")' <<<"${j}")"
   [[ -z "${bad}" ]] || { echo "engines not running as acme-agent-engine: ${bad}"; return 1; }
-  bad="$(jq -r '[.reasoningEngines[]? | .spec.deploymentSpec.env[]? | .name | select(startswith("GOOGLE_CLOUD_"))] | join(",")' <<<"${j}")"
+  # Reserved platform-injected names (rejected/overridden by Agent Engine). Documented settings such
+  # as GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY are allowed.
+  bad="$(jq -r '[.reasoningEngines[]? | .spec.deploymentSpec.env[]? | .name
+          | select(test("^GOOGLE_CLOUD_(PROJECT|LOCATION|REGION|QUOTA_PROJECT)$"))] | join(",")' <<<"${j}")"
   [[ -z "${bad}" ]] || { echo "reserved env vars on engines: ${bad}"; return 1; }
   echo "engines: $(jq -r '[.reasoningEngines[]? | .displayName] | join(", ")' <<<"${j}")"
 }

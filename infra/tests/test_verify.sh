@@ -89,6 +89,7 @@ eexpect 1 "no engines" '{}'
 eexpect 1 "sales missing" "{\"reasoningEngines\":[$C]}"
 eexpect 1 "duplicate customer" "{\"reasoningEngines\":[$C,$C,$S]}"
 eexpect 1 "wrong SA" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 other@x '' ),$S]}"
+eexpect 0 "telemetry env var is allowed" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '{"name":"GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY","value":"true"}'),$S]}"
 eexpect 1 "reserved env var" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '{"name":"GOOGLE_CLOUD_LOCATION","value":"global"}'),$S]}"
 
 texp() {  # texp <0|1> <name> <json>
