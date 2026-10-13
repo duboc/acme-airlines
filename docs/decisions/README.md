@@ -18,3 +18,4 @@ Factory/infrastructure ADRs are 0001–0099. Application ADRs (written by the ag
 - [ADR 0014: Observatory, a factory cost and run dashboard](0014-observatory.md)
 - [ADR 0015: IRROPS agents on Vertex AI Agent Engine; proposal-based backlog](0015-agent-engine-and-proposed-backlog.md)
 - [ADR 0100: Application stack for the IRROPS MVP](0100-app-stack.md) (Accepted)
+- [ADR 0101: ALWAYS_ON telemetry sampler for Agent Engine request tracing](0101-always-on-tracing-sampler.md) (Accepted)
