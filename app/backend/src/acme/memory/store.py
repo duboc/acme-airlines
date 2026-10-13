@@ -19,10 +19,11 @@ class JourneyStore(Protocol):
     def save(self, journey: JourneyState) -> None: ...
     def load(self, journey_id: str, clock: Clock | None = None) -> JourneyState | None: ...
     def ids(self) -> list[str]: ...
+    def delete_except(self, keep: set[str]) -> None: ...
     def close(self) -> None: ...
 
 
-def _dump(j: JourneyState) -> str:
+def dump_journey(j: JourneyState) -> str:
     return json.dumps(
         {
             "status": j.status.value,
@@ -40,7 +41,9 @@ class SqliteJourneyStore:
     """One row per journey (latest snapshot). `path=":memory:"` for tests."""
 
     def __init__(self, path: str = ":memory:") -> None:
-        self._db = sqlite3.connect(path, check_same_thread=False)
+        self._db = sqlite3.connect(path, check_same_thread=False, timeout=10)
+        if path != ":memory:":  # several processes share one file (#200)
+            self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute(
             "CREATE TABLE IF NOT EXISTS journeys (id TEXT PRIMARY KEY, snapshot TEXT NOT NULL)"
         )
@@ -50,7 +53,7 @@ class SqliteJourneyStore:
         self._db.execute(
             "INSERT INTO journeys (id, snapshot) VALUES (?, ?) "
             "ON CONFLICT(id) DO UPDATE SET snapshot = excluded.snapshot",
-            (journey.journey_id, _dump(journey)),
+            (journey.journey_id, dump_journey(journey)),
         )
         self._db.commit()
 
@@ -75,6 +78,12 @@ class SqliteJourneyStore:
 
     def ids(self) -> list[str]:
         return [r[0] for r in self._db.execute("SELECT id FROM journeys ORDER BY id")]
+
+    def delete_except(self, keep: set[str]) -> None:
+        """Drop every journey not in `keep` (a scenario reset removes them from the shared DB)."""
+        stale = [i for i in self.ids() if i not in keep]
+        self._db.executemany("DELETE FROM journeys WHERE id = ?", [(i,) for i in stale])
+        self._db.commit()
 
     def close(self) -> None:
         self._db.close()

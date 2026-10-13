@@ -19,11 +19,13 @@ secret is read).
 | `20-model-access.sh` | `aiplatform.user` on the VM SA; builds `scion-claude` on the VM | `vertex`, `claude-image` |
 | `30-hub-admin-access.sh enable\|disable\|status` | Temporary operator admin access (federation for gcloud ID tokens from `ORG_DOMAIN`) | — |
 | `31-set-project-secret.sh <project-id> <KEY>` | Sets a hub project secret from **stdin** through the API | `hubproject` |
-| `40-build-team-templates.sh` | Builds `factory/templates/acme-*` from `factory/team/*` plus upstream `agent-team@AGENT_TEAM_SHA`; vendors impeccable | `cost` |
-| `50-web-access.sh` | IAP `httpsResourceAccessor` for `WEB_DOMAINS`, plus the hub `domain_restricted` sign-in policy | browser |
+| `40-build-team-templates.sh` | Builds `factory/templates/acme-*` from `factory/team/*` plus upstream `agent-team@AGENT_TEAM_SHA`; vendors impeccable. Non-lead roles get `max_duration`, `max_turns` and `max_model_calls` (3 × turns) | `cost` |
+| `45-push-templates.sh [acme-<role> …]` | Pushes templates to the hub at global scope; opens and closes the admin window itself | `team` |
+| `50-web-access.sh` | IAP `httpsResourceAccessor` for `WEB_DOMAINS`, plus the hub `domain_restricted` sign-in policy and `DEFAULT_USER_ROLE` (default `viewer`) | `webaccess` |
 | `55-iap-oauth-client.sh [--reapply]` | Custom IAP OAuth client on all IAP services (prompts; Secret Manager) | `iap-oauth` |
 | `60-factory.sh status\|tick-install\|pause\|resume` | Loop schedule and the cost switch (never stops the VM) | `loop` |
 | `70-budget-guard.sh` | Budget (`BUDGET_USD`), Pub/Sub, the agent-suspending guard on Cloud Run, its hub UAT | `budget` |
+| `75-backups.sh` | Daily snapshot schedule (03:00 UTC, 7 days) on the hub VM boot disk | `backups` |
 | `80-observatory-platform.sh` | Observatory platform (BigQuery, SAs, WIF, IAP, secrets, scheduler) | `observatory` |
 | `90-irrops-demo-platform.sh` | Product demo service (IAP, minimal SA) — example of an app platform | `irrops-demo` |
 | `95-agent-engine-platform.sh` | Vertex AI Agent Engine platform for app agents (runtime SA, bucket, deployer) | `agent-engine` |

@@ -26,6 +26,19 @@ class SimWorld:
 
         self.partners = PartnerState(self)
 
+    def export_data(self) -> dict[str, Any]:
+        """JSON-able state (shared snapshot, #200)."""
+        return {
+            "world": self.world.model_dump(mode="json"),
+            "interactions": self.interactions,
+            "events": self._events,
+        }
+
+    def import_data(self, data: dict[str, Any]) -> None:
+        self.world = type(self.world).model_validate(data["world"])
+        self.interactions = list(data["interactions"])
+        self._events = list(data["events"])
+
     @classmethod
     def seeded(cls, clock: Clock | None = None) -> "SimWorld":
         return cls(mariana_world(), clock)

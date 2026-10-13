@@ -21,14 +21,15 @@ default config is never changed.
 | 2 | Hub VM + IAP proxy (Scion `deploy.sh`) | `infra/10-deploy-hub.sh` | `verify.sh hub` | 15–45 min |
 | 3 | Vertex access + Claude image | `infra/20-model-access.sh`, then 🖐 enable the Claude models in **Model Garden** | `verify.sh vertex`, `verify.sh claude-image` | 5 min |
 | 4 | 🖐 Custom IAP OAuth client (needed for any domain outside the org) | console steps, then `infra/55-iap-oauth-client.sh` | `verify.sh iap-oauth` | 5 min |
-| 5 | Domain web access (IAP + hub sign-in policy) | `infra/50-web-access.sh` | browser login | 1 min |
+| 5 | Domain web access (IAP + hub sign-in policy; new users are viewers) | `infra/50-web-access.sh` | `verify.sh webaccess`, browser login | 1 min |
 | 6 | Hub project + GitHub secret | `30-hub-admin-access.sh enable`, `hub_cli hub projects create <repo-url>`, 🖐 PAT → `31-set-project-secret.sh`, `30… disable` | `verify.sh hubproject` | 3 min |
-| 7 | Agent team templates | `infra/40-build-team-templates.sh`, then push to the hub (below) | `verify.sh team cost skills` | 3 min |
+| 7 | Agent team templates | `infra/40-build-team-templates.sh`, then `infra/45-push-templates.sh` | `verify.sh team cost skills` | 3 min |
 | 8 | Lead + standing roster | `hub_cli start acme-lead --type acme-lead --role full …` (kickoff below). The lead forms the roster itself | `verify.sh lead topology` | 5 min |
 | 9 | Loop schedule | `infra/60-factory.sh tick-install` | `verify.sh loop` | 1 min |
 | 10 | Budget guard | `infra/70-budget-guard.sh`, then the wiring test | `verify.sh budget` | 5 min |
 | 11 | Observatory platform (optional) | `infra/80-observatory-platform.sh`, then 🖐 billing export and a GitHub read token | `verify.sh observatory` | 5 min |
-| 12 | App platforms (optional, product-specific) | `infra/90-irrops-demo-platform.sh`, `infra/95-agent-engine-platform.sh` | `verify.sh irrops-demo agent-engine` | 5 min |
+| 12 | Daily boot-disk snapshots | `infra/75-backups.sh` | `verify.sh backups` | 1 min |
+| 13 | App platforms (optional, product-specific) | `infra/90-irrops-demo-platform.sh`, `infra/95-agent-engine-platform.sh` | `verify.sh irrops-demo agent-engine` | 5 min |
 | ✅ | Everything | `infra/verify.sh all` (+ `e2e` once the app is deployed) | all PASS | — |
 
 ## Details and pitfalls per step
@@ -96,13 +97,14 @@ The full guide is [09-iap.md](09-iap.md).
 into `factory/templates/acme-*`. Push them to the hub at **global** scope:
 
 ```bash
-infra/30-hub-admin-access.sh enable
-source infra/lib.sh
-gcloud compute scp --recurse factory/templates/acme-* "${VM_NAME}:~/.scion/templates/" \
-  --zone="$(resolve_zone)" --project="${PROJECT_ID}" --tunnel-through-iap
-for d in factory/templates/acme-*; do hub_cli --global templates push "$(basename "$d")"; done
-infra/30-hub-admin-access.sh disable
+infra/45-push-templates.sh                  # every acme-* template
+infra/45-push-templates.sh acme-backend     # or only the named ones
 ```
+
+The script copies the templates to the VM, runs `scion --global templates push`
+for each one, and opens and closes the admin window itself (an `EXIT` trap
+closes it on errors too). Running agents keep the template they started with;
+new and reincarnated agents get the pushed version.
 
 Never put generated templates under `.scion/templates/` in the product repo.
 Agents' clones would treat them as project templates and shadow the hub's.
