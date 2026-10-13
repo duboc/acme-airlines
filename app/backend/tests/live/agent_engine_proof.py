@@ -8,6 +8,7 @@ trace layers are injected so CI unit-tests this with fakes (`test_agent_engine_p
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import time
 from collections.abc import Awaitable, Callable
@@ -36,6 +37,10 @@ EXTRA_PII = ("Can I leave after 10am?", "Perfect, thanks!")
 class Span:
     name: str
     attrs: dict[str, str] = field(default_factory=dict)
+    span_id: str = ""
+    parent_id: str = ""
+    start: str = ""
+    end: str = ""
 
 
 @dataclass(frozen=True)
@@ -60,6 +65,7 @@ class Report:
     rows: list[Row] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
     project: str = ""
+    inventory: dict[str, Any] | None = None  # trace-inventory diagnostic (see `build_inventory`)
 
     def markdown(self) -> str:
         link = "https://console.cloud.google.com/traces/list?tid={}&project={}"
@@ -119,6 +125,45 @@ def structural(state: dict[str, Any]) -> dict[str, Any]:
     return {k: state.get(k) for k in STRUCTURAL}
 
 
+def scrub(text: str, pii: set[str]) -> str:
+    return "[redacted]" if any(v in text for v in pii) else text
+
+
+def inventory_trace(t: Trace, pii: set[str]) -> dict[str, Any]:
+    """One trace for the diagnostic dump: span names/times/parents, attribute KEYS for every span,
+    and values only for `acme.*` attributes, scrubbed with the proof's PII list."""
+    return {"trace_id": t.trace_id, "spans": [
+        {"name": scrub(sp.name, pii), "span_id": sp.span_id, "parent_id": sp.parent_id,
+         "start": sp.start, "end": sp.end, "attr_keys": sorted(sp.attrs),
+         "acme": {k: scrub(v, pii) for k, v in sorted(sp.attrs.items()) if k.startswith("acme.")}}
+        for sp in t.spans
+    ]}  # fmt: skip
+
+
+def build_inventory(
+    turns: list[dict[str, Any]],
+    filtered: list[Trace],
+    unfiltered: list[Trace] | None,
+    listings: list[dict[str, Any]],
+    pii: set[str],
+) -> dict[str, Any]:
+    """JSON-able inventory of what the harness expected and what Cloud Trace actually returned."""
+    return {
+        "turns": turns,
+        "listings": listings,
+        "filtered_traces": [inventory_trace(t, pii) for t in filtered],
+        "unfiltered_traces": (
+            None if unfiltered is None else [inventory_trace(t, pii) for t in unfiltered]
+        ),
+    }
+
+
+def write_inventory(report: Report, path: str) -> None:
+    from pathlib import Path
+
+    Path(path).write_text(json.dumps(report.inventory, indent=1, sort_keys=True))
+
+
 async def run_proof(
     backend: Any,
     local: Any,
@@ -130,6 +175,7 @@ async def run_proof(
     ingest_wait: float = 120.0,
     settle_wait: float = 120.0,
     poll: float = 15.0,
+    dump: bool = False,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     monotonic: Callable[[], float] = time.monotonic,
@@ -150,6 +196,7 @@ async def run_proof(
     pending: list[tuple[str, int]] = []
     order = {sid: i for i, sid in enumerate(presets)}
     run_start = now() - timedelta(seconds=5)
+    turn_log: list[dict[str, Any]] = []
 
     def absorb(window: list[Trace]) -> None:
         for t in window:
@@ -171,7 +218,13 @@ async def run_proof(
         while not want["done"]:
             turn += 1
             start = now() - timedelta(seconds=5)
+            sent_at = now()
             got = await backend.scenario_step(sid)
+            turn_log.append({
+                "scenario": sid, "turn": turn, "sent_at": sent_at.isoformat(),
+                "received_at": now().isoformat(), "window_start": start.isoformat(),
+                **{k: got[k] for k in ("session_id", "journey_id", "scenario_id") if k in got},
+            })  # fmt: skip
             want = await local.scenario_step(sid)
             if structural(got) != structural(want):
                 report.failures.append(f"{sid} turn {turn}: engine {structural(got)} != "
@@ -208,6 +261,21 @@ async def run_proof(
                         for m in missing_spans(settled)]  # fmt: skip
     report.failures += pii_failures(settled, pii)
     report.rows.sort(key=lambda r: (order[r.scenario], r.turn))
+    if dump or report.failures:  # diagnostics: also list WITHOUT the filter, to compare
+        unfiltered = None
+        probe = getattr(traces, "list_unfiltered", None)
+        if probe is not None:
+            try:
+                unfiltered = await probe(run_start, now() + timedelta(seconds=5))
+            except Exception as exc:  # noqa: BLE001 - diagnostics must never mask the failures
+                report.failures.append(f"diagnostic unfiltered listing failed: {exc}")
+        for row in report.rows:
+            for t in turn_log:
+                if (t["scenario"], t["turn"]) == (row.scenario, row.turn):
+                    t["matched_trace_id"] = row.trace_id
+        report.inventory = build_inventory(
+            turn_log, settled, unfiltered, list(getattr(traces, "listings", [])), pii
+        )
     return report
 
 
@@ -254,12 +322,17 @@ class CloudTraceV1:
         self._sleep, self._jitter = sleep, jitter
         self._span_prefix, self._max_pages = span_prefix, max_pages
         self.pages_fetched, self.cap_hit = 0, False  # cumulative, for failure messages
+        self.listings: list[dict[str, Any]] = []  # one record per listing call (diagnostics)
         self._max_attempts, self._max_total, self._base, self._cap = (
             max_attempts, max_total, base, cap,
         )  # fmt: skip
 
     async def list_traces(self, start: datetime, end: datetime) -> list[Trace]:
         return await asyncio.to_thread(self._list, start, end)
+
+    async def list_unfiltered(self, start: datetime, end: datetime) -> list[Trace]:
+        """Diagnostics only: the same window without the server-side filter (may hit the cap)."""
+        return await asyncio.to_thread(self._list, start, end, "")
 
     def _delay(self, attempt: int, response: Any) -> float:
         retry_after = getattr(response, "headers", {}).get("Retry-After") if response else None
@@ -295,24 +368,37 @@ class CloudTraceV1:
             slept += delay
         raise AssertionError("unreachable")  # pragma: no cover
 
-    def _list(self, start: datetime, end: datetime) -> list[Trace]:
+    def _list(self, start: datetime, end: datetime, span_prefix: str | None = None) -> list[Trace]:
+        prefix = self._span_prefix if span_prefix is None else span_prefix
         url = f"https://cloudtrace.googleapis.com/v1/projects/{self.project}/traces"
         params: dict[str, Any] = {"view": "COMPLETE", "pageSize": PAGE_SIZE,
                                   "startTime": start.isoformat().replace("+00:00", "Z"),
                                   "endTime": end.isoformat().replace("+00:00", "Z")}  # fmt: skip
-        if self._span_prefix:  # server-side: unrelated hub/demo traffic cannot crowd out ours
-            params["filter"] = f"span:{self._span_prefix}"
+        if prefix:  # server-side: unrelated hub/demo traffic cannot crowd out ours
+            params["filter"] = f"span:{prefix}"
+        record = {"start": params["startTime"], "end": params["endTime"],
+                  "filter": params.get("filter", ""), "pages": 0, "traces": 0,
+                  "cap_hit": False}  # fmt: skip
+        self.listings.append(record)
         out: list[Trace] = []
         for _page in range(self._max_pages):
             body = self._get(url, params).json()
             self.pages_fetched += 1
+            record["pages"] += 1
             for t in body.get("traces", []):
-                spans = tuple(Span(s["name"], dict(s.get("labels", {}))) for s in t["spans"])
+                spans = tuple(
+                    Span(
+                        s["name"], dict(s.get("labels", {})), s.get("spanId", ""),
+                        s.get("parentSpanId", ""), s.get("startTime", ""), s.get("endTime", ""),
+                    )
+                    for s in t["spans"]
+                )  # fmt: skip
                 out.append(Trace(t["traceId"], spans))
+            record["traces"] = len(out)
             if not body.get("nextPageToken"):
                 return out
             params["pageToken"] = body["nextPageToken"]
-        self.cap_hit = True
+        self.cap_hit = record["cap_hit"] = True
         raise TraceListTruncated(
             f"Cloud Trace listing still had more pages after {self._max_pages} pages "
             f"({len(out)} traces) for the window {params['startTime']}..{params['endTime']}; "
