@@ -272,11 +272,7 @@ Evidence first, then the fix. What is in place to find the cause:
 - **Every span export is a line too** (`event: export`, `ok`, `n`, `ms`, `error`): the Cloud Trace
   exporter is wrapped so a failed or raising export (429, auth, network) is surfaced instead of being
   swallowed by the batch processor.
-- **Live proof workflow**: input `probe_calls` (N) runs a unary probe, N back-to-back and N/2 spaced
-  read-only `journeys_list` calls, then counts the `acme.engine.op` traces (sent vs found, lost call
-  indices, per kind) into the job summary; and both engines' log lines for the run window are
-  uploaded as the `engine-logs` artifact (`{engine, ts, severity, text}` JSON lines, fixture-PII lines
-  redacted; needs `logging.viewer`, a read failure is written into the file, not fatal).
+- The unary probe and the engine-log artifact in the live proof workflow are a separate PR.
 - Reading it: a missing trace whose op line shows `is_recording: false` / `parent.sampled: false` is
   platform sampling; `flush_ok: false` or an `export` line with `ok: false` is our exporter; different
   `pid` / `instance` values per call point to the multi-process or multi-instance hypotheses.
