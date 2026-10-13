@@ -7,6 +7,9 @@ from acme import telemetry
 
 
 class FakeExporter(SpanExporter):
+    def __init__(self, project_id=None):
+        self.project_id = project_id
+
     def export(self, spans):
         return 0
 
@@ -47,7 +50,7 @@ def test_a_failing_exporter_never_raises(monkeypatch):
     monkeypatch.setenv(telemetry.TELEMETRY_ENV, "true")
     Recorder(monkeypatch, object())
 
-    def boom():
+    def boom(project_id=None):
         raise RuntimeError("no ADC")
 
     assert telemetry.configure_cloud_trace("acme-sales-agent", boom) is False
@@ -71,3 +74,34 @@ def test_acme_enable_tracing_flag_installs_the_exporter_without_a_google_cloud_n
     rec = Recorder(monkeypatch, object())
     assert telemetry.configure_cloud_trace("acme-customer-agent", FakeExporter) is True
     assert len(rec.set) == 1
+
+
+def _project_id_passed(monkeypatch, env):
+    for k in ("ACME_GENAI_PROJECT", "GOOGLE_CLOUD_PROJECT"):
+        monkeypatch.delenv(k, raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("ACME_ENABLE_TRACING", "true")
+    Recorder(monkeypatch, object())
+    seen = []
+
+    def factory(**kw):
+        seen.append(kw)
+        return FakeExporter(**kw)
+
+    assert telemetry.configure_cloud_trace("acme-customer-agent", factory) is True
+    return seen
+
+
+def test_injected_project_number_never_reaches_the_exporter(monkeypatch):
+    """#203: Agent Engine injects GOOGLE_CLOUD_PROJECT=<number>; Cloud Trace needs the ID."""
+    seen = _project_id_passed(
+        monkeypatch,
+        {"GOOGLE_CLOUD_PROJECT": "493084803309", "ACME_GENAI_PROJECT": "acme-airlines-factory"},
+    )
+    assert seen == [{"project_id": "acme-airlines-factory"}]
+
+
+def test_project_id_falls_back_to_the_llm_config_project(monkeypatch):
+    seen = _project_id_passed(monkeypatch, {"GOOGLE_CLOUD_PROJECT": "493084803309"})
+    assert seen == [{"project_id": "acme-airlines-factory"}]
