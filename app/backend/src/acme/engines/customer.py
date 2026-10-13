@@ -34,7 +34,7 @@ from pydantic import ConfigDict
 
 from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
-from acme.telemetry import flush, span
+from acme.telemetry import EngineOp, flush, span
 
 DISPLAY_NAME = "acme-customer-agent"
 APP_NAME = "acme-customer"
@@ -131,33 +131,38 @@ def shared(fn):
 
         @functools.wraps(fn)
         async def wrapped_gen(self, *args, **kwargs):
+            op = EngineOp(fn.__name__)
             try:
-                async with self._shared_operation():
-                    async for item in fn(self, *args, **kwargs):
-                        yield item
+                with op.span():
+                    async with self._shared_operation():
+                        async for item in fn(self, *args, **kwargs):
+                            yield item
             finally:
-                flush()  # export this operation's spans before the process can be throttled
+                op.log(flush())  # export this operation's spans before the process is throttled
 
         return wrapped_gen
     if inspect.iscoroutinefunction(fn):
 
         @functools.wraps(fn)
         async def wrapped_async(self, *args, **kwargs):
+            op = EngineOp(fn.__name__)
             try:
-                async with self._shared_operation():
-                    return await fn(self, *args, **kwargs)
+                with op.span():
+                    async with self._shared_operation():
+                        return await fn(self, *args, **kwargs)
             finally:
-                await asyncio.to_thread(flush)
+                op.log(await asyncio.to_thread(flush))
 
         return wrapped_async
 
     @functools.wraps(fn)
     def wrapped(self, *args, **kwargs):
+        op = EngineOp(fn.__name__)
         try:
-            with self._shared_operation_sync():
+            with op.span(), self._shared_operation_sync():
                 return fn(self, *args, **kwargs)
         finally:
-            flush()
+            op.log(flush())
 
     return wrapped
 

@@ -23,7 +23,7 @@ from acme.engines.customer import (
     validate_env,
 )
 from acme.sales.client import CustomerEngineHandle, build_customer_client
-from acme.telemetry import flush
+from acme.telemetry import EngineOp, flush
 
 DISPLAY_NAME = "acme-sales-agent"
 APP_NAME = "acme-sales"
@@ -108,26 +108,30 @@ class SalesEngineApp:
         sid = session_id or f"s-{user_id}"
         # The radar's sent-set is the only Sales state: share it across processes (#200). The
         # lock covers the whole tick, so two processes never both propose for the same journey.
-        async with self._exclusive():
-            if self.shared is not None and (blob := self.shared.get_blob("sales_sent")):
-                self.radar.import_sent(json.loads(blob))
-            try:
-                got = await self._sessions.get_session(
-                    app_name=APP_NAME, user_id=user_id, session_id=sid
-                )
-                if got is None:
-                    await self._sessions.create_session(
-                        app_name=APP_NAME, user_id=user_id, session_id=sid
-                    )
-                content = types.Content(role="user", parts=[types.Part(text=message)])
-                async for event in self._runner.run_async(
-                    user_id=user_id, session_id=sid, new_message=content
-                ):
-                    yield event.model_dump(mode="json", exclude_none=True)
-            finally:
-                if self.shared is not None:
-                    self.shared.set_blob("sales_sent", json.dumps(self.radar.export_sent()))
-                flush()  # export the pitch and A2A spans before the process can be throttled
+        op = EngineOp("sales_tick")
+        try:
+            with op.span():
+                async with self._exclusive():
+                    if self.shared is not None and (blob := self.shared.get_blob("sales_sent")):
+                        self.radar.import_sent(json.loads(blob))
+                    try:
+                        got = await self._sessions.get_session(
+                            app_name=APP_NAME, user_id=user_id, session_id=sid
+                        )
+                        if got is None:
+                            await self._sessions.create_session(
+                                app_name=APP_NAME, user_id=user_id, session_id=sid
+                            )
+                        content = types.Content(role="user", parts=[types.Part(text=message)])
+                        async for event in self._runner.run_async(
+                            user_id=user_id, session_id=sid, new_message=content
+                        ):
+                            yield event.model_dump(mode="json", exclude_none=True)
+                    finally:
+                        if self.shared is not None:
+                            self.shared.set_blob("sales_sent", json.dumps(self.radar.export_sent()))
+        finally:
+            op.log(flush())  # export the pitch and A2A spans before the process is throttled
 
     def _exclusive(self):
         return contextlib.nullcontext() if self.shared is None else self.shared.exclusive()
