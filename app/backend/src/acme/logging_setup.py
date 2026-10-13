@@ -65,6 +65,10 @@ def configure_logging() -> None:
     def factory(*args, **kwargs) -> logging.LogRecord:
         record = previous(*args, **kwargs)
         try:
+            if record.name == "uvicorn.access" and isinstance(record.args, tuple):
+                # uvicorn's AccessFormatter unpacks the 5 args (#204): keep the tuple, mask each.
+                record.args = tuple(redact(a) if isinstance(a, str) else a for a in record.args)
+                return record
             record.msg = redact(record.getMessage())
             record.args = None
         except Exception:  # noqa: BLE001 (logging must never raise)
