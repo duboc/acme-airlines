@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -164,6 +165,56 @@ def write_inventory(report: Report, path: str) -> None:
     Path(path).write_text(json.dumps(report.inventory, indent=1, sort_keys=True))
 
 
+CUSTOMER_UNARY = "POST /api/reasoning_engine"  # Sales is `stream_reasoning_engine`
+STEP_SPAN = "acme.scenario.step"
+
+
+_TS = re.compile(r"^(?P<head>[^.Z+]+)(?:\.(?P<frac>\d+))?(?P<tz>Z|[+-]\d\d:\d\d)?$")
+
+
+def _parse_ts(text: str) -> datetime | None:
+    """RFC 3339 (with optional nanoseconds, `Z` or an offset) -> aware datetime (microseconds)."""
+    m = _TS.match(text)
+    if not m:
+        return None
+    frac = (m["frac"] or "0")[:6].ljust(6, "0")
+    tz = "+00:00" if m["tz"] in (None, "Z") else m["tz"]
+    try:
+        return datetime.fromisoformat(f"{m['head']}.{frac}{tz}")
+    except ValueError:
+        return None
+
+
+def diagnose_turn(unfiltered: list[Trace] | None, turn: dict[str, Any]) -> str:
+    """Why is this turn unmatched: `absent` (no Customer unary trace of any kind started during
+    the turn, in the UNFILTERED run listing) vs `partial` (one did, but without the step span)."""
+    if unfiltered is None:
+        return "diagnosis: unknown (no unfiltered listing)"
+    lo, hi = _parse_ts(turn["sent_at"]), _parse_ts(turn["received_at"])
+    started = []
+    for t in unfiltered:
+        root = next((sp for sp in t.spans if sp.name == CUSTOMER_UNARY), None)
+        at = _parse_ts(root.start) if root else None
+        if root and at and lo and hi and lo <= at <= hi:
+            started.append(t)
+    if not started:
+        return (
+            f"diagnosis: ABSENT, no Customer {CUSTOMER_UNARY!r} trace of any kind started during "
+            f"the turn ({len(unfiltered)} traces in the unfiltered run window)"
+        )
+    counts = [len(t.spans) for t in started]
+    if any(sp.name == STEP_SPAN for t in started for sp in t.spans):
+        return "diagnosis: step span present in the unfiltered listing but not matched (harness)"
+    return (f"diagnosis: PARTIAL, {len(started)} Customer trace(s) started during the turn but "
+            f"none has an {STEP_SPAN!r} span (span counts {counts})")  # fmt: skip
+
+
+def customer_call_summary(turn_log: list[dict[str, Any]]) -> dict[str, int]:
+    matched = sum(1 for t in turn_log if t.get("matched_trace_id"))
+    return {"steps_expected": len(turn_log), "steps_with_trace": matched,
+            "steps_missing": len(turn_log) - matched}  # fmt: skip
+
+
 async def run_proof(
     backend: Any,
     local: Any,
@@ -250,32 +301,42 @@ async def run_proof(
         delay = min(delay * POLL_GROWTH, POLL_MAX)
 
     settled = list(pool.values())
-    pages = getattr(traces, "pages_fetched", None)
-    capped = "yes" if getattr(traces, "cap_hit", False) else "no"
-    paging = "" if pages is None else f"; {pages} pages fetched, page cap hit: {capped}"
-    scanned = f"{len(settled)} traces scanned in the run window{paging}; span names seen: " \
-              f"{span_kinds_seen(settled)}"  # fmt: skip
-    report.failures += [f"{sid} turn {turn}: no Customer step trace in Cloud Trace after settle "
-                        f"({scanned})" for sid, turn in pending]  # fmt: skip
-    report.failures += [f"missing span kind {m!r} after settle ({scanned})"
-                        for m in missing_spans(settled)]  # fmt: skip
-    report.failures += pii_failures(settled, pii)
-    report.rows.sort(key=lambda r: (order[r.scenario], r.turn))
-    if dump or report.failures:  # diagnostics: also list WITHOUT the filter, to compare
-        unfiltered = None
+    pii_hits = pii_failures(settled, pii)
+    unfiltered: list[Trace] | None = None
+    if dump or pending or report.failures or missing_spans(settled) or pii_hits:
+        # Diagnostics: also list WITHOUT the filter, to tell an absent trace from a partial one.
         probe = getattr(traces, "list_unfiltered", None)
         if probe is not None:
             try:
                 unfiltered = await probe(run_start, now() + timedelta(seconds=5))
             except Exception as exc:  # noqa: BLE001 - diagnostics must never mask the failures
                 report.failures.append(f"diagnostic unfiltered listing failed: {exc}")
+    log_by_turn = {(t["scenario"], t["turn"]): t for t in turn_log}
+    diagnosis = {
+        key: diagnose_turn(unfiltered, log_by_turn[key]) for key in pending if key in log_by_turn
+    }
+    for key, text in diagnosis.items():
+        log_by_turn[key]["diagnosis"] = text
+    pages = getattr(traces, "pages_fetched", None)
+    capped = "yes" if getattr(traces, "cap_hit", False) else "no"
+    paging = "" if pages is None else f"; {pages} pages fetched, page cap hit: {capped}"
+    scanned = f"{len(settled)} traces scanned in the run window{paging}; span names seen: " \
+              f"{span_kinds_seen(settled)}"  # fmt: skip
+    report.failures += [f"{sid} turn {turn}: no Customer step trace in Cloud Trace after settle "
+                        f"({scanned}); {diagnosis.get((sid, turn), 'diagnosis unavailable')}"
+                        for sid, turn in pending]  # fmt: skip
+    report.failures += [f"missing span kind {m!r} after settle ({scanned})"
+                        for m in missing_spans(settled)]  # fmt: skip
+    report.failures += pii_hits
+    report.rows.sort(key=lambda r: (order[r.scenario], r.turn))
+    if dump or report.failures:
         for row in report.rows:
-            for t in turn_log:
-                if (t["scenario"], t["turn"]) == (row.scenario, row.turn):
-                    t["matched_trace_id"] = row.trace_id
+            if (row.scenario, row.turn) in log_by_turn:
+                log_by_turn[(row.scenario, row.turn)]["matched_trace_id"] = row.trace_id
         report.inventory = build_inventory(
             turn_log, settled, unfiltered, list(getattr(traces, "listings", [])), pii
         )
+        report.inventory["customer_calls"] = customer_call_summary(turn_log)
     return report
 
 
