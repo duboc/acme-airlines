@@ -28,12 +28,12 @@ secret is read).
 | `60-factory.sh status\|tick-install\|pause\|resume` | Loop schedule (6h fallback) and the cost switch (never stops the VM) | `loop` |
 | `70-budget-guard.sh` | Budget (`BUDGET_USD`), Pub/Sub, the agent-suspending guard on Cloud Run, its hub UAT | `budget` |
 | `75-backups.sh` | Daily snapshot schedule (03:00 UTC, 7 days) on the hub VM boot disk | `backups` |
-| `76-watchdog.sh` | Watchdog Cloud Run service + 5-min Cloud Scheduler job + PO email alert (`acme-factory-watchdog-po-alert`) | `watchdog` |
+| `76-watchdog.sh` | Watchdog Cloud Run service + hourly (`0 * * * *`) Cloud Scheduler job + `04:00 UTC` reincarnation + PO email alert (`acme-factory-watchdog-po-alert`) | `watchdog` |
 | `80-observatory-platform.sh` | Observatory platform (BigQuery, SAs, WIF, IAP, secrets, scheduler) | `observatory` |
 | `90-irrops-demo-platform.sh` | Product demo service (IAP, minimal SA) — example of an app platform | `irrops-demo` |
 | `95-agent-engine-platform.sh` | Vertex AI Agent Engine platform for app agents (runtime SA, bucket, deployer) | `agent-engine` |
 | `90-teardown.sh [--delete-project]` | `deploy.sh --delete`, optionally deleting the project | — |
-| `verify.sh <check>\|all\|e2e` | The factory test suite ([06-observability.md](../06-observability.md)) | — |
+| `verify.sh <check>\|all\|e2e` | The factory test suite ([03-verification-and-eval.md](../03-verification-and-eval.md)) | — |
 | `tests/test_verify.sh` | Unit tests for the `verify.sh` parsers (offline) | — |
 | `budget-guard/` | Guard service source and tests (`uv run --with pytest pytest -q`) | — |
 | `watchdog/` | Watchdog service source and tests (`uv run --with pytest pytest -q`) | — |

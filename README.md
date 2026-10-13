@@ -11,13 +11,11 @@ changes as pull requests.
 | Path | What |
 |------|------|
 | [`app/`](app/) | The acme-airlines multi-agent application (see [`app/README.md`](app/README.md)). |
-| [`docs/scion/`](docs/scion/) | Complete playbook, architecture, IAP guide, evaluation methodology, and Scion configuration reference. |
+| [`docs/scion/`](docs/scion/README.md) | Concise Scion, GCP/IAP, `scion-frontiers/agent-team`, heartbeat, and eval configuration guides. |
 | [`infra/`](infra/) | Scripts and config that create and operate the factory. |
-| [`docs/setup/`](docs/setup/) | How the factory was built, step by step, and how to run it. |
 | [`docs/decisions/`](docs/decisions/) | Architecture decision records (app stack: [ADR 0100](docs/decisions/0100-app-stack.md)). |
 | [`docs/product/`](docs/product/) | Product brief (IRROPS use case), [MVP plan](docs/product/mvp-plan.md), [try-it guide](docs/product/try-it.md), and [demo script](docs/product/demo-script.md). |
-| [`docs/factory/`](docs/factory/) | How to work with the agent team; smoke-test records. |
-| [`factory/team/`](factory/team/) | Source for the agent team's role templates. |
+| [`factory/team/`](factory/team/) | Compact ACME factory header (`team-rules.md` + `roles/lead.md`) layered onto [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team). |
 | [`factory/templates/`](factory/templates/) | Generated Scion role templates (`acme-*`). |
 | [`docs/superpowers/`](docs/superpowers/) | Design spec and implementation plan for the factory. |
 
@@ -64,18 +62,14 @@ npm test
 npm run build
 ```
 
-## Reproduce this factory
+## Scion Software Factory Configuration
 
-The full playbook, with scripts, to build another always-on Scion factory: **[docs/scion/](docs/scion/README.md)**.
+Everything needed to configure or reproduce the factory is in **[`docs/scion/`](docs/scion/README.md)**:
 
-## Start here
-
-1. [Overview](docs/setup/00-overview.md) — architecture, resources, cost.
-2. [Runbook](docs/setup/01-runbook.md) — every command we ran, in order.
-3. [Operations](docs/setup/02-operations.md) — access, logs, stop/start, upgrades.
-4. [Troubleshooting](docs/setup/03-troubleshooting.md)
-5. [Teardown](docs/setup/04-teardown.md)
-6. [Working with the agent team](docs/factory/team.md)
+1. **[`docs/scion/README.md`](docs/scion/README.md)** — The 3 files you configure (`infra/factory.env`, `infra/deploy-config.json`, `AGENTS.md`) and 3-command quickstart.
+2. **[`docs/scion/01-scion-and-gcp-setup.md`](docs/scion/01-scion-and-gcp-setup.md)** — Provisioning scripts (`infra/00..95`), the 6 Scion configuration planes, and the 4-step IAP domain checklist (`zup.com.br`, `google.com`).
+3. **[`docs/scion/02-agents-and-heartbeat.md`](docs/scion/02-agents-and-heartbeat.md)** — Agent templates built from [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team), 3-tier hierarchy, and 4-layer heartbeat (hourly `0 * * * *` watchdog, daily `04:00 UTC` reincarnation, 6h fallback tick, `$2,000` budget guard).
+4. **[`docs/scion/03-verification-and-eval.md`](docs/scion/03-verification-and-eval.md)** — Infrastructure checks (`infra/verify.sh all` / `e2e`) and the 5-layer product evaluation methodology.
 
 ## Verify the factory
 

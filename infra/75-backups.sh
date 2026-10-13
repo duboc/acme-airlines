@@ -3,7 +3,7 @@
 # which holds hub.db, agent homes and workspaces. Idempotent.
 #
 #   Policy   <VM_NAME>-daily-snapshots: daily at 03:00 UTC, kept 7 days, regional storage
-#   Restore  create a disk from a snapshot, then a VM from that disk (docs/scion/05-cost-and-safety.md)
+#   Restore  create a disk from a snapshot, then a VM from that disk (docs/scion/01-scion-and-gcp-setup.md)
 set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"
