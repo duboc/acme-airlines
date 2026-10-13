@@ -1,7 +1,7 @@
 """`uv run acme-customer`: serve the runtime API (Customer agent + in-process simulators).
 
 Two listeners share one runtime: the passenger-facing API (`ACME_CUSTOMER_PORT`, 8800) and the
-A2A-only listener (`ACME_A2A_PORT`, 8802) that Sales is pointed at (#230).
+A2A-only listener (`ACME_A2A_HOST`/`ACME_A2A_PORT`, 8802) that Sales is pointed at (#230).
 """
 
 import asyncio
@@ -40,4 +40,5 @@ def main() -> None:
     host = os.environ.get("ACME_CUSTOMER_HOST", "127.0.0.1")
     port = int(os.environ.get("ACME_CUSTOMER_PORT", "8800"))
     a2a_port = int(os.environ.get("ACME_A2A_PORT", "8802"))
-    asyncio.run(_serve(create_app(), host, host, port, a2a_port))
+    a2a_host = os.environ.get("ACME_A2A_HOST", host)  # compose binds each listener to one network
+    asyncio.run(_serve(create_app(), host, a2a_host, port, a2a_port))

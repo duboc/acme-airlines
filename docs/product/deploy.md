@@ -20,7 +20,7 @@ docker compose -f app/compose.yaml up --build     # then open http://localhost:8
 
 All containers are non-root (uid 10001, or 101 for nginx), run read-only with `cap_drop: ALL` and
 `no-new-privileges`. Images contain no secrets and no `.env` files (`.dockerignore` excludes them);
-tokens only come from the environment at run time. `sim-net` and `a2a-net` are `internal` networks.
+tokens only come from the environment at run time. `sim-net` and `a2a-net` are `internal` networks. `customer-runtime` has a fixed address on each (`web-net` 10.89.1.2, `a2a-net` 10.89.2.2) and each listener binds one address only: the passenger API (8800) on `web-net`, the A2A-only listener (8802) on `a2a-net`, so `sales-agent` cannot connect to 8800 at all (#265). On Cloud Run, serve 8802 as a separate service from the same image (or keep it behind IAM).
 
 Demo limitation: the Customer runtime keeps its own in-process simulators (the runtime reads and
 writes that world directly), so the standalone `acme-sim` serves the Sales agent's inventory view

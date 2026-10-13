@@ -128,6 +128,21 @@ jobs:
           # the agent-to-agent endpoint is not reachable from the browser side
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8080/api/a2a)" = "404"
 
+      - name: Sales cannot reach the passenger API port (8800), only A2A (8802)
+        run: |
+          set -e
+          $COMPOSE exec -T sales-agent python - <<'PY'
+          import socket
+          for port, want in ((8800, False), (8802, True)):
+              s = socket.socket(); s.settimeout(3)
+              try:
+                  s.connect(("customer-runtime", port)); got = True
+              except OSError:
+                  got = False
+              assert got == want, f"customer-runtime:{port} reachable={got}, expected {want}"
+          print("sales: 8800 unreachable, 8802 reachable")
+          PY
+
       - name: Sales credential reaches only the inventory server (403 elsewhere)
         run: |
           set -e
