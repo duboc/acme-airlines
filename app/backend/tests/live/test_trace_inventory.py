@@ -134,3 +134,41 @@ def test_cloud_trace_records_each_listing_with_and_without_the_filter():
         ("span:acme.", 2, 2), ("", 1, 1)]  # fmt: skip
     sp = filtered[0].spans[0]
     assert (sp.span_id, sp.parent_id, sp.start, sp.end) == ("9", "8", "a", "b")
+
+
+# --- absent vs partial diagnosis (#219) ---------------------------------------------------------
+def _span(name, start, parent=""):
+    return Span(name, {}, "x", parent, start, start)
+
+
+async def test_an_unmatched_turn_with_no_customer_trace_at_all_is_diagnosed_absent():
+    noise = Trace("n", (_span("/check", "2026-01-01T00:00:00.5Z"),))
+    src = Source([Trace("t1", (step_span(),))], [noise])
+    r = await run(src)
+    failure = next(f for f in r.failures if "turn 2" in f)
+    assert "ABSENT" in failure and "1 traces in the unfiltered run window" in failure
+    assert r.inventory["turns"][1]["diagnosis"].startswith("diagnosis: ABSENT")
+    assert r.inventory["customer_calls"] == {
+        "steps_expected": 2, "steps_with_trace": 1, "steps_missing": 1,
+    }  # fmt: skip
+
+
+async def test_an_unmatched_turn_with_a_trace_lacking_the_step_span_is_diagnosed_partial():
+    partial = Trace("p", tuple(_span(n, "2026-01-01T00:00:00Z") for n in
+                               ("POST /api/reasoning_engine", "fastapi.dependencies",
+                                "fastapi.endpoint")))  # fmt: skip
+    src = Source([Trace("t1", (step_span(),))], [partial])
+    r = await run(src)
+    failure = next(f for f in r.failures if "turn 2" in f)
+    assert "PARTIAL" in failure and "span counts [3]" in failure
+
+
+async def test_without_an_unfiltered_listing_the_diagnosis_says_so():
+    class NoProbe:
+        listings: list = []
+
+        async def list_traces(self, start, end):
+            return [Trace("t1", (step_span(),))]
+
+    r = await run(NoProbe())
+    assert any("diagnosis: unknown" in f for f in r.failures if "turn 2" in f)
