@@ -24,7 +24,7 @@ from acme.demo.front import create_front
 from acme.logging_setup import configure_logging
 
 LOOPBACK = "127.0.0.1"
-SIM_PORT, CUSTOMER_PORT, SALES_PORT = 8700, 8800, 8801
+SIM_PORT, CUSTOMER_PORT, SALES_PORT, A2A_PORT = 8700, 8800, 8801, 8802
 _BIN = Path(sys.executable).parent
 _COMMANDS = {k: str(_BIN / f"acme-{k}") for k in ("sim", "customer", "sales")}
 
@@ -50,14 +50,19 @@ def child_env(name: str, tokens: Tokens, base: Mapping[str, str]) -> dict[str, s
             ACME_SIM_HOST=LOOPBACK, ACME_SIM_PORT=str(SIM_PORT), ACME_SIM_TOKENS=tokens.sim_tokens
         )
     elif name == "customer":
-        env.update(ACME_CUSTOMER_HOST=LOOPBACK, ACME_CUSTOMER_PORT=str(CUSTOMER_PORT))
+        env.update(
+            ACME_CUSTOMER_HOST=LOOPBACK,
+            ACME_CUSTOMER_PORT=str(CUSTOMER_PORT),
+            ACME_A2A_PORT=str(A2A_PORT),
+            ACME_SALES_TOKEN=tokens.sales,  # lets the runtime recognise (and fence) Sales
+        )
     elif name == "sales":
         env.update(
             ACME_SALES_HOST=LOOPBACK,
             ACME_SALES_PORT=str(SALES_PORT),
             ACME_SALES_TOKEN=tokens.sales,
             ACME_SIM_URL=f"http://{LOOPBACK}:{SIM_PORT}",
-            ACME_CUSTOMER_URL=f"http://{LOOPBACK}:{CUSTOMER_PORT}",
+            ACME_CUSTOMER_URL=f"http://{LOOPBACK}:{A2A_PORT}",
         )
     return env
 

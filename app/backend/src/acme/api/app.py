@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from acme import metrics
+from acme.api.a2a_guard import SalesRouteGuard, sales_token_from_env
 from acme.api.errors import ApiError, add_error_handlers, not_found
 from acme.api.events import TimelineEvent
 from acme.api.runtime import JourneyRecord, Runtime, WhatsAppMessage
@@ -171,7 +172,33 @@ def create_app(clock: Clock | None = None) -> FastAPI:
     return create_local_app(clock)
 
 
-def create_local_app(clock: Clock | None = None) -> FastAPI:
+def create_a2a_app(rt: Runtime, sales_token: str | None = None) -> FastAPI:
+    """The A2A listener: agent card and `/a2a` only, no passenger route exists on it."""
+    app = FastAPI(title="ACME Customer A2A", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.runtime = rt
+    app.add_middleware(SalesRouteGuard, sales_token=sales_token or sales_token_from_env(os.environ))
+
+    @app.get(CARD_PATH, include_in_schema=False)
+    async def agent_card(request: Request) -> dict:
+        card = customer_agent_card(str(request.base_url))
+        return card.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    @app.post("/a2a", include_in_schema=False)
+    async def a2a_endpoint(request: Request) -> dict:
+        return await _handle_a2a(rt, request)
+
+    return app
+
+
+async def _handle_a2a(rt: Runtime, request: Request) -> dict:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    return await CustomerSkills(rt).handle_a2a(body if isinstance(body, dict) else {})
+
+
+def create_local_app(clock: Clock | None = None, sales_token: str | None = None) -> FastAPI:
     rt = Runtime(clock)
     loop = CustomerLoop(rt)
 
@@ -187,6 +214,7 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
             await loop.stop()
 
     app = FastAPI(title="ACME Airlines runtime API", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(SalesRouteGuard, sales_token=sales_token or sales_token_from_env(os.environ))
     app.add_middleware(
         CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"]
     )
@@ -207,11 +235,7 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
 
     @app.post("/a2a", include_in_schema=False)
     async def a2a_endpoint(request: Request) -> dict:
-        try:
-            body = await request.json()
-        except ValueError:
-            body = {}
-        return await CustomerSkills(rt).handle_a2a(body if isinstance(body, dict) else {})
+        return await _handle_a2a(rt, request)
 
     @app.post("/scenario/reset", tags=["scenario"])
     async def reset() -> dict[str, str]:

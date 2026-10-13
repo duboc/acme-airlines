@@ -107,7 +107,7 @@ GitHub Actions workflows in `.github/workflows/`:
 
 ## Customer agent
 
-`uv run acme-customer` (from `app/backend`) serves the runtime API on `ACME_CUSTOMER_PORT` (default 8800) with the
+`uv run acme-customer` (from `app/backend`) serves the runtime API on `ACME_CUSTOMER_PORT` (default 8800) and a separate A2A-only listener on `ACME_A2A_PORT` (default 8802; the Sales agent is pointed there, and a Sales-credentialed request gets 403 on every route but `POST /a2a`, #230) with the
 Customer agent and in-process simulators. `POST /scenario/trigger-cancellation` runs scenario 1
 (silent ingestion and profile evaluation); see `docs/product/policy-rules.md` for the quiet-hours rule.
 
@@ -154,7 +154,7 @@ change an event, update `acme.api.events`, regenerate the contract
 ## Sales agent and Customer A2A skills (scenario 4a)
 
 The Sales agent is a separate ADK/A2A service: `ACME_SALES_TOKEN=<sales token> uv run acme-sales`
-(port `ACME_SALES_PORT`, default 8801; it refuses to start without the token). It is structurally
+(port `ACME_SALES_PORT`, default 8801; it refuses to start without the token). `acme-customer` also refuses to start without `ACME_SALES_TOKEN` (the same value) because it uses it to fence Sales to `POST /a2a`. It is structurally
 unable to contact passengers: its only channels are the Customer A2A skills and the `inventory` MCP
 server with the `sales` credential (`acme.sales.config.sales_mcp_config` lists only that server;
 `acme-sim` answers 403 for every other server). `tests/sales` also asserts the package imports no

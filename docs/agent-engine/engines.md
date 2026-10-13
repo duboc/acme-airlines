@@ -111,7 +111,7 @@ local mode. Bodies are never logged. See `docs/product/deploy.md`.
 
 ### Security boundary
 
-Both engines run as `acme-agent-engine` (project-wide `aiplatform.user`), so IAM does not stop the Sales engine from calling the Customer engine's demo ops, which return passenger data. The boundary is enforced in code: `EngineCustomerClient` exposes only the three skills, via `a2a_skill`. The governance architecture test (`tests/governance/test_architecture.py`) checks that Sales sources never call any other Customer engine operation. This is the same posture as local mode, and it is a known, accepted residual risk (security audit of #178).
+Both engines run as `acme-agent-engine` (project-wide `aiplatform.user`), so IAM does not stop the Sales engine from calling the Customer engine's demo ops, which return passenger data. The boundary is enforced in code: `EngineCustomerClient` exposes only the three skills, via `a2a_skill`. The governance architecture test (`tests/governance/test_architecture.py`) checks that Sales sources never call any other Customer engine operation. This residual risk is still accepted for the engines (security audit of #178). In local and compose modes it is now closed at runtime: Sales is fenced to `POST /a2a` on an A2A-only listener, and a Sales-credentialed request to any other route gets 403 plus an audit event (ADR 0102, #230).
 
 ## Proof
 

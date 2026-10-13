@@ -1,6 +1,6 @@
 """`uv run acme-sales`: the Sales agent service (agent card + background radar loop).
 
-Env: `ACME_CUSTOMER_URL` (Customer A2A base, default http://127.0.0.1:8800), `ACME_SIM_URL`
+Env: `ACME_CUSTOMER_URL` (Customer A2A-only listener, default http://127.0.0.1:8802), `ACME_SIM_URL`
 (default http://127.0.0.1:8700), `ACME_SALES_TOKEN` (REQUIRED: the `sales` credential; the agent
 refuses to start without it), `ACME_SALES_PORT` (8801), `ACME_SALES_TICK_SECONDS` (5).
 """
@@ -60,7 +60,8 @@ def main() -> None:
     if not token:
         raise SystemExit("ACME_SALES_TOKEN is required (the sales credential for acme-sim)")
     customer = httpx.AsyncClient(
-        base_url=os.environ.get("ACME_CUSTOMER_URL", "http://127.0.0.1:8800")
+        base_url=os.environ.get("ACME_CUSTOMER_URL", "http://127.0.0.1:8802"),
+        headers={"Authorization": f"Bearer {token}"},  # Sales caller identity (#230)
     )
     inventory = SimClient(
         http_connector(

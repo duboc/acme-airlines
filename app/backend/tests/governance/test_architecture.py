@@ -166,3 +166,11 @@ def test_the_engine_op_check_allows_a2a_skill_and_own_stream_query():
         "    self.stream_query()"
     )
     assert engine_op_violations(ok) == []
+
+
+def test_sales_is_pointed_at_the_a2a_listener_and_presents_its_credential():
+    """#230: Sales' customer URL is the A2A-only port and its HTTP client carries the bearer."""
+    text = (SRC / "sales/main.py").read_text()
+    assert "8802" in text and 'headers={"Authorization": f"Bearer {token}"}' in text
+    compose = (SRC.parents[2] / "compose.yaml").read_text()
+    assert "ACME_CUSTOMER_URL: http://customer-runtime:8802" in compose
