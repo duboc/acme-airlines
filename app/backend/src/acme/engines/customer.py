@@ -36,6 +36,8 @@ from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
 from acme.telemetry import EngineOp, flush, span
 
+log = logging.getLogger(__name__)
+
 DISPLAY_NAME = "acme-customer-agent"
 APP_NAME = "acme-customer"
 # Exact pins, kept equal to uv.lock by a test: the container resolves these with pip, so floating
@@ -312,12 +314,14 @@ class CustomerEngineApp:
         from acme.api.scenarios import BY_ID
 
         if scenario_id not in BY_ID:
-            raise EngineOperationError(f"unknown scenario {scenario_id}")
+            log.info("unknown scenario %s", scenario_id)
+            raise EngineOperationError("scenario not found")
         return BY_ID[scenario_id]
 
     def _journey(self, journey_id: str):
         if journey_id not in self.runtime.journeys:
-            raise EngineOperationError(f"unknown journey {journey_id}")
+            log.info("unknown journey %s", journey_id)
+            raise EngineOperationError("journey not found")
         return self.runtime.journeys[journey_id]
 
     def scenarios_list(self) -> list[dict[str, Any]]:
@@ -342,7 +346,7 @@ class CustomerEngineApp:
         if runner.active is None:
             raise EngineOperationError("no scenario is started")
         if runner.index >= len(runner.active.steps):
-            raise EngineOperationError(f"scenario {runner.active.id} is finished; start it again")
+            raise EngineOperationError("scenario is finished; start it again")
         # A span this code owns carries the scenario for EVERY turn (cold first turn included):
         # `trace.get_current_span()` inside the ADK agent is not guaranteed to be recording (#215).
         with span("acme.scenario.step", acme__scenario=runner.active.id, acme__step=runner.index):
@@ -390,10 +394,16 @@ class CustomerEngineApp:
     async def _api(self, fn, *args) -> dict[str, Any] | list[Any]:
         from fastapi import HTTPException
 
+        from acme.api.errors import ApiError
+
         try:
             out = await fn(self.runtime, *args)
         except HTTPException as exc:  # remote calls lose exception types; the backend re-raises
-            return {"error": {"status": exc.status_code, "detail": exc.detail}}
+            code = exc.code if isinstance(exc, ApiError) else "error"
+            return {"error": {"status": exc.status_code, "detail": exc.detail, "code": code}}
+        except Exception:  # noqa: BLE001 - nothing raw (SimError, KeyError...) crosses the RPC
+            log.exception("engine operation failed")  # the log filter redacts the payload (#233)
+            return {"error": {"status": 500, "detail": "internal error", "code": "internal_error"}}
         return (
             [m.model_dump(mode="json") for m in out]
             if isinstance(out, list)

@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from acme import metrics
+from acme.api.errors import ApiError, add_error_handlers, not_found
 from acme.api.events import TimelineEvent
 from acme.api.runtime import JourneyRecord, Runtime, WhatsAppMessage
 from acme.api.scenarios import (
@@ -127,12 +128,12 @@ def journey_detail_view(rt: Runtime, rec: JourneyRecord) -> JourneyDetail:
 
 def require_passenger(rt: Runtime, passenger_id: str) -> None:
     if passenger_id not in rt.world.passengers:
-        raise HTTPException(404, f"unknown passenger {passenger_id}")
+        raise not_found("passenger", passenger_id)
 
 
 async def do_trigger(rt: Runtime, flight: str, reason: str) -> TriggerResult:
     if flight not in rt.world.flights:
-        raise HTTPException(404, f"unknown flight {flight}")
+        raise not_found("flight", flight)
     return TriggerResult(journey_ids=await rt.trigger_cancellation(flight, reason))
 
 
@@ -152,13 +153,13 @@ async def do_action(rt: Runtime, passenger_id: str, action: str) -> ActionResult
     require_passenger(rt, passenger_id)
     rec = rt.journey_for_passenger(passenger_id)
     if rec is None:
-        raise HTTPException(409, "no offer has been sent to this passenger")
+        raise ApiError(409, "no_offer_sent", "no offer has been sent to this passenger")
     try:
         if action == "accept_offer":
             return ActionResult(offer_status=await accept_offer(rt, rec))
         return ActionResult(offer_status=await decline_offer(rt, rec))
     except NoSentOffer:
-        raise HTTPException(409, "no offer has been sent to this passenger") from None
+        raise ApiError(409, "no_offer_sent", "no offer has been sent to this passenger") from None
 
 
 def create_app(clock: Clock | None = None) -> FastAPI:
@@ -177,10 +178,11 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
     metrics.add_http_metrics(app)
     rt = Runtime(clock)
     app.state.runtime = rt
+    add_error_handlers(app)
 
     def get_journey(journey_id: str) -> JourneyRecord:
         if journey_id not in rt.journeys:
-            raise HTTPException(404, f"unknown journey {journey_id}")
+            raise not_found("journey", journey_id)
         return rt.journeys[journey_id]
 
     @app.get(CARD_PATH, include_in_schema=False)
@@ -220,7 +222,7 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
     async def start_scenario(scenario_id: str) -> ScenarioState:
         require_demo_mode()
         if scenario_id not in BY_ID:
-            raise HTTPException(404, f"unknown scenario {scenario_id}")
+            raise not_found("scenario", scenario_id)
         return runner.start(BY_ID[scenario_id])
 
     @app.post("/scenarios/{scenario_id}/step", tags=["scenarios"])
@@ -228,11 +230,11 @@ def create_local_app(clock: Clock | None = None) -> FastAPI:
         """Advance the next scripted passenger action; the response is the expected next state."""
         require_demo_mode()
         if scenario_id not in BY_ID:
-            raise HTTPException(404, f"unknown scenario {scenario_id}")
+            raise not_found("scenario", scenario_id)
         if runner.active is None or runner.active.id != scenario_id:
-            raise HTTPException(409, f"scenario {scenario_id} is not started")
+            raise ApiError(409, "scenario_not_started", "scenario is not started")
         if runner.index >= len(runner.active.steps):
-            raise HTTPException(409, f"scenario {scenario_id} is finished; start it again")
+            raise ApiError(409, "scenario_finished", "scenario is finished; start it again")
         return await runner.step()
 
     @app.get("/journeys", tags=["journeys"])

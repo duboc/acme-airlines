@@ -17,7 +17,7 @@ import re
 from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any, Protocol
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from acme import metrics
@@ -30,6 +30,7 @@ from acme.api.app import (
     TriggerCancellation,
     TriggerResult,
 )
+from acme.api.errors import ApiError, add_error_handlers, not_found
 from acme.api.events import TimelineEvent
 from acme.api.scenarios import BY_ID, PresetView, ScenarioState
 from acme.customer.runtime import WhatsAppMessage
@@ -117,7 +118,8 @@ def _resource(env: Mapping[str, str], key: str) -> str:
 def ok(reply: Any) -> Any:
     """Engine ops return API errors as data (`{"error": {"status", "detail"}}`): re-raise them."""
     if isinstance(reply, dict) and "error" in reply:
-        raise HTTPException(reply["error"]["status"], reply["error"]["detail"])
+        err = reply["error"]
+        raise ApiError(err["status"], err.get("code", "error"), err["detail"])
     return reply
 
 
@@ -184,6 +186,7 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     backend = backend or EngineBackend.from_env()
     app = FastAPI(title="ACME Airlines runtime API (agent-engine mode)", version="0.1.0")
     app.state.engine_backend = backend
+    add_error_handlers(app)
     metrics.add_http_metrics(app)
 
     @app.exception_handler(EngineConfigError)
@@ -228,17 +231,17 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     @app.post("/scenarios/{scenario_id}/start", tags=["scenarios"])
     async def start_scenario(scenario_id: str) -> ScenarioState:
         if scenario_id not in BY_ID:
-            raise HTTPException(404, f"unknown scenario {scenario_id}")
+            raise not_found("scenario", scenario_id)
         return ScenarioState(**await backend.scenario_start(scenario_id))
 
     @app.post("/scenarios/{scenario_id}/step", tags=["scenarios"])
     async def step_scenario(scenario_id: str) -> ScenarioState:
         if scenario_id not in BY_ID:
-            raise HTTPException(404, f"unknown scenario {scenario_id}")
+            raise not_found("scenario", scenario_id)
         if backend.active != scenario_id:
-            raise HTTPException(409, f"scenario {scenario_id} is not started")
+            raise ApiError(409, "scenario_not_started", "scenario is not started")
         if (await backend.scenario_state())["done"]:
-            raise HTTPException(409, f"scenario {scenario_id} is finished; start it again")
+            raise ApiError(409, "scenario_finished", "scenario is finished; start it again")
         return ScenarioState(**await backend.scenario_step(scenario_id))
 
     @app.get("/journeys", tags=["journeys"])
@@ -247,7 +250,7 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
 
     def known(journeys: list[dict], journey_id: str) -> None:
         if journey_id not in {j["journey_id"] for j in journeys}:
-            raise HTTPException(404, f"unknown journey {journey_id}")
+            raise not_found("journey", journey_id)
 
     @app.get("/journeys/{journey_id}", tags=["journeys"])
     async def journey_detail(journey_id: str) -> JourneyDetail:
