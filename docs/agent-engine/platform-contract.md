@@ -19,6 +19,7 @@ This is what the team can rely on for running the IRROPS ADK agents on
 | Staging bucket | `gs://acme-airlines-factory-agent-engine` |
 | Deployer (GitHub Actions, WIF) | the existing `vars.OBSERVATORY_WIF_PROVIDER` + `vars.OBSERVATORY_DEPLOYER_SA`. It can create/update reasoning engines, write to the staging bucket and read its metadata (`legacyBucketReader`, since the SDK calls `buckets.get`; #186), and act as the runtime SA. |
 | Querying engines | `acme-irrops-demo` (the Cloud Run SA) has `aiplatform.user`. The demo API calls the engines with ADC. |
+| Engine logs | The deployer (`acme-observatory-deployer`, used by the deploy workflow) has `roles/logging.viewer`. On a failed deploy, print the engine's recent errors: `gcloud logging read 'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND severity>=WARNING' --freshness=1h --limit=50`. Agents don't get log access on their own identity |
 | GitHub variables | `AGENT_ENGINE_SA`, `AGENT_ENGINE_STAGING_BUCKET`, `AGENT_ENGINE_LOCATION` |
 
 ## Expected shape (owned by the team)
@@ -42,6 +43,7 @@ This is what the team can rely on for running the IRROPS ADK agents on
   logs.
 - **Environment on the engines:** `LLM_MODE=vertex`, `ACME_GENAI_LOCATION=global`
   (and `ACME_GENAI_PROJECT` if needed).
+  - **Agent Engine injects `GOOGLE_CLOUD_PROJECT` as the project *number*** (`493084803309`), not the ID. Set `ACME_GENAI_PROJECT=acme-airlines-factory` explicitly in the engine `env_vars` (or accept the number as equivalent). Never validate against the injected value (#195).
   - **Never set reserved names in `env_vars`:** `GOOGLE_CLOUD_PROJECT`,
     `GOOGLE_CLOUD_LOCATION`, or any other `GOOGLE_CLOUD_*` variable. Agent
     Engine rejects them with a 400 (#186 follow-up) and injects its own.

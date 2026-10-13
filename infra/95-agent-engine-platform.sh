@@ -45,6 +45,9 @@ done
 
 log "Deployer (WIF) permissions"
 proj_role "${SA_DEPL}" roles/aiplatform.user
+# Read-only logs so the deploy workflow can print engine startup errors on failure (#195).
+# Granted to the CI deployer (WIF, main only), NOT to the agents' identity.
+proj_role "${SA_DEPL}" roles/logging.viewer
 retry gcloud storage buckets add-iam-policy-binding "${BUCKET}" --member="serviceAccount:${SA_DEPL}" \
   --role=roles/storage.objectAdmin --format=none
 # The Vertex AI SDK reads bucket metadata (storage.buckets.get) before uploading engine
