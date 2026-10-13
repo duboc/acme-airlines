@@ -364,3 +364,11 @@ allowlist includes the new fields. Reading it: if the failing `scenario_step` li
 `shared_version`, the state did not reach that process; the same `proc` would disprove the
 process-local hypothesis. (Identity is on the log line, the error and `diagnostics`, not on every
 response body: several operations return lists or strictly typed models.)
+
+## Stateless scenario ops (#266, ADR 0103)
+
+State is per container (`/tmp`). The caller (`EngineBackend`, so the live proof too) sends `preset` and
+`step` on the scenario ops and state-dependent reads/phone actions; an engine not at that point rebuilds
+it by deterministic replay (offline model, no spans, no metrics) and logs `ACME_DIAG {"event": "rebuild",
+preset, from_step, to_step, reason, container...}`. Decision and trade-offs:
+[ADR 0103](../decisions/0103-stateless-engine-scenarios.md).

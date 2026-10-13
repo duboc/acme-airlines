@@ -17,11 +17,13 @@ unchanged (`acme.customer.outreach`).
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import functools
 import inspect
 import logging
 import os
+import time
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Mapping
 from typing import Any
 
@@ -34,7 +36,8 @@ from pydantic import ConfigDict
 
 from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
-from acme.telemetry import EngineOp, flush, process_identity, span
+from acme.replay import replaying
+from acme.telemetry import EngineOp, diag, flush, process_identity, span
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +122,17 @@ class ScenarioStepAgent(BaseAgent):
 
 STATE_DB_ENV = "ACME_STATE_DB"
 
+
+def _run_blocking(coro):
+    """Run a coroutine from a sync operation, whether or not this thread has an event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 _REASONS = {"NoSentOffer": "no offer sent for journey", "AssertionError": "invariant violated"}
 
 
@@ -150,6 +164,7 @@ def shared(fn):
             try:
                 with op.span():
                     async with self._shared_operation():
+                        await self._ensure_scenario(kwargs)
                         async for item in fn(self, *args, **kwargs):
                             yield item
             except EngineOperationError:
@@ -168,6 +183,7 @@ def shared(fn):
             try:
                 with op.span():
                     async with self._shared_operation():
+                        await self._ensure_scenario(kwargs)
                         return await fn(self, *args, **kwargs)
             except EngineOperationError:
                 raise
@@ -183,6 +199,7 @@ def shared(fn):
         op = EngineOp(fn.__name__)
         try:
             with op.span(), self._shared_operation_sync():
+                _run_blocking(self._ensure_scenario(kwargs))
                 return fn(self, *args, **kwargs)
         except EngineOperationError:
             raise
@@ -255,6 +272,51 @@ class CustomerEngineApp:
             except Exception:  # noqa: BLE001 - diagnostics must never break an operation
                 pass
         return ctx
+
+    async def _ensure_scenario(self, kwargs: dict[str, Any]) -> None:
+        """Rebuild the scenario when this container is not at the caller's `preset` and `step`.
+
+        The caller (the demo backend, the live proof) says where the scenario is on every call.
+        State lives in container-local /tmp, so a call routed to another replica or a restarted
+        container finds none; instead of failing it replays steps 0..step-1 from the seeded mocks
+        (#266, ADR 0103). The replay is deterministic and invisible outside: the model is replaced
+        by the offline one, and no spans or metrics are emitted. Callers that pass no context
+        behave as before.
+        """
+        preset, step = kwargs.get("preset"), kwargs.get("step")
+        if preset is None or step is None:
+            return
+        runner = self.scenarios
+        if runner.active is not None and runner.active.id == preset and runner.index == step:
+            return
+        target = self._preset(preset)
+        if not isinstance(step, int) or not 0 <= step <= len(target.steps):
+            raise EngineOperationError("bad scenario step")
+        if runner.active is None:
+            reason = "no_local_scenario"
+        elif runner.active.id != preset:
+            reason = "preset_mismatch"
+        else:
+            reason = "step_mismatch"
+        from_step = runner.index if runner.active is not None else None
+        started = time.perf_counter()
+        from acme.llm.fake import FakeLlm
+
+        real_llm = self.runtime.llm
+        self.runtime.llm = FakeLlm()  # deterministic and free: never the deployed model
+        try:
+            with replaying():
+                runner.start(target)
+                for _ in range(step):
+                    await runner.step(sales_tick=True)
+        finally:
+            self.runtime.llm = real_llm
+        ident = process_identity()
+        diag(
+            "rebuild", preset=preset, from_step=from_step, to_step=step, reason=reason,
+            ms=round((time.perf_counter() - started) * 1000, 1),
+            proc=ident["proc"], container=ident["container"], pid=ident["pid"],
+        )  # fmt: skip
 
     def _no_scenario(self) -> EngineOperationError:
         """The readable error: ids and counters of the process that answered (no PII)."""
@@ -394,13 +456,15 @@ class CustomerEngineApp:
         return self.scenarios.start(self._preset(scenario_id)).model_dump(mode="json")
 
     @shared
-    def scenario_state(self) -> dict[str, Any]:
+    def scenario_state(self, preset: str | None = None, step: int | None = None) -> dict[str, Any]:
         if self.scenarios.active is None:
             raise self._no_scenario()
         return self.scenarios.state().model_dump(mode="json")
 
     @shared
-    async def scenario_step(self) -> dict[str, Any]:
+    async def scenario_step(
+        self, preset: str | None = None, step: int | None = None
+    ) -> dict[str, Any]:
         """Customer half of a step as an ADK turn. The Sales tick is driven by the demo."""
         runner = self.scenarios
         if runner.active is None:
@@ -431,13 +495,17 @@ class CustomerEngineApp:
         return runner.state().model_dump(mode="json")
 
     @shared
-    def journeys_list(self) -> list[dict[str, Any]]:
+    def journeys_list(
+        self, preset: str | None = None, step: int | None = None
+    ) -> list[dict[str, Any]]:
         from acme.api.app import journey_summary
 
         return [journey_summary(r).model_dump(mode="json") for r in self.runtime.journeys.values()]
 
     @shared
-    async def journey_detail(self, journey_id: str) -> dict[str, Any]:
+    async def journey_detail(
+        self, journey_id: str, preset: str | None = None, step: int | None = None
+    ) -> dict[str, Any]:
         from acme.api.app import journey_detail_view
 
         await self.runtime.tick()
@@ -445,7 +513,9 @@ class CustomerEngineApp:
         return journey_detail_view(self.runtime, rec).model_dump(mode="json")
 
     @shared
-    def journey_events(self, journey_id: str, since: int = 0) -> list[dict[str, Any]]:
+    def journey_events(
+        self, journey_id: str, since: int = 0, preset: str | None = None, step: int | None = None
+    ) -> list[dict[str, Any]]:
         """Timeline events from index ``since`` (a poll-friendly form of the SSE stream)."""
         timeline = self._journey(journey_id).state.timeline
         return [e.model_dump(mode="json") for e in timeline[max(since, 0) :]]
@@ -482,19 +552,25 @@ class CustomerEngineApp:
         return await self._api(do_trigger, flight, reason)
 
     @shared
-    async def whatsapp_messages(self, passenger_id: str):
+    async def whatsapp_messages(
+        self, passenger_id: str, preset: str | None = None, step: int | None = None
+    ):
         from acme.api.app import do_messages
 
         return await self._api(do_messages, passenger_id)
 
     @shared
-    async def whatsapp_reply(self, passenger_id: str, text: str) -> dict[str, Any]:
+    async def whatsapp_reply(
+        self, passenger_id: str, text: str, preset: str | None = None, step: int | None = None
+    ) -> dict[str, Any]:
         from acme.api.app import do_reply
 
         return await self._api(do_reply, passenger_id, text)
 
     @shared
-    async def whatsapp_action(self, passenger_id: str, action: str) -> dict[str, Any]:
+    async def whatsapp_action(
+        self, passenger_id: str, action: str, preset: str | None = None, step: int | None = None
+    ) -> dict[str, Any]:
         from acme.api.app import do_action
 
         return await self._api(do_action, passenger_id, action)
