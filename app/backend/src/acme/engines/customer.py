@@ -42,14 +42,14 @@ APP_NAME = "acme-customer"
 # ranges let it drift from what CI tested (#185). Transitive dependencies still float.
 ENGINE_REQUIREMENTS = [
     "google-cloud-aiplatform[adk,agent-engines]==1.165.1",
-    "google-adk[a2a]==1.10.0",
-    "google-genai==2.29.0",
+    "google-adk[a2a]==1.39.1",
+    "google-genai==2.30.1",
     "mcp==1.30.0",
-    "opentelemetry-sdk==1.45.1",
+    "opentelemetry-sdk==1.41.1",
     "opentelemetry-exporter-gcp-trace==1.15.0",
     "httpx==0.28.1",
     "pydantic==2.14.0",
-    "fastapi==0.143.0",
+    "fastapi==0.141.1",
 ]
 
 
