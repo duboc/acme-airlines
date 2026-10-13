@@ -293,3 +293,7 @@ The live proof workflow uploads an engine diagnostics artifact for the missing-t
   and only counted (`{"event": "dropped", "lines": n, "errors": m}`); a failed log read is a
   `log_read_failed` marker with the exception type name. The repository is public, so artifacts are
   world-downloadable: that is why it is not a denylist.
+- **Unary probe**: workflow input `probe_calls` (N) runs N back-to-back and N/2 spaced (20 s) read-only
+  `journeys_list` calls on the Customer engine, then counts the `acme.engine.op` traces (sent vs found,
+  lost call indices, per kind) into the job summary. It reports the loss and does not fail the job; the
+  probe's own engine diagnostics go to `probe-engine-logs.jsonl` (same allowlist, same artifact).
