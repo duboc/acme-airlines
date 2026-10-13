@@ -297,3 +297,19 @@ The live proof workflow uploads an engine diagnostics artifact for the missing-t
   `journeys_list` calls on the Customer engine, then counts the `acme.engine.op` traces (sent vs found,
   lost call indices, per kind) into the job summary. It reports the loss and does not fail the job; the
   probe's own engine diagnostics go to `probe-engine-logs.jsonl` (same allowlist, same artifact).
+
+### Root cause and fix (#221)
+
+The dump-enabled run (38362815809) settled it: **Agent Engine head-samples incoming requests**
+(sampled requests were always at least 19.7 s after the previous sampled one, unsampled ones at most
+7.1 s: roughly one request per 10-20 s gets through) and our provider, the default
+`ParentBased(ALWAYS_ON)`, inherited the decision: 56 of 73 Customer requests arrived with an
+unsampled parent (`is_recording=false`), which silenced every span of the request, the platform's own
+`POST /api/reasoning_engine` and `fastapi.*` spans included. Step 0 follows `scenario_start` by under a
+second (always dropped), the `propose_offer` handler follows a step by under a second, the 1/min poll
+rarely lands on a sampling slot. The exporter was healthy (73/73 flushes and 75/75 exports ok).
+
+Fix: `acme.telemetry.build_provider` uses an **ALWAYS_ON sampler**, so every request's spans are
+recorded and exported whatever the platform decided (same trace id, so the platform's spans join ours).
+It is a demo with a handful of requests, so volume is not a concern. `ACME_TRACE_SAMPLER=parent`
+restores the platform's decision.
