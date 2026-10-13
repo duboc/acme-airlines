@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from pydantic import AwareDatetime, BaseModel
 
-from acme.customer import outreach
+from acme.customer import closure, outreach
 from acme.customer.change import ChangeAgent
 from acme.customer.rebuild import rebuild_journey
 from acme.customer.specialists.change import ReplanningChangeAgent
@@ -82,11 +82,15 @@ class CustomerRuntime:
         auto_duty_of_care: bool = True,
         llm: LlmPort | None = None,
         notify_delay: timedelta = timedelta(minutes=6),
+        offer_window: timedelta = timedelta(minutes=10),
         change_agent: ChangeAgent | None = None,
     ) -> None:
         self.llm = llm or build_llm()
         self.change_agent: ChangeAgent = change_agent or ReplanningChangeAgent()
         self.notify_delay = notify_delay  # settle time after RESOLVED before the one notification
+        # After the passenger acknowledges, how long an offer may still come before the journey is
+        # closed WITHOUT one (service closure never waits on Sales, #229).
+        self.offer_window = offer_window
         self.auto_duty_of_care = auto_duty_of_care  # False isolates the rebuild in tests
         self.clock = clock or SystemClock()
         self._custom_connector = connector
@@ -169,6 +173,12 @@ class CustomerRuntime:
             async with self.journey_lock(rec.state.journey_id):
                 if outreach.notification_due(self, rec):  # re-check inside the lock
                     await outreach.notify_resolution(self, rec)
+        for rec in list(self.journeys.values()):
+            if not closure.service_closure_due(self, rec):
+                continue
+            async with self.journey_lock(rec.state.journey_id):
+                if closure.service_closure_due(self, rec):
+                    await closure.close_without_offer(self, rec)
 
     def journey_for_passenger(self, passenger_id: str) -> JourneyRecord | None:
         for rec in self.journeys.values():
