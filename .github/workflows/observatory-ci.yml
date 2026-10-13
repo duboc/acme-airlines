@@ -26,7 +26,7 @@ jobs:
     name: deploy-scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: bash observatory/deploy/test_deploy.sh
   collector:
     name: collector
@@ -35,7 +35,7 @@ jobs:
       run:
         working-directory: observatory/collector
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Detect project
         id: detect
         working-directory: .
@@ -48,7 +48,7 @@ jobs:
           fi
       # No python-version: it would make setup-uv create a root .venv and export VIRTUAL_ENV.
       # uv reads observatory/collector/.python-version instead.
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: steps.detect.outputs.present == 'true'
         with:
           enable-cache: true
@@ -69,7 +69,7 @@ jobs:
       run:
         working-directory: observatory/dashboard
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Detect project
         id: detect
         working-directory: .
@@ -82,7 +82,7 @@ jobs:
           fi
       # No python-version: it would make setup-uv create a root .venv and export VIRTUAL_ENV.
       # uv reads observatory/dashboard/.python-version instead.
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: steps.detect.outputs.present == 'true'
         with:
           enable-cache: true
@@ -103,7 +103,7 @@ jobs:
       run:
         working-directory: observatory/dashboard/web
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Detect project
         id: detect
         working-directory: .
@@ -114,7 +114,7 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "SKIPPED: observatory/dashboard/web/package.json does not exist yet; nothing to check."
           fi
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         if: steps.detect.outputs.present == 'true'
         with:
           node-version: 22
@@ -137,7 +137,7 @@ jobs:
       matrix:
         image: [collector, dashboard]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Detect Dockerfile
         id: detect
         run: |

@@ -1,0 +1,24 @@
+# Weekly, grouped dependency updates (#234). Actions are SHA-pinned (see
+# .github/scripts/check_action_pins.py); Dependabot rewrites the SHA and the version comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      github-actions: { patterns: ["*"] }
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: uv
+    directories: [/app/backend, /observatory/collector, /observatory/dashboard]
+    schedule: { interval: weekly, day: monday }
+    groups:
+      python-minor-patch: { update-types: [minor, patch] }
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directories: [/app/frontend, /observatory/dashboard/web]
+    schedule: { interval: weekly, day: monday }
+    groups:
+      npm-minor-patch: { update-types: [minor, patch] }
+    open-pull-requests-limit: 5
