@@ -157,8 +157,9 @@ class CustomerRuntime:
         if rec := self.journey_for_passenger(passenger_id):
             # Transitions out of RESOLVED (change requests) take the same per-journey lock as
             # offer delivery and acceptance, so they cannot land between a check and a charge.
+            intent = await outreach.classify(self, text)  # model call: outside the lock (#231)
             async with self.journey_lock(rec.state.journey_id):
-                await outreach.handle_inbound(self, rec, text)
+                await outreach.handle_inbound(self, rec, text, intent)
         return _to_message(received)
 
     async def tick(self) -> None:
@@ -170,9 +171,11 @@ class CustomerRuntime:
         for rec in list(self.journeys.values()):
             if not outreach.notification_due(self, rec):
                 continue  # cheap pre-check without the lock
+            prepared = await outreach.prepare_notification(self, rec)  # model call: no lock (#231)
+            if prepared is None:
+                continue
             async with self.journey_lock(rec.state.journey_id):
-                if outreach.notification_due(self, rec):  # re-check inside the lock
-                    await outreach.notify_resolution(self, rec)
+                await outreach.send_notification(self, rec, prepared)  # re-validates inside
         for rec in list(self.journeys.values()):
             if not closure.service_closure_due(self, rec):
                 continue

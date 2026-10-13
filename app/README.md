@@ -49,6 +49,7 @@ from `acme.llm.build_llm()`.
 |---------|---------|
 | `LLM_MODE` | `fake` (default; deterministic, offline, used by dev/tests/CI) or `vertex` (live demo only). Anything else refuses to start. |
 | `LLM_MODEL` | Optional model ID for `vertex`. Default `gemini-2.5-flash` (confirmed on the `global` endpoint from the factory VM; `gemini-2.0-flash` is not available there). |
+| `LLM_TIMEOUT_SECONDS` | Optional bound on each `vertex` model call, default `8`. A call that exceeds it is cancelled: passenger messages fall back to the deterministic template and the acknowledgement classifier fails closed (not acknowledged, so no offer). No journey lock is held during a model call (#231). |
 | `ACME_GENAI_PROJECT` / `GOOGLE_CLOUD_PROJECT` | Optional; must be `acme-airlines-factory` if set (`ACME_GENAI_PROJECT` wins; Agent Engine injects `GOOGLE_CLOUD_PROJECT`). |
 | `ACME_GENAI_LOCATION` | Model location, default and only allowed value `global` (regional is refused). `GOOGLE_CLOUD_LOCATION` is never read: on Agent Engine it is the engine region. |
 

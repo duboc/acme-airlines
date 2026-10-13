@@ -139,7 +139,10 @@ class CustomerSkills:
             if result["status"] != "approved":
                 return result
             record = rec.state.offers[-1]
-            decision = await self._deliver(rec, record)
+        # The model call runs with NO lock held (#231); delivery re-validates under it.
+        inventory, text, key = await self._prepare_text(rec, record)
+        async with self._rt.journey_lock(journey_id):
+            decision = await self._deliver(rec, record, inventory, text, key)
             if decision.approved:
                 return result
             return {**result, "status": "rejected", "reasons": list(decision.reasons)}
@@ -202,12 +205,30 @@ class CustomerSkills:
             },
         )
 
-    async def _deliver(self, rec: JourneyRecord, record: OfferRecord) -> Any:
-        """Compose from Customer data, re-run the guardrail immediately before sending, send."""
+    async def _prepare_text(self, rec: JourneyRecord, record: OfferRecord) -> tuple[Any, str, Any]:
+        """Facts and passenger text for an approved offer. Lock-free: the model call may be slow."""
+        inventory = await self._load_facts(rec, record.offer.model_dump(mode="json"))
+        text, _ = await self._compose(rec, record.offer, inventory)
+        return inventory, text, self._facts_key(rec, inventory)
+
+    @staticmethod
+    def _facts_key(rec: JourneyRecord, inventory: CabinInventory) -> tuple[Any, ...]:
+        return (
+            rec.state.current_flight, inventory.open_seats, inventory.standard_upgrade_fare,
+            rec.hotel.hotel_id if rec.hotel else None,
+        )  # fmt: skip
+
+    async def _deliver(
+        self, rec: JourneyRecord, record: OfferRecord, inventory: Any, text: str, key: Any
+    ) -> Any:
+        """Under the journey lock: re-read the facts, and if they moved while the model call was
+        in flight send the deterministic template of the current ones. Re-run the guardrail
+        immediately before sending, send."""
         rt, state, offer = self._rt, rec.state, record.offer
         inventory = await self._load_facts(rec, offer.model_dump(mode="json"))
         state.current_flight = self._current_flight(rec)
-        text, context = await self._compose(rec, offer, inventory)
+        if self._facts_key(rec, inventory) != key:
+            text, _ = await self._compose(rec, offer, inventory, use_llm=False)
         # time-of-use re-check: no await until send
         decision = evaluate_traced(state, offer, inventory, "send")
         if not decision.approved:
@@ -229,7 +250,7 @@ class CustomerSkills:
         return decision
 
     async def _compose(
-        self, rec: JourneyRecord, offer: Offer, inventory: CabinInventory
+        self, rec: JourneyRecord, offer: Offer, inventory: CabinInventory, use_llm: bool = True
     ) -> tuple[str, dict[str, Any]]:
         """Passenger text from Customer-owned data only. From the offer: `price` (a Decimal that
         the guardrail bounded). Flight, cabin and seat come from Customer journey/inventory data;
@@ -257,6 +278,8 @@ class CustomerSkills:
                       "price": price},
         }  # fmt: skip
         try:
+            if not use_llm:
+                raise ValueError("stale facts: template of the current ones")
             text = await rt.llm.compose_passenger_message(context)
             if not all(f in text for f in (flight, price, "optional", "premium business")):
                 raise ValueError("missing offer fact")
