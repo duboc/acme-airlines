@@ -30,8 +30,7 @@ state by deterministic replay.** No new external service.
   (`FakeLlm`) instead of the deployed one: deterministic, free, and no extra model calls. Consequence:
   the wording of a message the passenger saw may differ after a rebuild when `LLM_MODE=vertex`; the
   facts, state and guardrail outcomes do not. Offers are re-created by the in-process radar at the
-  same step, so a later real Sales proposal is just a duplicate the guardrail rejects
-  (`offer_already_made`), as it already does.
+  same step; a later real Sales proposal is a duplicate the guardrail rejects, as it already does.
 - **Visible in the diagnostics.** Each rebuild logs `ACME_DIAG {"event": "rebuild", preset, from_step,
   to_step, reason, ms, proc, container, pid}`, so the next live proof shows whether cross-container
   routing happens and how often.
@@ -40,16 +39,12 @@ state by deterministic replay.** No new external service.
   nothing, or a duplicate the guardrail rejects. The next Customer call rebuilds. Accepted.
 
 ## Alternatives
-- **External store (Firestore, Memorystore, GCS, Cloud SQL).** Durable and exact (original wording
-  preserved, no replay cost) but a new service, IAM, cost and an operator action for a demo whose state
-  is seeded and deterministic. Rejected; revisit if scenarios stop being deterministic.
-- **Pin to one replica / one container.** `max_instances=1` already holds, but restarts and recycles
-  still lose `/tmp`, and Agent Engine offers no affinity setting.
-- **Keep the state and tell the user to restart the scenario.** The failure moves between turns; that
-  is the bug.
+- **External store (Firestore, Memorystore, GCS, Cloud SQL).** Durable and exact, but a new service, IAM
+  and cost for a demo whose state is seeded and deterministic. Rejected; revisit if scenarios stop being
+  deterministic.
+- **Pin to one replica.** `max_instances=1` already holds, but restarts still lose `/tmp` and Agent
+  Engine offers no affinity setting.
 
 ## Consequences
-- A rebuild costs the replay time (the five-step presets take well under a second offline); it only
-  happens after a container change.
-- Replicas are independent mocks kept consistent by the caller's cursor, not by shared storage.
-- The cost model is O(steps) per rebuild, bounded by the presets' length.
+A rebuild costs the replay (well under a second offline) and only happens after a container change.
+Replicas are independent mocks kept consistent by the caller's cursor, not by shared storage.

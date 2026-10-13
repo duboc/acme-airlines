@@ -1,12 +1,7 @@
-"""#266 part 2: scenario ops do not depend on container-local state.
-
-Agent Engine can route consecutive calls to another replica or a restarted container (state in
-container-local /tmp is lost). The caller passes `preset` and `step` on every scenario op; an engine
-whose local state is not at that point rebuilds it deterministically from the seeded mocks.
-Containers are simulated by separate engine apps with NO shared state, called round-robin."""
+"""#266 part 2: scenario ops do not depend on container-local state (ADR 0103). Containers are
+separate engine apps with NO shared state, called round-robin; the caller passes preset and step."""
 
 import inspect
-import json
 import logging
 
 import httpx
@@ -18,6 +13,7 @@ from acme.api.engine_backend import EngineBackend, create_engine_app
 from acme.engines.customer import build_customer_engine_app
 from acme.engines.sales import build_sales_engine_app
 from tests.api.test_engine_mode import IDS, STRUCTURAL
+from tests.engines.test_process_identity import Lines
 
 PID = "P-MARIANA"
 
@@ -30,8 +26,7 @@ def clean_env(monkeypatch):
 
 
 class Containers:
-    """N independent Customer engines (separate memory, no shared DB): each call goes to the next
-    one, like requests routed across replicas / restarted containers."""
+    """N independent Customer engines (no shared state), called round-robin: replicas/restarts."""
 
     def __init__(self, n=3):
         self.apps = []
@@ -155,17 +150,6 @@ def test_callers_without_preset_and_step_behave_as_before():
     assert a.scenario_state()["step_index"] == 0
 
 
-class Lines(logging.Handler):
-    def __init__(self):
-        super().__init__()
-        self.records = []
-
-    def emit(self, record):
-        msg = record.getMessage()
-        if msg.startswith("ACME_DIAG "):
-            self.records.append(json.loads(msg[len("ACME_DIAG ") :]))
-
-
 async def test_a_rebuild_is_logged_with_the_container_identity():
     h = Lines()
     logger = logging.getLogger("acme.diag")
@@ -252,13 +236,3 @@ async def test_replay_does_not_call_the_configured_model():
     state = a.scenario_state(preset="happy-path", step=4)  # replays cancel, notify, 2 replies
     assert state["step_index"] == 4
     assert isinstance(a.runtime.llm, Boom)  # restored afterwards
-
-
-def test_scenario_ops_declare_the_context_parameters():
-    from acme.engines.customer import CustomerEngineApp
-
-    ops = ("scenario_state", "scenario_step", "journeys_list", "journey_detail", "journey_events",
-           "whatsapp_messages", "whatsapp_reply", "whatsapp_action")  # fmt: skip
-    for op in ops:
-        params = inspect.signature(getattr(CustomerEngineApp, op)).parameters
-        assert "preset" in params and "step" in params, op

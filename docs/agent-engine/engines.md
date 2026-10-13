@@ -367,11 +367,8 @@ response body: several operations return lists or strictly typed models.)
 
 ## Stateless scenario ops (#266, ADR 0103)
 
-State is per container (`/tmp`), so a call routed to another replica or a restarted container finds no
-scenario. The caller (`EngineBackend`, hence the live proof) now sends `preset` and `step` on the scenario
-ops and the state-dependent reads and phone actions; an engine whose local state is not at that point
-rebuilds it by deterministic replay from the seeded mocks (offline model, no spans, no metrics) and logs
-`ACME_DIAG {"event": "rebuild", ...}` with `from_step`, `to_step`, `reason`
-(`no_local_scenario` | `preset_mismatch` | `step_mismatch`) and the container identity. See
-[ADR 0103](../decisions/0103-stateless-engine-scenarios.md) for the decision and trade-offs (including
-why not an external store).
+State is per container (`/tmp`). The caller (`EngineBackend`, so the live proof too) sends `preset` and
+`step` on the scenario ops and state-dependent reads/phone actions; an engine not at that point rebuilds
+it by deterministic replay (offline model, no spans, no metrics) and logs `ACME_DIAG {"event": "rebuild",
+preset, from_step, to_step, reason, container...}`. Decision and trade-offs:
+[ADR 0103](../decisions/0103-stateless-engine-scenarios.md).
