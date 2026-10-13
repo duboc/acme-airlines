@@ -16,13 +16,14 @@ import re
 import socket
 import sys
 import time
+import traceback
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from opentelemetry import trace
-from opentelemetry.trace import Span, SpanKind
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 tracer = trace.get_tracer("acme")
 
@@ -74,13 +75,45 @@ def _clean(attrs: dict[str, object]) -> dict[str, str]:
     return clean
 
 
+def _record_redacted_exception(s: Span, exc: BaseException) -> None:
+    """Same `exception` event the SDK would add, with message and traceback redacted."""
+    try:
+        from acme.logging_setup import redact  # noqa: PLC0415
+
+        stack = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        s.add_event(
+            "exception",
+            {
+                "exception.type": type(exc).__qualname__,
+                "exception.message": redact(str(exc)),
+                "exception.stacktrace": redact(stack),
+                "exception.escaped": True,
+            },
+        )
+        s.set_status(Status(StatusCode.ERROR, type(exc).__qualname__))
+    except Exception:  # noqa: BLE001 - tracing must never mask the real error
+        pass
+
+
 @contextmanager
 def span(name: str, *, kind: SpanKind = SpanKind.INTERNAL, **attrs: object) -> Iterator[Span]:
     """Start a span. Keyword `__` stands for `.`: `span("x", acme__guardrail__decision="approve")`
     (or pass dotted keys via `**{"acme.flight": "AC1252"}`)."""
     clean = _clean(attrs)
-    with tracer.start_as_current_span(name, kind=kind, attributes=clean) as s:
-        yield s
+    # The SDK's own exception recording is off: it would export `str(exc)` and the traceback
+    # verbatim (tool payloads, passenger PII), bypassing the log redaction (#258).
+    with tracer.start_as_current_span(
+        name,
+        kind=kind,
+        attributes=clean,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as s:
+        try:
+            yield s
+        except BaseException as exc:
+            _record_redacted_exception(s, exc)
+            raise
 
 
 @dataclass(frozen=True)
