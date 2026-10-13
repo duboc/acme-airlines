@@ -116,8 +116,13 @@ def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
             from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 
             exporter_factory = CloudTraceSpanExporter  # ADC; the runtime SA has cloudtrace.agent
+        from acme.llm import config as llm_config
+
+        # Always the project ID: the injected GOOGLE_CLOUD_PROJECT is the project number, which
+        # Cloud Trace rejects ("400 Invalid project id in name", #203).
+        project_id = os.environ.get("ACME_GENAI_PROJECT") or llm_config.PROJECT
         provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
-        provider.add_span_processor(BatchSpanProcessor(exporter_factory()))
+        provider.add_span_processor(BatchSpanProcessor(exporter_factory(project_id=project_id)))
         trace.set_tracer_provider(provider)
     except Exception:  # noqa: BLE001 - tracing must never stop an engine from starting
         logging.getLogger(__name__).warning("Cloud Trace export not configured", exc_info=True)
