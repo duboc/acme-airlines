@@ -467,44 +467,7 @@ class CloudTraceV1:
         )
 
 
-# --- #221: unary-call probe and engine-log attachment -------------------------------------------
-PROBE_SLACK = timedelta(seconds=1)
-
-
-parse_ts = _parse_ts  # RFC 3339 with up to nanoseconds, `Z` or an offset
-
-
-def probe_report(calls: list[dict[str, Any]], traces: list[Trace]) -> dict[str, Any]:
-    """Match each probe call (`kind`, `t0`, `t1`) to ONE Customer `acme.engine.op` trace of
-    `journeys_list` that started inside its window (+/- 1 s); the rest are `lost`."""
-    candidates = [
-        (parse_ts(s.start), t.trace_id)
-        for t in traces
-        for s in t.spans
-        if s.name == "acme.engine.op" and s.attrs.get("acme.op") == "journeys_list" and s.start
-    ]
-    used: set[str] = set()
-    lost: list[int] = []
-    by_kind: dict[str, dict[str, int]] = {}
-    for i, c in enumerate(calls):
-        slot = by_kind.setdefault(c["kind"], {"sent": 0, "found": 0})
-        slot["sent"] += 1
-        hit = next(
-            (
-                tid
-                for ts, tid in sorted(candidates)
-                if tid not in used and c["t0"] - PROBE_SLACK <= ts <= c["t1"] + PROBE_SLACK
-            ),
-            None,
-        )
-        if hit is None:
-            lost.append(i)
-        else:
-            used.add(hit)
-            slot["found"] += 1
-    return {"sent": len(calls), "found": len(calls) - len(lost), "lost": lost, "by_kind": by_kind}
-
-
+# --- #221: engine-log attachment -------------------------------------------
 class CloudLogging:
     """Cloud Logging `entries:list` for one engine's log lines (the deployer has logging.viewer).
     A read failure is reported by `fetch_or_error`, never fatal to the proof."""

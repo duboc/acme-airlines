@@ -277,14 +277,12 @@ Evidence first, then the fix. What is in place to find the cause:
   platform sampling; `flush_ok: false` or an `export` line with `ok: false` is our exporter; different
   `pid` / `instance` values per call point to the multi-process or multi-instance hypotheses.
 
-## Live-proof probe and engine logs (#221)
+## Live-proof engine diagnostics (#221)
 
-The live proof workflow gained two diagnostics for the missing-trace investigation (engine-side
-instrumentation is a separate PR: per-operation `ACME_DIAG` lines and the `acme.engine.op` span):
+The live proof workflow uploads an engine diagnostics artifact for the missing-trace investigation
+(engine-side instrumentation is a separate PR: per-operation `ACME_DIAG` lines and the
+`acme.engine.op` span):
 
-- **Unary probe**: input `probe_calls` (N) runs N back-to-back and N/2 spaced read-only
-  `journeys_list` calls on the Customer engine, then counts the `acme.engine.op` traces (sent vs found,
-  lost call indices, per kind) into the job summary. It reports the loss and does not fail the job.
 - **Engine diagnostics artifact** (`engine-logs`, **retention 1 day**): both engines' log lines for the
   run window are read with the deployer's `logging.viewer` and reduced to an **allowlist**: only
   well-formed `ACME_DIAG` lines are kept, and only these fields (each type- and pattern-checked, so
