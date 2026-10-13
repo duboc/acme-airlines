@@ -73,7 +73,7 @@ jobs:
           path: ${{ runner.temp }}/trace-inventory.json
           if-no-files-found: ignore
           retention-days: 14
-      - name: "Upload the engine logs for the run window (ACME_DIAG lines, PII lines redacted)"
+      - name: "Upload the engine diagnostics (allowlisted ACME_DIAG fields only, 1 day)"
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -82,4 +82,4 @@ jobs:
             ${{ runner.temp }}/engine-logs.jsonl
             ${{ runner.temp }}/probe-engine-logs.jsonl
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 1

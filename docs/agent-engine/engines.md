@@ -285,6 +285,13 @@ instrumentation is a separate PR: per-operation `ACME_DIAG` lines and the `acme.
 - **Unary probe**: input `probe_calls` (N) runs N back-to-back and N/2 spaced read-only
   `journeys_list` calls on the Customer engine, then counts the `acme.engine.op` traces (sent vs found,
   lost call indices, per kind) into the job summary. It reports the loss and does not fail the job.
-- **Engine logs**: both engines' log lines for the run window are uploaded as the `engine-logs`
-  artifact (`{engine, ts, severity, text}` JSON lines; fixture-PII lines redacted; needs
-  `logging.viewer`, which the deployer has; a read failure is written into the file, never fatal).
+- **Engine diagnostics artifact** (`engine-logs`, **retention 1 day**): both engines' log lines for the
+  run window are read with the deployer's `logging.viewer` and reduced to an **allowlist**: only
+  well-formed `ACME_DIAG` lines are kept, and only these fields (each type- and pattern-checked, so
+  no free text can pass through a permitted key): `op`, `trace_id`, `span_id`, `is_recording`,
+  `sampled`, `parent_valid`, `parent_sampled`, `flush_ok`, `flush_ms`, `flush_error` (a type name),
+  `pid`, `instance`, `provider`, and for exports `ok`, `n`, `ms`, `error` (a type name), plus the entry
+  timestamp and severity. Every other line (tracebacks, container stderr, request payloads) is dropped
+  and only counted (`{"event": "dropped", "lines": n, "errors": m}`); a failed log read is a
+  `log_read_failed` marker with the exception type name. The repository is public, so artifacts are
+  world-downloadable: that is why it is not a denylist.

@@ -15,7 +15,6 @@ import pytest
 from tests.live.agent_engine_proof import (
     CloudLogging,
     CloudTraceV1,
-    fixture_pii,
     probe_report,
     run_proof,
     write_engine_logs,
@@ -72,8 +71,8 @@ async def test_deployed_engines_emit_the_expected_traces_without_pii(capsys):
 
 
 def attach_engine_logs(project: str, started: datetime) -> None:
-    """Engine log lines for the run window (ACME_DIAG op/export lines, exporter errors, restarts)
-    next to the trace inventory (#221). A log read failure is written to the file, never fatal."""
+    """Engine diagnostics for the run window (#221): allowlisted ACME_DIAG fields only, see
+    `write_engine_logs`. A log read failure is written to the file as a marker, never fatal."""
     path = os.environ.get("ACME_PROOF_LOGS")
     if not path:
         return
@@ -85,7 +84,6 @@ def attach_engine_logs(project: str, started: datetime) -> None:
             "customer": logs.fetch_or_error(os.environ["AGENT_ENGINE_CUSTOMER"], start, end),
             "sales": logs.fetch_or_error(os.environ["AGENT_ENGINE_SALES"], start, end),
         },
-        fixture_pii(),
     )
 
 

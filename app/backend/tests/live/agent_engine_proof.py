@@ -471,11 +471,7 @@ class CloudTraceV1:
 PROBE_SLACK = timedelta(seconds=1)
 
 
-def parse_ts(text: str) -> datetime:
-    """RFC 3339 with up to nanoseconds (Cloud Trace / Cloud Logging) -> aware datetime."""
-    head, _, rest = text.rstrip("Z").partition(".")
-    frac = (rest + "000000")[:6] if rest else "000000"
-    return datetime.fromisoformat(f"{head}.{frac}").replace(tzinfo=UTC)
+parse_ts = _parse_ts  # RFC 3339 with up to nanoseconds, `Z` or an offset
 
 
 def probe_report(calls: list[dict[str, Any]], traces: list[Trace]) -> dict[str, Any]:
@@ -555,16 +551,94 @@ class CloudLogging:
         try:
             return self.fetch(engine, start, end)
         except Exception as exc:  # noqa: BLE001 - diagnostics must not fail the proof
-            return [{"ts": "", "severity": "ERROR", "text": f"log read failed: {exc}"}]
+            return [{"_error": type(exc).__name__}]  # the type name only, never the message
 
 
-def write_engine_logs(path: str, by_engine: dict[str, list[dict[str, Any]]], pii: set[str]) -> None:
-    """JSON lines `{engine, ts, severity, text}`; any line containing fixture PII is redacted."""
+# The engine-logs artifact is downloadable by anyone (public repository), so it is ALLOWLIST-only:
+# only `ACME_DIAG` lines (acme.telemetry.diag: ids, flags and counters) are parsed, and only the
+# fields below survive, each type- and pattern-checked so no free text can pass through a
+# permitted key. Every other log line (tracebacks, container stderr, request payloads, anything
+# with names or tokens) is dropped and only counted.
+_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,59}$")
+_HOST = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_HEX32, _HEX16 = re.compile(r"^[0-9a-f]{32}$"), re.compile(r"^[0-9a-f]{16}$")
+_LOG_TS = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+(Z|[+-]\d\d:\d\d)$")
+_SEVERITIES = frozenset({"DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL", "ALERT",
+                         "EMERGENCY", "DEFAULT"})  # fmt: skip
+_ERRORS = frozenset({"ERROR", "CRITICAL", "ALERT", "EMERGENCY"})
+
+
+def _is_bool(v: Any) -> bool:
+    return isinstance(v, bool)
+
+
+def _is_int(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and abs(v) < 10**12
+
+
+def _is_num(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and abs(v) < 10**12
+
+
+def _matches(rx: re.Pattern[str]) -> Callable[[Any], bool]:
+    return lambda v: isinstance(v, str) and bool(rx.match(v))
+
+
+DIAG_FIELDS: dict[str, dict[str, Callable[[Any], bool]]] = {
+    "op": {
+        "op": _matches(_NAME), "trace_id": _matches(_HEX32), "span_id": _matches(_HEX16),
+        "is_recording": _is_bool, "sampled": _is_bool, "flush_ok": _is_bool, "flush_ms": _is_num,
+        "flush_error": _matches(_NAME), "pid": _is_int, "instance": _matches(_HOST),
+        "provider": _matches(_NAME),
+    },
+    "export": {"ok": _is_bool, "n": _is_int, "ms": _is_num, "error": _matches(_NAME)},
+}  # fmt: skip
+
+
+def allowlisted_diag(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Allowlisted fields of one log entry, or None unless it is a well-formed ACME_DIAG line."""
+    text = entry.get("text", "")
+    if not isinstance(text, str) or not text.startswith("ACME_DIAG "):
+        return None
+    try:
+        data = json.loads(text[len("ACME_DIAG ") :])
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or data.get("event") not in DIAG_FIELDS:
+        return None
+    out: dict[str, Any] = {"event": data["event"]}
+    if entry.get("severity") in _SEVERITIES:
+        out["severity"] = entry["severity"]
+    if _matches(_LOG_TS)(entry.get("ts")):
+        out["ts"] = entry["ts"]
+    for key, ok in DIAG_FIELDS[data["event"]].items():
+        if key in data and ok(data[key]):
+            out[key] = data[key]
+    parent = data.get("parent")
+    if data["event"] == "op" and isinstance(parent, dict):
+        for key in ("valid", "sampled"):
+            if _is_bool(parent.get(key)):
+                out[f"parent_{key}"] = parent[key]
+    return out
+
+
+def write_engine_logs(path: str, by_engine: dict[str, list[dict[str, Any]]]) -> None:
+    """JSON lines of allowlisted ACME_DIAG fields per engine, plus per-engine counts of the lines
+    that were dropped (never their content) and a marker if the log read failed."""
     from pathlib import Path
 
-    lines = [
-        json.dumps({"engine": name, **{**e, "text": scrub(e["text"], pii)}}, sort_keys=True)
-        for name, entries in by_engine.items()
-        for e in entries
-    ]
-    Path(path).write_text("\n".join(lines) + ("\n" if lines else ""))
+    rows: list[dict[str, Any]] = []
+    for name, entries in by_engine.items():
+        dropped = errors = 0
+        for e in entries:
+            if "_error" in e:
+                err = e["_error"] if _matches(_NAME)(e["_error"]) else "Error"
+                rows.append({"engine": name, "event": "log_read_failed", "error": err})
+            elif (kept := allowlisted_diag(e)) is not None:
+                rows.append({"engine": name, **kept})
+            else:
+                dropped += 1
+                errors += e.get("severity") in _ERRORS
+        if dropped:
+            rows.append({"engine": name, "event": "dropped", "lines": dropped, "errors": errors})
+    Path(path).write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
