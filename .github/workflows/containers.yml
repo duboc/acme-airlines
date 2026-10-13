@@ -91,12 +91,20 @@ jobs:
               --ignorefile /.trivyignore --exit-code 1 --no-progress "$img"
           done
 
-      - name: Upload Trivy SARIF
-        if: always() && hashFiles('trivy-sarif/*.sarif') != ''
+      # One SARIF run per category (code scanning rejects several runs with the same category).
+      - name: Upload Trivy SARIF (backend)
+        if: always() && hashFiles('trivy-sarif/acme-backend.sarif') != ''
         uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
         with:
-          sarif_file: trivy-sarif
-          category: trivy-containers
+          sarif_file: trivy-sarif/acme-backend.sarif
+          category: trivy-acme-backend
+
+      - name: Upload Trivy SARIF (frontend)
+        if: always() && hashFiles('trivy-sarif/acme-frontend.sarif') != ''
+        uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
+        with:
+          sarif_file: trivy-sarif/acme-frontend.sarif
+          category: trivy-acme-frontend
 
       - name: Bring the stack up (fake LLM) and wait for health
         run: |

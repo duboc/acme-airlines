@@ -88,7 +88,7 @@ fails on tags, branches, short SHAs, missing version comments and un-digested `d
 Dependabot (`.github/dependabot.yml`) updates github-actions, uv and npm weekly in grouped PRs and
 rewrites the SHA and the comment. The `containers` job runs Trivy twice: a secrets scan and a
 vulnerability scan that fails on CRITICAL findings with a fix available (`--ignore-unfixed`) and
-uploads the full SARIF report to code scanning (category `trivy-containers`).
+uploads the full SARIF report to code scanning (one category per image: `trivy-acme-backend`, `trivy-acme-frontend`).
 
 GitHub Actions workflows in `.github/workflows/`:
 - `ci.yml`: runs on every PR and push to `main` (backend ruff + pytest; frontend lint + vitest + build).
