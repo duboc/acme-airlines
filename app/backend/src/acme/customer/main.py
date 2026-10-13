@@ -5,13 +5,24 @@ A2A-only listener (`ACME_A2A_PORT`, 8802) that Sales is pointed at (#230).
 """
 
 import asyncio
-import logging
 import os
+from collections.abc import Mapping
 
 import uvicorn
 
 from acme.api.app import create_a2a_app, create_app
 from acme.logging_setup import configure_logging
+
+
+def require_sales_token(env: Mapping[str, str]) -> None:
+    """Fail closed: without the Sales credential the runtime cannot fence Sales (#230).
+
+    `ENGINE_MODE=agent-engine` has no local Sales HTTP caller, so it is exempt.
+    """
+    if (env.get("ENGINE_MODE") or "local") != "agent-engine" and not env.get("ACME_SALES_TOKEN"):
+        raise SystemExit(
+            "ACME_SALES_TOKEN is required (the sales credential the runtime uses to fence Sales)"
+        )
 
 
 async def _serve(app, host: str, a2a_host: str, port: int, a2a_port: int) -> None:
@@ -25,10 +36,7 @@ async def _serve(app, host: str, a2a_host: str, port: int, a2a_port: int) -> Non
 
 def main() -> None:
     configure_logging()
-    if not os.environ.get("ACME_SALES_TOKEN"):
-        logging.getLogger("acme.security").warning(
-            "ACME_SALES_TOKEN is not set; SalesRouteGuard is inactive on the Customer listeners"
-        )
+    require_sales_token(os.environ)
     host = os.environ.get("ACME_CUSTOMER_HOST", "127.0.0.1")
     port = int(os.environ.get("ACME_CUSTOMER_PORT", "8800"))
     a2a_port = int(os.environ.get("ACME_A2A_PORT", "8802"))

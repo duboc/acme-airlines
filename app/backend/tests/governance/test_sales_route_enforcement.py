@@ -113,3 +113,18 @@ async def test_given_a_malformed_or_duplicated_sales_header_then_still_403(name)
     }  # fmt: skip
     await main(scope, receive, send)
     assert sent[0]["status"] == 403
+
+
+def test_customer_runtime_refuses_to_start_without_the_sales_token(monkeypatch):
+    from acme.customer.main import main, require_sales_token
+
+    monkeypatch.delenv("ACME_SALES_TOKEN", raising=False)
+    monkeypatch.delenv("ENGINE_MODE", raising=False)
+    with pytest.raises(SystemExit, match="ACME_SALES_TOKEN is required"):
+        require_sales_token({})
+    with pytest.raises(SystemExit, match="ACME_SALES_TOKEN is required"):
+        require_sales_token({"ACME_SALES_TOKEN": ""})
+    with pytest.raises(SystemExit):
+        main()  # fails before binding any listener
+    require_sales_token({"ACME_SALES_TOKEN": SALES})
+    require_sales_token({"ENGINE_MODE": "agent-engine"})  # no local Sales HTTP caller

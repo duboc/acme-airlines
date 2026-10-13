@@ -92,7 +92,8 @@ gcloud run deploy acme-sim --image <registry>/acme-backend --command acme-sim --
   --set-secrets ACME_SIM_TOKENS=acme-sim-tokens:latest
 gcloud run deploy customer-runtime --image <registry>/acme-backend --command acme-customer --no-allow-unauthenticated \
   --service-account customer-runtime@$PROJECT.iam.gserviceaccount.com \
-  --set-env-vars ACME_CUSTOMER_HOST=0.0.0.0,LLM_MODE=vertex,GOOGLE_CLOUD_PROJECT=$PROJECT,ACME_GENAI_LOCATION=global
+  --set-env-vars ACME_CUSTOMER_HOST=0.0.0.0,LLM_MODE=vertex,GOOGLE_CLOUD_PROJECT=$PROJECT,ACME_GENAI_LOCATION=global \
+  --set-secrets ACME_SALES_TOKEN=acme-sales-token:latest   # required: the runtime refuses to start without it (#230)
 gcloud run deploy sales-agent --image <registry>/acme-backend --command acme-sales --no-allow-unauthenticated \
   --service-account sales-agent@$PROJECT.iam.gserviceaccount.com \
   --set-env-vars ACME_SALES_HOST=0.0.0.0,ACME_SIM_URL=<acme-sim url>,ACME_CUSTOMER_URL=<customer-runtime url> \

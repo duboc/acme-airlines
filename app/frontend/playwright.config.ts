@@ -28,7 +28,7 @@ export default defineConfig({
     {
       command: `uv run --frozen --project ${backend} python e2e/serve_customer.py`,
       url: 'http://127.0.0.1:8000/journeys',
-      env: { LLM_MODE: 'fake', E2E_CUSTOMER_PORT: '8000' },
+      env: { LLM_MODE: 'fake', E2E_CUSTOMER_PORT: '8000', ACME_SALES_TOKEN: 'e2e-sales-token' },
       reuseExistingServer: !process.env.CI,
       stdout: 'ignore',
       stderr: 'pipe',
