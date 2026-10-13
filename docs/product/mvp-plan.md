@@ -1,6 +1,6 @@
 # MVP Plan — Proactive IRROPS Resolution & Guardrailed Upselling
 
-- **Status:** Proposed. Implementation starts only after the product owner approves this PR.
+- **Status:** Delivered (MVP complete). Scenarios 1–5 running end to end, live demo deployed on Cloud Run, test suites green.
 - **Owner:** acme-lead · **Approver:** product owner (`admin@duboc.altostrat.com`)
 - **Inputs:** [product brief](irrops-use-case.md) · [ADR 0100 — app stack](../decisions/0100-app-stack.md)
 
@@ -154,8 +154,8 @@ The full strategy will be in `docs/product/test-strategy.md`, delivered by #21. 
 
 | Layer | What | Where | In CI |
 |-------|------|-------|-------|
-| Unit / policy | Domain model, state machine, `connection_check`, `duty_of_care`, `margin_opt`, `guardrail_offer` (100% branch coverage on policy) | `tests/unit` | ✅ |
-| MCP contract | Every simulator tool via a real MCP client against the in-process server | `tests/unit/sim` | ✅ |
+| Unit / policy | Domain model, state machine, `connection_check`, `duty_of_care`, `margin_opt`, `guardrail_offer` (100% branch coverage on policy) | `tests/domain`, `tests/policy`, `tests/unit` | ✅ |
+| MCP contract | Every simulator tool via a real MCP client against the in-process server | `tests/sim` | ✅ |
 | Scenario | Scenarios 1–5 as Given/When/Then with fixed clock + FakeLlm, asserting every concrete fact in the brief. Written first as strict xfail. | `tests/scenario` | ✅ |
 | Governance | Adversarial tests per guardrail layer (server-side isolation, structured offers, policy property tests) + outcome and time-of-check/time-of-use race tests | `tests/governance` (#22, #29) | ✅ |
 | Frontend | Vitest component tests | `app/frontend/src/**` | ✅ |

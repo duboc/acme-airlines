@@ -312,4 +312,5 @@ rarely lands on a sampling slot. The exporter was healthy (73/73 flushes and 75/
 Fix: `acme.telemetry.build_provider` uses an **ALWAYS_ON sampler**, so every request's spans are
 recorded and exported whatever the platform decided (same trace id, so the platform's spans join ours).
 It is a demo with a handful of requests, so volume is not a concern. `ACME_TRACE_SAMPLER=parent`
-restores the platform's decision.
+restores the platform's decision. See [ADR 0101](../decisions/0101-always-on-tracing-sampler.md)
+for the architecture decision record.

@@ -79,12 +79,21 @@ Vite dev server (`http://localhost:5173`). `GET /journeys/{id}/events` is Server
 `data:` frame (JSON `JourneyEvent`) per timeline event, replaying history first; optional
 `?limit=N` closes the stream after N events.
 
-## CI
+## CI and deployment workflows
 
 GitHub Actions workflows in `.github/workflows/`:
-- `ci.yml`: runs on every PR and push to `main` (backend ruff + pytest; frontend lint + vitest + build).
-- `containers.yml`: builds container images, runs non-root checks, and verifies no secrets/env files.
-- `e2e.yml`: runs the full Playwright narrative test suite across console and WhatsApp views.
+
+| Workflow | Triggers | Purpose |
+|----------|----------|---------|
+| `ci.yml` | PRs, push to `main` | Core quality gate: `backend` (ruff lint/format, pytest), `engine-smoke` (clean-venv staging, setup and offline query check per #185), and `frontend` (npm lint, vitest, build). |
+| `containers.yml` | PRs, push to `main` | Container security and integrity: builds all images, verifies non-root users, compose smoke test, and ensures no committed secrets or `.env*` files. |
+| `e2e.yml` | PRs touching `app/**`, push to `main`, dispatch | Full Playwright narrative end-to-end test suite across the Operator Console and WhatsApp views. |
+| `pr-size.yml` | PR events (open, sync, label) | Enforces the factory team limit of ~400 changed lines per PR (excluding lockfiles and templates) unless labeled `size:exception`. |
+| `irrops-deploy.yml` | Push to `main` touching `app/**`, dispatch | Continuous deployment: keyless WIF deployment updating the single-container `acme-irrops-demo` Cloud Run service. |
+| `agent-engine-deploy.yml` | Push to `main` touching backend, dispatch | Continuous deployment: keyless WIF deployment creating or updating `acme-customer-agent` and `acme-sales-agent` on Vertex AI Agent Engine. |
+| `agent-engine-live-proof.yml` | `workflow_dispatch` (manual) | Opt-in live verification: runs presets 1–5 on deployed reasoning engines, verifying Cloud Trace spans and zero PII (#167, #221). |
+| `observatory-ci.yml` | PRs, push to `main` touching `observatory/**` | Tests Observatory deploy scripts, collector jobs, and dashboard. |
+| `observatory-deploy.yml` | Push to `main` touching `observatory/**`, dispatch | Continuous deployment: keyless WIF deployment updating the `acme-observatory` Cloud Run service and collector Cloud Run job. |
 
 ## Customer agent
 

@@ -7,8 +7,8 @@ Owner: `acme-qa`. Companion to the MVP plan ([mvp-plan](mvp-plan.md)) and the pr
 
 | Layer | What it proves | Where | In CI |
 |-------|----------------|-------|-------|
-| 1. Unit / policy | Pure logic: domain, `connection_check`, `duty_of_care`, `margin_opt`, `guardrail_offer` | `tests/domain`, `tests/policy` | yes |
-| 2. MCP contract | Each simulated system's tools, schemas and per-caller allowlist | `tests/mcp` | yes |
+| 1. Unit / policy | Pure logic: domain, `connection_check`, `duty_of_care`, `margin_opt`, `guardrail_offer` | `tests/domain`, `tests/policy`, `tests/unit` | yes |
+| 2. MCP contract | Each simulated system's tools, schemas and per-caller allowlist | `tests/sim` | yes |
 | 3. Scenario | Brief scenarios 1–5 end to end through `ScenarioDriver` | `tests/scenario` | yes |
 | 4. Governance | Sales never reaches the passenger; no offer before resolution (architecture, structured offers, TOCTOU races) | `tests/governance` (#22 part 1, #29 part 2) | yes |
 | 5. UI E2E | Playwright narrative against the running stack (#23) | `app/frontend` | yes (`.github/workflows/e2e.yml`) |
