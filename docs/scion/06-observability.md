@@ -31,7 +31,7 @@ and live Vertex AI Agent Engine acceptance proof), see
 | `irrops-demo` | Demo service behind IAP; its SA holds only `aiplatform.user` |
 | `webaccess` | Hub `default_user_role` is `viewer` (new web users cannot create agents) |
 | `backups` | Daily snapshot policy (`7d` retention) attached to the hub VM boot disk |
-| `watchdog` | `acme-factory-watchdog` service ready (not public), UAT secret enabled, `*/5` and `0 4 * * *` scheduler jobs active, PO alert policy enabled |
+| `watchdog` | `acme-factory-watchdog` service ready (not public), UAT secret enabled, `0 * * * *` and `0 4 * * *` scheduler jobs active, PO alert policy enabled |
 | `identity` | Dedicated `acme-agent@` SA with 4 least-privilege roles, VM SA has `tokenCreator` on `acme-agent@` and no `serviceAccountAdmin`, deployer `run.developer` resource-scoped, Hub default `block`, project default `assign`, all live agents in `assign` mode |
 | `telemetry` | Scion Cloud Monitoring telemetry export enabled in Hub settings |
 | `engines` *(e2e)* | Exactly one `acme-customer-agent` and one `acme-sales-agent`, running as `acme-agent-engine`, with no reserved env |

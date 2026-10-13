@@ -11,6 +11,7 @@ changes as pull requests.
 | Path | What |
 |------|------|
 | [`app/`](app/) | The acme-airlines multi-agent application (see [`app/README.md`](app/README.md)). |
+| [`docs/scion/`](docs/scion/) | Complete playbook, architecture, IAP guide, evaluation methodology, and Scion configuration reference. |
 | [`infra/`](infra/) | Scripts and config that create and operate the factory. |
 | [`docs/setup/`](docs/setup/) | How the factory was built, step by step, and how to run it. |
 | [`docs/decisions/`](docs/decisions/) | Architecture decision records (app stack: [ADR 0100](docs/decisions/0100-app-stack.md)). |
@@ -24,7 +25,7 @@ changes as pull requests.
 
 > **Product Owner & Testers:** Follow the **[Try-It Guide](docs/product/try-it.md)** to test the hosted demo behind IAP or run the guided scenario presets locally.
 >
-> 🚀 **Live Hosted Demo (IAP):** **[https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app](https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app)** (Console: `/console`, WhatsApp: `/whatsapp`). Sign in with `@duboc.altostrat.com` or `@google.com`.
+> 🚀 **Live Hosted Demo (IAP):** **[https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app](https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app)** (Console: `/console`, WhatsApp: `/whatsapp`). Sign in with `@duboc.altostrat.com`, `@google.com`, or `@zup.com.br`.
 
 Run the full multi-agent application locally with Docker Compose:
 

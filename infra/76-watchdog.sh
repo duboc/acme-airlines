@@ -4,7 +4,7 @@
 #
 #   Service     Cloud Run acme-factory-watchdog (Direct VPC egress -> hub:8080)
 #   UAT         Secret Manager acme-watchdog-hub-token (agent:list,read,message,lifecycle)
-#   Schedules   acme-factory-watchdog (*/5 * * * * UTC -> POST /check)
+#   Schedules   acme-factory-watchdog (0 * * * * UTC   -> POST /check)
 #               acme-lead-reincarnate (0 4 * * * UTC   -> POST /reincarnate)
 #   PO alert    Log-based alert policy acme-factory-watchdog-po-alert -> email ADMIN_EMAIL
 set -euo pipefail
@@ -87,17 +87,17 @@ gcloud iam service-accounts add-iam-policy-binding "${SA}" --project="${PROJECT_
 upsert_sched() {
   local name="$1" cron="$2" path="$3" body="$4"
   local common=(--location="${REGION}" --project="${PROJECT_ID}" --schedule="${cron}" --time-zone="Etc/UTC"
-                --uri="${URL}${path}" --http-method=POST --headers="Content-Type=application/json"
+                --uri="${URL}${path}" --http-method=POST
                 --message-body="${body}" --oidc-service-account-email="${SA}" --oidc-token-audience="${URL}"
                 --attempt-deadline=180s)
   if gcloud scheduler jobs describe "${name}" --location="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
-    gcloud scheduler jobs update http "${name}" "${common[@]}" --quiet
+    gcloud scheduler jobs update http "${name}" "${common[@]}" --update-headers="Content-Type=application/json" --quiet
   else
-    gcloud scheduler jobs create http "${name}" "${common[@]}" --quiet
+    gcloud scheduler jobs create http "${name}" "${common[@]}" --headers="Content-Type=application/json" --quiet
   fi
 }
-upsert_sched "${CHECK_JOB}" "*/5 * * * *" "/check"       '{"mode":"check"}'
-upsert_sched "${REINC_JOB}" "0 4 * * *"   "/reincarnate" '{"mode":"reincarnate"}'
+upsert_sched "${CHECK_JOB}" "${WATCHDOG_CRON:-0 * * * *}" "/check"       '{"mode":"check"}'
+upsert_sched "${REINC_JOB}" "0 4 * * *"                   "/reincarnate" '{"mode":"reincarnate"}'
 
 echo "==> PO email notification channel + log-based alert policy (${ALERT_DISPLAY})"
 CHAN="$(gcloud alpha monitoring channels list --project="${PROJECT_ID}" \

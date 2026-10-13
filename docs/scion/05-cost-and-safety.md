@@ -6,7 +6,7 @@
    Sonnet for coding. Gemini Flash for review, audit, research, docs and
    exploratory QA.
 2. **Wake-on-change watchdog + daily reincarnation.** `acme-factory-watchdog`
-   (`infra/76-watchdog.sh`) polls GitHub and Hub state every 5 minutes and wakes
+   (`infra/76-watchdog.sh`) polls GitHub and Hub state every hour (`0 * * * *`) and wakes
    `acme-lead` only when something changed (avoiding 48 daily blind Opus wakes
    after Anthropic's 5-minute prompt-cache TTL expires). At `04:00 UTC` daily,
    `acme-lead-reincarnate` reincarnates `acme-lead` with a handoff built from

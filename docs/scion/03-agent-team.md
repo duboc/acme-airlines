@@ -69,6 +69,8 @@ the team visible as a tree under the lead:
 - **Labels:** `acme.team/role=<role>` and `acme.team/tier=standing|ephemeral`.
 - **Check:** `verify.sh topology` asserts every live `acme-*` agent descends
   from `acme-lead`, with at least 11 present. The parser is unit-tested.
+- **Full hierarchy diagram & configuration planes:** see
+  [11-scion-configuration-reference.md](11-scion-configuration-reference.md).
 
 ## Messaging and identities
 

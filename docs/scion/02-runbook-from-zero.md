@@ -29,7 +29,7 @@ default config is never changed.
 | 8 | Lead + standing roster | `hub_cli start acme-lead --type acme-lead --role full …` (kickoff below). The lead forms the roster itself | `verify.sh lead topology` | 5 min |
 | 9 | Loop schedule (6h fallback) | `infra/60-factory.sh tick-install` | `verify.sh loop` | 1 min |
 | 10 | Budget guard ($2,000/month) | `infra/70-budget-guard.sh`, then the wiring test | `verify.sh budget` | 5 min |
-| 10b | Watchdog (5-min wake-on-change, stalled recovery, daily reincarnation, PO email alert) | `infra/76-watchdog.sh` | `verify.sh watchdog` | 3 min |
+| 10b | Watchdog (hourly wake-on-change, stalled recovery, daily reincarnation, PO email alert) | `infra/76-watchdog.sh` | `verify.sh watchdog` | 3 min |
 | 11 | Observatory platform (optional) | `infra/80-observatory-platform.sh`, then 🖐 billing export and a GitHub read token | `verify.sh observatory` | 5 min |
 | 12 | Daily boot-disk snapshots | `infra/75-backups.sh` | `verify.sh backups` | 1 min |
 | 13 | App platforms (optional, product-specific) | `infra/90-irrops-demo-platform.sh`, `infra/95-agent-engine-platform.sh` | `verify.sh irrops-demo agent-engine` | 5 min |

@@ -19,11 +19,11 @@ After 72 hours of continuous autonomous operation (86 merged PRs across 103 issu
 ## Decisions
 
 ### 1. Wake-on-Change Watchdog + 6-Hour Safety-Net TICK + Daily Lead Reincarnation
-- Deploy Cloud Run service `acme-factory-watchdog` (`infra/watchdog/`, `infra/76-watchdog.sh`), triggered every 5 minutes by Cloud Scheduler (`acme-factory-watchdog`):
+- Deploy Cloud Run service `acme-factory-watchdog` (`infra/watchdog/`, `infra/76-watchdog.sh`), triggered every hour (`0 * * * *`) by Cloud Scheduler (`acme-factory-watchdog`):
   - Computes a SHA-256 fingerprint over open GitHub issues (excluding `"🏭 Factory status"`), open PRs, recent `main` workflow runs, and non-lead agent `(slug, phase, activity)` states.
-  - Wakes `acme-lead` only when `acme-lead` is idle (`blocked`/`waiting_for_input`/`completed`) AND the fingerprint changed since the last check (rate-limited to at most 1 wake per 10 minutes).
+  - Wakes `acme-lead` only when `acme-lead` is idle (`blocked`/`waiting_for_input`/`completed`) AND the fingerprint changed since the last check (rate-limited to at most 1 wake per 55 minutes).
   - Never resumes a `suspended` lead (preserving intentional pauses by `infra/60-factory.sh pause` or `acme-budget-guard`).
-  - Self-heals an unhealthy lead (`error`/`stopped` phase → `scion resume`; `stalled`/`crashed`/`offline`/`limits_exceeded` activity → recovery message first, then `scion reincarnate` + `alert_po=true` after 10 minutes).
+  - Self-heals an unhealthy lead (`error`/`stopped` phase → `scion resume`; `stalled`/`crashed`/`offline`/`limits_exceeded` activity → recovery message first, then `scion reincarnate` + `alert_po=true` on the next hourly check).
 - Move the Hub recurring schedule `acme-factory-tick` from `*/30 * * * *` to `0 */6 * * *` (`TICK_CRON` in `infra/factory.env`) as a safety net.
 - Schedule daily reincarnation of `acme-lead` at `04:00 UTC` (`acme-lead-reincarnate` → `POST /reincarnate`) using a structured handoff built from `"🏭 Factory status"` so `acme-lead` starts each day with a compact context.
 - Wire a Cloud Monitoring log-based alert policy (`acme-factory-watchdog-po-alert`) on `jsonPayload.alert_po=true` to email `ADMIN_EMAIL`.

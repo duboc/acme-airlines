@@ -13,13 +13,16 @@ All commands assume the repo root and `CLOUDSDK_ACTIVE_CONFIG_NAME=acme-factory`
 | Operator CLI | `infra/30-hub-admin-access.sh enable`, then `bash -c 'source infra/lib.sh; hub_cli <scion args>'`, then `… disable` |
 | Health | `infra/verify.sh all` |
 
-### Grant another person browser access
+### Grant another domain or person browser access
+
+Update `WEB_DOMAINS` in `infra/factory.env` (currently `"google.com duboc.altostrat.com zup.com.br"`) and run:
 
 ```bash
-gcloud iap web add-iam-policy-binding --resource-type=cloud-run \
-  --service=scion-hub-acme-iap-proxy --region=us-central1 --project=acme-airlines-factory \
-  --member=user:colleague@duboc.altostrat.com --role=roles/iap.httpsResourceAccessor
+bash infra/50-web-access.sh
+bash infra/verify.sh webaccess
 ```
+
+This binds `roles/iap.httpsResourceAccessor` on all three IAP-protected Cloud Run services (`scion-hub-acme-iap-proxy`, `acme-observatory`, `acme-irrops-demo`), updates `server.auth.authorized_domains` in `/home/scion/.scion/settings.yaml`, and syncs the `access` row in `/home/scion/.scion/hub.db` (`origin='seeded'`). See [docs/scion/09-iap.md](../scion/09-iap.md).
 
 ## Factory on/off switch (`infra/60-factory.sh`)
 
@@ -32,11 +35,11 @@ gcloud iap web add-iam-policy-binding --resource-type=cloud-run \
 | `status` | VM state, tick schedule, agents grouped by phase | — |
 | `pause` | Pauses the `acme-factory-tick` schedule and suspends every agent | Hub, UI, roster, lineage graph and sessions. Model spend drops to ~0. |
 | `resume` | Resumes the schedule and wakes `acme-lead` (full loop pass) | Everything resumes where it left off |
-| `tick-install` | Create the 30-minute TICK schedule (idempotent) | — |
+| `tick-install` | Create/update the 6-hour `acme-factory-tick` safety-net schedule (`0 */6 * * *`, idempotent); hourly wake-on-change is driven by `acme-factory-watchdog` (`0 * * * *`, `infra/76-watchdog.sh`) | — |
 
 ## Budget guardrail (`infra/70-budget-guard.sh`)
 
-- **Budget:** `acme-airlines-factory-monthly` is **$1000/month** on this
+- **Budget:** `acme-airlines-factory-monthly` is **$2,000/month** (`BUDGET_USD="2000"`) on this
   project. Billing admins get email at **50%, 90% and 100%** of actual spend.
 - **How the auto-pause works:** each notification goes to Pub/Sub topic
   `acme-budget-alerts`, which pushes it (OIDC, audience = the service URL) to
