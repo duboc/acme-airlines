@@ -13,6 +13,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 PROJECT = "acme-airlines-factory"
+# Agent Engine injects GOOGLE_CLOUD_PROJECT as the project NUMBER (#185): the same project.
+PROJECT_NUMBER = "493084803309"
 LOCATION = "global"
 # GA Gemini Flash model confirmed to work on the global endpoint (see app/README.md).
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -43,10 +45,10 @@ def load_vertex_config(env: Mapping[str, str]) -> VertexConfig:
         if env.get(name):
             raise LlmConfigError(f"{name} is set: API keys are not allowed, use ADC only")
     project = env.get("ACME_GENAI_PROJECT") or env.get("GOOGLE_CLOUD_PROJECT") or PROJECT
-    if project != PROJECT:
+    if project not in (PROJECT, PROJECT_NUMBER):
         raise LlmConfigError(
-            f"model project (ACME_GENAI_PROJECT / GOOGLE_CLOUD_PROJECT) must be {PROJECT!r}, "
-            f"got {project!r}"
+            f"model project (ACME_GENAI_PROJECT / GOOGLE_CLOUD_PROJECT) must be {PROJECT!r} "
+            f"(or its number), got {project!r}"
         )
     location = env.get("ACME_GENAI_LOCATION") or LOCATION
     if location != LOCATION:

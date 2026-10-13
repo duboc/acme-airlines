@@ -170,3 +170,21 @@ only those requirements (the repo's `acme` is not installed) runs `scripts/engin
 `acme` from the tarball, unpickle the Customer engine, `set_up()` it and run a query with
 `LLM_MODE=fake`; the Sales engine is loaded (its `set_up()` needs the live Customer engine). Run it
 locally the same way. Unit tests (`tests/engines/test_packaging.py`) cover the tarball layout.
+
+## Self-diagnosis and pinned requirements (#185)
+
+Agent Engine injects `GOOGLE_CLOUD_PROJECT` as the project **number** (`493084803309`). The LLM
+config accepts the project id or that number for the same project (never another one) and always
+hands the client the id; the deploy also sets `ACME_GENAI_PROJECT=acme-airlines-factory`, which wins.
+
+`ENGINE_REQUIREMENTS` are exact pins equal to `uv.lock` (a test enforces it): the container resolves
+them with pip, so ranges let it drift from what CI tested. Transitive dependencies still float.
+
+`set_up()` no longer kills the server: it catches any exception and stores a scrubbed traceback. The
+`diagnostics` operation (both engines; **not** an A2A skill, so Sales cannot call it) returns exactly
+`{engine, status: ready|failed|starting, startup_error, llm_mode}`. Operations on a failed engine
+raise "the engine failed to start; call `diagnostics`". `acme.engines.deploy` calls `diagnostics` on
+both engines after create/update and fails the job, printing the error, unless every engine is
+`ready`, so a broken engine is never green. `startup_error` is scrubbed by `acme.diagnostics.scrub`:
+no local variable values, env values whose name looks secret (TOKEN/KEY/SECRET/PASSWORD/AUTH ...),
+credential shapes (Bearer, `ya29.`, `AIza`, PEM, long opaque strings), passenger PII, 4000 chars max.

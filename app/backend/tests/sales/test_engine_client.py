@@ -110,7 +110,10 @@ async def test_sales_engine_app_proposes_through_the_customer_engine():
     assert len(f.offer_messages()) == 1
     assert [o.status for o in f.state.offers] == ["sent", "rejected"]
     assert DISPLAY_NAME == "acme-sales-agent"
-    assert app.register_operations() == {"async_stream": ["async_stream_query"]}
+    assert app.register_operations() == {
+        "": ["diagnostics"],
+        "async_stream": ["async_stream_query"],
+    }
     await f.http.aclose()
 
 

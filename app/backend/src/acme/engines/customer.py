@@ -16,6 +16,7 @@ unchanged (`acme.customer.outreach`).
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Mapping
 from typing import Any
@@ -27,20 +28,23 @@ from google.genai import types
 from opentelemetry import trace
 from pydantic import ConfigDict
 
+from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
 
 DISPLAY_NAME = "acme-customer-agent"
 APP_NAME = "acme-customer"
+# Exact pins, kept equal to uv.lock by a test: the container resolves these with pip, so floating
+# ranges let it drift from what CI tested (#185). Transitive dependencies still float.
 ENGINE_REQUIREMENTS = [
-    "google-cloud-aiplatform[adk,agent-engines]>=1.112,<2",
-    "google-adk[a2a]>=1.10.0",
-    "google-genai>=2.29.0",
-    "mcp>=1.9,<2",
-    "opentelemetry-sdk>=1.30",
-    "opentelemetry-exporter-gcp-trace>=1.9",
-    "httpx>=0.28.1",
-    "pydantic>=2.14.0",
-    "fastapi>=0.143.0",
+    "google-cloud-aiplatform[adk,agent-engines]==1.165.1",
+    "google-adk[a2a]==1.10.0",
+    "google-genai==2.29.0",
+    "mcp==1.30.0",
+    "opentelemetry-sdk==1.45.1",
+    "opentelemetry-exporter-gcp-trace==1.15.0",
+    "httpx==0.28.1",
+    "pydantic==2.14.0",
+    "fastapi==0.143.0",
 ]
 
 
@@ -107,11 +111,46 @@ class ScenarioStepAgent(BaseAgent):
 
 
 class CustomerEngineApp:
+    _STARTED = ("runtime", "skills", "scenarios", "_sessions", "_runner", "_step_runner")
+
     def __init__(self) -> None:
         self.llm_mode = validate_env()
+        self.startup_error: str | None = None
+        self.started = False
+
+    def __getattr__(self, name: str) -> Any:
+        # Only reached when normal lookup fails: an operation touched state that set_up() never
+        # built. Say why instead of an AttributeError (pickling probes dunders: stay quiet).
+        if name in CustomerEngineApp._STARTED:
+            if self.startup_error:
+                raise EngineOperationError(
+                    "the engine failed to start; call `diagnostics` for the error"
+                )
+            raise EngineOperationError("the engine is not started yet (set_up() has not run)")
+        raise AttributeError(name)
 
     def set_up(self) -> None:
-        """Runs once inside the engine (and in tests): build the runtime, agent and runner."""
+        """Runs once inside the engine. A failure is captured (scrubbed) and exposed by
+        `diagnostics` instead of killing the server, and the deploy fails on it (#185)."""
+        try:
+            self._set_up()
+            self.started, self.startup_error = True, None
+        except Exception as exc:  # noqa: BLE001 - reported, never silent: see deploy.verify_started
+            self.started, self.startup_error = False, format_error(exc)
+            logging.getLogger(__name__).error("engine start-up failed: %s", self.startup_error)
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Start-up status for the deploy check and operators (not an A2A skill)."""
+        status = "ready" if self.started else ("failed" if self.startup_error else "starting")
+        return {
+            "engine": DISPLAY_NAME,
+            "status": status,
+            "startup_error": self.startup_error,
+            "llm_mode": self.llm_mode,
+        }
+
+    def _set_up(self) -> None:
+        """Build the runtime, agent and runner (also called directly by tests)."""
         from google.adk.runners import Runner
         from google.adk.sessions import InMemorySessionService
 
@@ -300,6 +339,7 @@ class CustomerEngineApp:
     def register_operations(self) -> dict[str, list[str]]:
         return {
             "": [
+                "diagnostics",
                 "scenarios_list",
                 "scenario_start",
                 "scenario_state",

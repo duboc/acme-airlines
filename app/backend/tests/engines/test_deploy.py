@@ -49,6 +49,7 @@ def test_updates_existing_in_place_with_the_exact_settings():
     assert cust["env_vars"] == {
         "LLM_MODE": "vertex",
         "ACME_GENAI_LOCATION": "global",  # model location: not derived from GOOGLE_CLOUD_LOCATION
+        "ACME_GENAI_PROJECT": "acme-airlines-factory",  # the injected value is the project NUMBER
         "ACME_ENABLE_TRACING": "true",
     }
     assert any(r.startswith("google-cloud-aiplatform") for r in cust["requirements"])
@@ -131,3 +132,81 @@ def test_deploy_env_has_no_reserved_google_cloud_keys():
 
 def test_deploy_does_not_need_google_cloud_project_in_the_environment():
     deploy(FakeSdk(), {"AGENT_ENGINE_SA": ENV["AGENT_ENGINE_SA"]})
+
+
+class DiagSdk(FakeSdk):
+    """FakeSdk whose engines answer `diagnostics()`."""
+
+    def __init__(self, diag_by_resource, **kw):
+        super().__init__(**kw)
+        self.diag_by_resource = diag_by_resource
+
+    def get(self, resource_name):
+        d = self.diag_by_resource[resource_name]
+        if isinstance(d, Exception):
+            return SimpleNamespace(diagnostics=lambda: (_ for _ in ()).throw(d))
+        return SimpleNamespace(diagnostics=lambda: d)
+
+
+READY = {"status": "ready", "startup_error": None}
+
+
+def test_a_failed_startup_fails_the_deploy_and_prints_the_error():
+    from acme.engines.deploy import verify_started
+
+    sdk = DiagSdk(
+        {
+            PREFIX + "1": READY,
+            PREFIX + "2": {"status": "failed", "startup_error": "Traceback: boom"},
+        }
+    )
+    with pytest.raises(DeployError, match="(?s)acme-sales-agent.*boom"):
+        verify_started(sdk, {"acme-customer-agent": PREFIX + "1", "acme-sales-agent": PREFIX + "2"})
+
+
+def test_ready_engines_pass_verification():
+    from acme.engines.deploy import verify_started
+
+    sdk = DiagSdk({PREFIX + "1": READY, PREFIX + "2": READY})
+    verify_started(sdk, {"acme-customer-agent": PREFIX + "1", "acme-sales-agent": PREFIX + "2"})
+
+
+def test_an_unreachable_diagnostics_call_is_a_deploy_failure_too():
+    from acme.engines.deploy import verify_started
+
+    sdk = DiagSdk({PREFIX + "1": RuntimeError("503 unavailable")})
+    with pytest.raises(DeployError, match="diagnostics call failed.*503"):
+        verify_started(sdk, {"acme-customer-agent": PREFIX + "1"})
+
+
+def test_main_exits_nonzero_and_prints_the_startup_error(monkeypatch, capsys):
+    import sys
+    import types
+
+    from acme.engines import deploy as mod
+
+    class Sdk(DiagSdk):
+        pass
+
+    sdk = Sdk({})
+    sdk.diag_by_resource = {}
+    created = {}
+
+    def create(**kw):
+        name = PREFIX + f"new{len(created)}"
+        created[name] = kw
+        sdk.diag_by_resource[name] = {"status": "failed", "startup_error": "ModuleNotFoundError: x"}
+        return SimpleNamespace(resource_name=name)
+
+    sdk.create = create
+    fake = types.SimpleNamespace(init=lambda **_: None, agent_engines=sdk)
+    monkeypatch.setitem(sys.modules, "vertexai", fake)
+    monkeypatch.setitem(sys.modules, "vertexai.agent_engines", sdk)
+    for k, v in {
+        **ENV,
+        "AGENT_ENGINE_LOCATION": "us-central1",
+        "AGENT_ENGINE_STAGING_BUCKET": "stage",
+    }.items():
+        monkeypatch.setenv(k, v)
+    assert mod.main() == 1
+    assert "ModuleNotFoundError: x" in capsys.readouterr().err
