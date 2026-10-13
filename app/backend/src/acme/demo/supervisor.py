@@ -85,10 +85,6 @@ def child_names(env: Mapping[str, str]) -> tuple[str, ...]:
 def main() -> None:
     configure_logging()
     tokens = make_tokens()
-    if engine_mode(os.environ) == "agent-engine":
-        from acme.api.engine_backend import EngineBackend  # noqa: PLC0415
-
-        EngineBackend.from_env()  # fail fast with a clear message before serving anything
     procs = [
         subprocess.Popen([_COMMANDS[n]], env=child_env(n, tokens, os.environ))  # noqa: S603
         for n in child_names(os.environ)

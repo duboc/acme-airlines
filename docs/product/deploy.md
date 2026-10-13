@@ -68,7 +68,7 @@ sim, Sales or agents), and the API calls the Customer engine (`AGENT_ENGINE_CUST
 the Sales engine (`AGENT_ENGINE_SALES`) with ADC. Both must be full resource names
 (`projects/<p>/locations/<l>/reasoningEngines/<id>`), written by the engine deploy workflow (#163);
 without them (or with a name outside `GOOGLE_CLOUD_PROJECT` or its number and
-`AGENT_ENGINE_LOCATION`, default `us-central1`) the app fails at startup. The full UI works in this
+`AGENT_ENGINE_LOCATION`, default `us-central1`) the app still starts and listens (`/api/healthz` reports `engine: agent-engine`). Engines are resolved lazily on the first engine call; a bad name or missing ADC is a clear `503` then, retried on the next request (#199). CI smoke-tests this mode with dummy names and no credentials. The full UI works in this
 mode: scenarios, journeys, the WhatsApp phone panel, reset and trigger all go to the Customer engine.
 
 `irrops-deploy.yml` sets `ENGINE_MODE` after swapping the image, using
