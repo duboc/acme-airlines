@@ -9,7 +9,7 @@
 # - Prints the hub-scoped GOOGLE_CLOUD_* env vars agents receive (must be global).
 #
 # Manual prerequisite (human): enable the Claude models in Vertex AI Model
-# Garden for this project — see docs/setup/01-runbook.md §4.
+# Garden for this project — see docs/scion/01-scion-and-gcp-setup.md.
 set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap a Scion software factory end to end (see docs/scion/02-runbook-from-zero.md).
+# Bootstrap a Scion software factory end to end (see docs/scion/01-scion-and-gcp-setup.md).
 #
 # Runs every infra step in order, runs the matching infra/verify.sh check after each,
 # and pauses at the manual (console) steps. Every step is idempotent, so re-running
@@ -59,7 +59,7 @@ STEPS=(
   "7|Least-privilege agent SA (assign mode) + Hub telemetry|identity telemetry|step7"
   "8|Agent team templates (build + push)|team cost skills|step8"
   "9|Start the lead (it forms the standing roster)|lead|step9"
-  "10|Loop schedule (6h TICK) + 5m wake-on-change watchdog|loop watchdog|step10"
+  "10|Loop schedule (6h TICK) + hourly wake-on-change watchdog|loop watchdog|step10"
   "11|Budget guard (suspends agents at 100%)|budget|step11"
   "12|Observatory platform (optional)|observatory|step12"
   "13|Daily boot-disk snapshots|backups|step13"
