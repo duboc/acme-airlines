@@ -40,12 +40,7 @@ pause() {  # pause <what to do>
 }
 admin() { bash "${INFRA}/30-hub-admin-access.sh" "$1"; }
 
-push_templates() {
-  admin enable; trap 'admin disable' RETURN
-  gcloud compute scp --recurse "${REPO_ROOT}"/factory/templates/acme-* "${VM_NAME}:~/.scion/templates/" \
-    --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet
-  local d; for d in "${REPO_ROOT}"/factory/templates/acme-*; do hub_cli --global templates push "$(basename "${d}")"; done
-}
+push_templates() { bash "${INFRA}/45-push-templates.sh"; }  # opens/closes the admin window itself
 
 # step | title | check(s) | function
 STEPS=(
@@ -53,13 +48,14 @@ STEPS=(
   "2|Hub VM + IAP proxy (Scion deploy.sh)|hub|step2"
   "3|Vertex access + Claude image (+ Model Garden)|vertex claude-image|step3"
   "4|Custom IAP OAuth client (external domains)|iap-oauth|step4"
-  "5|Domain web access (IAP + hub sign-in policy)||step5"
+  "5|Domain web access (IAP + hub sign-in policy)|webaccess|step5"
   "6|Hub project + GITHUB_TOKEN secret|hubproject|step6"
   "7|Agent team templates (build + push)|team cost skills|step7"
   "8|Start the lead (it forms the standing roster)|lead|step8"
   "9|Loop schedule (TICK)|loop|step9"
   "10|Budget guard (suspends agents at 100%)|budget|step10"
   "11|Observatory platform (optional)|observatory|step11"
+  "12|Daily boot-disk snapshots|backups|step12"
 )
 
 step1()  { bash "${INFRA}/00-bootstrap-project.sh"; }
@@ -94,6 +90,7 @@ step11() { bash "${INFRA}/80-observatory-platform.sh"
            pause "Billing → Billing export → Standard usage cost → project ${PROJECT_ID}, dataset billing_export.
 Then store a GitHub token for the collector:
   read -rs T && printf %s \"\$T\" | gcloud secrets versions add acme-observatory-github-token --project=${PROJECT_ID} --data-file=- && unset T"; }
+step12() { bash "${INFRA}/75-backups.sh"; }
 
 for s in "${STEPS[@]}"; do
   IFS='|' read -r n title checks fn <<<"${s}"

@@ -9,8 +9,11 @@
    safety net, and an unchanged-state tick is a one-line no-op.
 3. **Idle mode.** With an empty backlog, everything is suspended and only
    approved work runs.
-4. **Caps.** Per-role `max_duration` and `max_turns`, at most 4 running agents
-   besides the lead, and suspended agents are free.
+4. **Caps.** Per-role `max_duration`, `max_turns` and `max_model_calls`
+   (3 × `max_turns`, which bounds runaway tool loops inside a turn), at most 4
+   running agents besides the lead, and suspended agents are free. Caps apply
+   when an agent starts or is reincarnated, so push templates with
+   `infra/45-push-templates.sh` and let new agents pick them up.
 5. **Fake LLM in CI.** `LLM_MODE=fake` for dev, tests and CI. Real model calls
    happen only in deployed demos.
 
@@ -67,13 +70,33 @@ flowchart LR
 - **Agents never change IAM or infra.** They file `needs operator` issues. The
   operator checks the diagnosis, grants the minimal role, codifies it in
   `infra/` plus a `verify.sh` assertion, and closes the issue with evidence.
+- **New web users are viewers.** `DEFAULT_USER_ROLE=viewer` (`infra/50-web-access.sh`)
+  lets anyone in `WEB_DOMAINS` watch the factory but not start agents billed to
+  the project. Admins (`admin_emails`) are unaffected. The role applies only to
+  users created after the change; promote someone in the hub UI if needed.
+  Check: `verify.sh webaccess`.
+
+## Backups
+
+`infra/75-backups.sh` attaches the snapshot schedule `<VM_NAME>-daily-snapshots`
+to the hub VM's boot disk: daily at 03:00 UTC, kept 7 days, stored in the
+region. That disk holds `hub.db`, agent homes and workspaces. Snapshots are
+crash-consistent, and SQLite recovers from them. Check: `verify.sh backups`.
+
+**Restore** (the old VM stays untouched until you switch):
+```bash
+gcloud compute snapshots list --project=$PROJECT_ID --filter="sourceDisk~scion-hub"
+gcloud compute disks create scion-hub-restore --project=$PROJECT_ID --zone=$ZONE \
+  --source-snapshot=<snapshot> --type=pd-balanced
+# Then stop the broken VM, swap its boot disk for the restored one (or create a VM
+# from it with the same SA, network tags and metadata), start it, and run
+# infra/verify.sh hub lead.
+```
 
 ## Known residual risks (accepted for an experiment)
 
 - **No GitHub-side protection.** All agents share one GitHub identity and
   there is no branch protection on a private repo without Pro. Merges to
   `main` are protected by team rules plus the reviewer verdict and CI only.
-- **Broad web access.** `default_user_role: member` for `WEB_DOMAINS` lets
-  anyone in those domains start agents billed to the project. Use `viewer` for
-  anything beyond an experiment.
+- **Broad web access** (resolved 2026-10-12): new users now default to `viewer`.
 - **The PAT is broader than read-only** where it's reused for the Observatory.

@@ -18,7 +18,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-DEFAULT_USER_ROLE="${DEFAULT_USER_ROLE:-member}"
+DEFAULT_USER_ROLE="${DEFAULT_USER_ROLE:-viewer}"
 SETTINGS=/home/scion/.scion/settings.yaml
 BEGIN="# BEGIN acme-web-access (infra/50-web-access.sh)"
 END="# END acme-web-access"

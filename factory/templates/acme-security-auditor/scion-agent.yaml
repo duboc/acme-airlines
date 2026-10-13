@@ -7,6 +7,7 @@ default_harness_config: antigravity
 model: medium
 max_duration: "45m"
 max_turns: 150
+max_model_calls: 450
 skills:
   - uri: "gh://addyosmani/agent-skills/code-review-and-quality"
   - uri: "gh://addyosmani/agent-skills/security-and-hardening"

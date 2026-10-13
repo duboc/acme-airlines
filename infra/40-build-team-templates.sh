@@ -89,7 +89,11 @@ Upstream: https://github.com/scion-frontiers/agent-team/tree/${AGENT_TEAM_SHA}/t
     echo "default_harness_config: ${harness}"
     echo "model: ${model}"
     if [[ -n "${maxdur}" ]]; then echo "max_duration: \"${maxdur}\""; fi
-    if [[ -n "${maxturns}" ]]; then echo "max_turns: ${maxturns}"; fi
+    if [[ -n "${maxturns}" ]]; then
+      echo "max_turns: ${maxturns}"
+      # Bound runaway tool loops: a turn may contain several model calls (audit 2026-10-12).
+      echo "max_model_calls: $(( maxturns * 3 ))"
+    fi
     # env: upstream entries (e.g. qa-tester's Playwright path) + Claude haiku override.
     upstream_env="$(awk '/^env:/{f=1;next} f&&/^[^ #]/{f=0} f&&/^  [A-Z_]+:/' "${UP}/${upstream}/scion-agent.yaml")"
     if [[ -n "${upstream_env}" || "${harness}" == "claude" ]]; then

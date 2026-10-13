@@ -2,21 +2,21 @@
 
 ## Roles, models and caps
 
-| Role | Template | Harness / model | Hub role | Cap (`max_duration` / `max_turns`) |
+| Role | Template | Harness / model | Hub role | Cap (`max_duration` / `max_turns` / `max_model_calls`) |
 |---|---|---|---|---|
 | Lead (orchestrator) | `acme-lead` | claude / Opus | `full` | none |
-| Engineering manager (one workstream) | `acme-eng-manager` | claude / Opus | `full` | 4h / 800 |
-| Architect | `acme-architect` | claude / Opus | baseline | 1h / 200 |
-| Backend | `acme-backend` | claude / Sonnet | baseline | 2h / 400 |
-| Frontend (+ impeccable skill) | `acme-frontend` | claude / Sonnet | baseline | 2h / 400 |
-| QA, automated tests | `acme-qa` | claude / Sonnet | baseline | 2h / 400 |
-| Code reviewer | `acme-reviewer` | antigravity / Gemini Flash | baseline | 45m / 150 |
-| Security auditor | `acme-security-auditor` | antigravity / Gemini Flash | baseline | 45m / 150 |
-| QA tester (exploratory, Playwright) | `acme-qa-tester` | antigravity / Gemini Flash | baseline | 45m / 150 |
-| Investigator | `acme-investigator` | antigravity / Gemini Flash | baseline | 30m / 100 |
-| Researcher | `acme-researcher` | antigravity / Gemini Flash | baseline | 30m / 100 |
-| Doc writer | `acme-doc-writer` | antigravity / Gemini Flash | baseline | 30m / 100 |
-| Release notes | `acme-release-notes` | antigravity / Gemini Flash | baseline | 30m / 100 |
+| Engineering manager (one workstream) | `acme-eng-manager` | claude / Opus | `full` | 4h / 800 / 2400 |
+| Architect | `acme-architect` | claude / Opus | baseline | 1h / 200 / 600 |
+| Backend | `acme-backend` | claude / Sonnet | baseline | 2h / 400 / 1200 |
+| Frontend (+ impeccable skill) | `acme-frontend` | claude / Sonnet | baseline | 2h / 400 / 1200 |
+| QA, automated tests | `acme-qa` | claude / Sonnet | baseline | 2h / 400 / 1200 |
+| Code reviewer | `acme-reviewer` | antigravity / Gemini Flash | baseline | 45m / 150 / 450 |
+| Security auditor | `acme-security-auditor` | antigravity / Gemini Flash | baseline | 45m / 150 / 450 |
+| QA tester (exploratory, Playwright) | `acme-qa-tester` | antigravity / Gemini Flash | baseline | 45m / 150 / 450 |
+| Investigator | `acme-investigator` | antigravity / Gemini Flash | baseline | 30m / 100 / 300 |
+| Researcher | `acme-researcher` | antigravity / Gemini Flash | baseline | 30m / 100 / 300 |
+| Doc writer | `acme-doc-writer` | antigravity / Gemini Flash | baseline | 30m / 100 / 300 |
+| Release notes | `acme-release-notes` | antigravity / Gemini Flash | baseline | 30m / 100 / 300 |
 
 The rule of thumb is **Opus for coordination and planning, Sonnet for code,
 Flash for everything else.** Review is cross-vendor: Flash reviews code that

@@ -64,14 +64,15 @@ models_ok() {
   echo "${n} templates match the model mapping"
 }
 
-# caps_ok <templates-dir>: every acme-* template except acme-lead sets max_duration and max_turns.
+# caps_ok <templates-dir>: every acme-* template except acme-lead sets max_duration, max_turns and max_model_calls.
 caps_ok() {
   local dir="$1" f t n=0 bad=""
   for f in "${dir}"/acme-*/scion-agent.yaml; do
     [[ -f "${f}" ]] || continue
     t="$(basename "$(dirname "${f}")")"; n=$((n+1))
     [[ "${t}" == "acme-lead" ]] && continue
-    [[ -n "$(_yaml_val max_duration "${f}")" && -n "$(_yaml_val max_turns "${f}")" ]] || bad+=" ${t}"
+    [[ -n "$(_yaml_val max_duration "${f}")" && -n "$(_yaml_val max_turns "${f}")" \
+       && -n "$(_yaml_val max_model_calls "${f}")" ]] || bad+=" ${t}"
   done
   (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
   [[ -z "${bad}" ]] || { echo "missing caps:${bad}"; return 1; }
@@ -426,6 +427,21 @@ check_demo_engine() {
   [[ "${env}" == *"ENGINE_MODE=agent-engine"* ]] || { fail demo-engine "demo ENGINE_MODE is not agent-engine (${env})"; return 1; }
   pass "demo-engine"
 }
+check_webaccess() {
+  # New web users get the least privilege by default (audit: Googlers must not start agents).
+  local role
+  role="$(vm_ssh "sudo grep -E '^ +default_user_role:' /home/scion/.scion/settings.yaml" 2>/dev/null | awk '{print $2}' | tail -1)"
+  [[ "${role}" == "viewer" ]] || { fail webaccess "default_user_role='${role:-unset}' (want viewer)"; return 1; }
+  pass webaccess
+}
+check_backups() {
+  # The hub VM boot disk has a daily snapshot schedule attached.
+  local pol
+  pol="$(gcloud compute disks describe "${VM_NAME}" --zone="$(resolve_zone)" --project="${PROJECT_ID}" \
+          --format='value(resourcePolicies)' 2>/dev/null)"
+  [[ "${pol}" == *"${VM_NAME}-daily-snapshots"* ]] || { fail backups "no snapshot schedule on disk ${VM_NAME}"; return 1; }
+  pass backups
+}
 check_lead() {
   # The lead agent's container is running on the VM.
   vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
@@ -451,13 +467,15 @@ run() {
     observatory)  check_observatory ;;
     irrops-demo)  check_irrops_demo ;;
     iap-oauth)    check_iap_oauth ;;
+    webaccess)    check_webaccess ;;
+    backups)      check_backups ;;
     agent-engine) check_agent_engine ;;
     engines)      check_engines ;;
     traces)       check_traces ;;
     demo-engine)  check_demo_engine ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth agent-engine; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth agent-engine webaccess backups; do run "$c" || rc=1; done
       return "$rc" ;;
     e2e)
       local rc=0
