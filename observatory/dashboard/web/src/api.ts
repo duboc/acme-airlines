@@ -117,6 +117,24 @@ export interface CollectorHealthResponse extends Envelope {
   last_execution: { ts: string; status: string; detail: string | null } | null;
 }
 
+export interface IrropsResponse extends Envelope {
+  hours: number;
+  guardrail: { rule: string; outcome: 'approve' | 'reject'; count: number }[];
+  offers_proposed: number | null;
+  offers_accepted: number | null;
+  offers_declined: number | null;
+  template_fallbacks: number | null;
+  template_fallback_rate: number | null;
+  needs_human: number | null;
+  notification_count: number | null;
+  notification_p50_s: number | null;
+  notification_p95_s: number | null;
+  errors_5xx: number | null;
+  errors_5xx_per_hour: number | null;
+  demo_health: 'healthy' | 'degraded' | 'down' | 'unknown';
+  last_metric_at: string | null;
+}
+
 export interface Endpoints {
   'collector-health': CollectorHealthResponse;
   spend: SpendResponse;
@@ -125,6 +143,7 @@ export interface Endpoints {
   github: GithubResponse;
   budget: BudgetResponse;
   'agent-engine': AgentEngineResponse;
+  irrops: IrropsResponse;
 }
 
 export async function fetchApi<K extends keyof Endpoints>(

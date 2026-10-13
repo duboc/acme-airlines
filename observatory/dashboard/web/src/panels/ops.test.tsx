@@ -63,6 +63,7 @@ function mock(over: Record<string, unknown> = {}) {
         agents: agents('2026-10-10T11:58:00Z'),
         github,
         'agent-engine': { ...env, hours: 1, engines: [] },
+        irrops: { ...env, hours: 24, guardrail: [], demo_health: 'unknown' },
         'collector-health': {
           ...env,
           healthy: true,

@@ -309,3 +309,25 @@ details summary {
 .health-ok {
   color: var(--muted, inherit);
 }
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+.stat dt {
+  font-size: 0.8125rem;
+  color: var(--ink-soft, inherit);
+}
+.stat dd {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pending {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--ink-soft, inherit);
+}
