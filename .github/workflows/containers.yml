@@ -76,8 +76,8 @@ jobs:
           done
 
       - name: Vulnerability scan (trivy, fail on CRITICAL with a fix available, SARIF)
-        # Fails only on CRITICAL findings that have a fixed version (`--ignore-unfixed`); everything
-        # (all severities, fixed or not) goes to the SARIF report for code scanning.
+        # Fails only on CRITICAL findings that have a fixed version (`--ignore-unfixed`) and are not in
+        # the time-boxed .github/.trivyignore; the SARIF report (all findings) is never filtered.
         run: |
           mkdir -p trivy-sarif
           for img in acme-backend:local acme-frontend:local; do
@@ -86,8 +86,9 @@ jobs:
               aquasec/trivy:0.57.1 image --scanners vuln --format sarif \
               --output "/out/$(basename "$out")" --no-progress "$img"
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/.github/.trivyignore:/.trivyignore:ro" \
               aquasec/trivy:0.57.1 image --scanners vuln --severity CRITICAL --ignore-unfixed \
-              --exit-code 1 --no-progress "$img"
+              --ignorefile /.trivyignore --exit-code 1 --no-progress "$img"
           done
 
       - name: Upload Trivy SARIF
