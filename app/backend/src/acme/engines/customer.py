@@ -119,6 +119,19 @@ class ScenarioStepAgent(BaseAgent):
 
 STATE_DB_ENV = "ACME_STATE_DB"
 
+_REASONS = {"NoSentOffer": "no offer sent for journey", "AssertionError": "invariant violated"}
+
+
+def describe_error(exc: BaseException) -> EngineOperationError:
+    """Never-empty, PII-free error for the RPC boundary (#266): exception class, a fixed reason
+    and the innermost code location. The exception's own text is NOT used (it may hold ids)."""
+    name = type(exc).__name__
+    tb = exc.__traceback__
+    while tb is not None and tb.tb_next is not None:
+        tb = tb.tb_next
+    where = f" at {os.path.basename(tb.tb_frame.f_code.co_filename)}:{tb.tb_lineno}" if tb else ""
+    return EngineOperationError(f"{name}: {_REASONS.get(name, 'operation failed')}{where}")
+
 
 def shared(fn):
     """Run an engine operation under the cross-process shared state (#200), if configured.
@@ -139,6 +152,10 @@ def shared(fn):
                     async with self._shared_operation():
                         async for item in fn(self, *args, **kwargs):
                             yield item
+            except EngineOperationError:
+                raise
+            except Exception as exc:
+                raise describe_error(exc) from exc
             finally:
                 op.log(flush())  # export this operation's spans before the process is throttled
 
@@ -152,6 +169,10 @@ def shared(fn):
                 with op.span():
                     async with self._shared_operation():
                         return await fn(self, *args, **kwargs)
+            except EngineOperationError:
+                raise
+            except Exception as exc:
+                raise describe_error(exc) from exc
             finally:
                 op.log(await asyncio.to_thread(flush))
 
@@ -163,6 +184,10 @@ def shared(fn):
         try:
             with op.span(), self._shared_operation_sync():
                 return fn(self, *args, **kwargs)
+        except EngineOperationError:
+            raise
+        except Exception as exc:
+            raise describe_error(exc) from exc
         finally:
             op.log(flush())
 
