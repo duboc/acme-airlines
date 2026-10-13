@@ -16,6 +16,7 @@ unchanged (`acme.customer.outreach`).
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import functools
 import inspect
@@ -33,6 +34,7 @@ from pydantic import ConfigDict
 
 from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
+from acme.telemetry import flush, span
 
 DISPLAY_NAME = "acme-customer-agent"
 APP_NAME = "acme-customer"
@@ -129,24 +131,33 @@ def shared(fn):
 
         @functools.wraps(fn)
         async def wrapped_gen(self, *args, **kwargs):
-            async with self._shared_operation():
-                async for item in fn(self, *args, **kwargs):
-                    yield item
+            try:
+                async with self._shared_operation():
+                    async for item in fn(self, *args, **kwargs):
+                        yield item
+            finally:
+                flush()  # export this operation's spans before the process can be throttled
 
         return wrapped_gen
     if inspect.iscoroutinefunction(fn):
 
         @functools.wraps(fn)
         async def wrapped_async(self, *args, **kwargs):
-            async with self._shared_operation():
-                return await fn(self, *args, **kwargs)
+            try:
+                async with self._shared_operation():
+                    return await fn(self, *args, **kwargs)
+            finally:
+                await asyncio.to_thread(flush)
 
         return wrapped_async
 
     @functools.wraps(fn)
     def wrapped(self, *args, **kwargs):
-        with self._shared_operation_sync():
-            return fn(self, *args, **kwargs)
+        try:
+            with self._shared_operation_sync():
+                return fn(self, *args, **kwargs)
+        finally:
+            flush()
 
     return wrapped
 
@@ -325,6 +336,12 @@ class CustomerEngineApp:
             raise EngineOperationError("no scenario is started")
         if runner.index >= len(runner.active.steps):
             raise EngineOperationError(f"scenario {runner.active.id} is finished; start it again")
+        # A span this code owns carries the scenario for EVERY turn (cold first turn included):
+        # `trace.get_current_span()` inside the ADK agent is not guaranteed to be recording (#215).
+        with span("acme.scenario.step", acme__scenario=runner.active.id, acme__step=runner.index):
+            return await self._run_scenario_step(runner)
+
+    async def _run_scenario_step(self, runner: Any) -> dict[str, Any]:
         sid = f"scenario-{runner.active.id}"
         if (
             await self._sessions.get_session(

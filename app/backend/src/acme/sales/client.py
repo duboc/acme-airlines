@@ -8,8 +8,10 @@ from itertools import count
 from typing import Any, Protocol
 
 import httpx
+from opentelemetry.trace import SpanKind
 
 from acme.domain.models import Offer
+from acme.telemetry import span
 
 
 class CustomerPort(Protocol):
@@ -41,7 +43,8 @@ class A2ACustomerClient:
                 }
             },
         }
-        resp = (await self._http.post(self._path, json=body)).json()
+        with span(f"acme.a2a.{skill}", kind=SpanKind.CLIENT, **_span_attrs(skill, args)):
+            resp = (await self._http.post(self._path, json=body)).json()
         if "error" in resp:
             raise A2AError(resp["error"]["message"])
         return resp["result"]["parts"][0]["data"]
@@ -54,6 +57,15 @@ class A2ACustomerClient:
 
     async def propose_offer(self, offer: Offer) -> dict[str, Any]:
         return await self._skill("propose_offer", {"offer": offer.model_dump(mode="json")})
+
+
+def _span_attrs(skill: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Skill and journey id only (never the offer or any text)."""
+    journey = args.get("journey_id") or (args.get("offer") or {}).get("journey_id")
+    return {
+        "acme__skill": skill,
+        **({"acme__journey_id": journey} if isinstance(journey, str) else {}),
+    }
 
 
 class CustomerEngineHandle(Protocol):
@@ -73,7 +85,11 @@ class EngineCustomerClient:
         self._engine = engine
 
     async def _skill(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
-        reply = await self._engine.a2a_skill(skill, args)
+        # A client span in the Sales trace: the Customer engine's own span lives in another
+        # process/trace (no context crosses `a2a_skill`), so this is the span that sits next to
+        # `acme.sales.pitch`; both carry the skill and journey id for correlation (#215).
+        with span(f"acme.a2a.{skill}", kind=SpanKind.CLIENT, **_span_attrs(skill, args)):
+            reply = await self._engine.a2a_skill(skill, args)
         if "error" in reply:  # the JSON-RPC error body, identical to HTTP /a2a (#175)
             raise A2AError(reply["error"]["message"])
         return reply

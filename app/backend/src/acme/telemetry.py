@@ -16,7 +16,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from opentelemetry import trace
-from opentelemetry.trace import Span
+from opentelemetry.trace import Span, SpanKind
 
 tracer = trace.get_tracer("acme")
 
@@ -68,12 +68,30 @@ def _clean(attrs: dict[str, object]) -> dict[str, str]:
 
 
 @contextmanager
-def span(name: str, **attrs: object) -> Iterator[Span]:
+def span(name: str, *, kind: SpanKind = SpanKind.INTERNAL, **attrs: object) -> Iterator[Span]:
     """Start a span. Keyword `__` stands for `.`: `span("x", acme__guardrail__decision="approve")`
     (or pass dotted keys via `**{"acme.flight": "AC1252"}`)."""
     clean = _clean(attrs)
-    with tracer.start_as_current_span(name, attributes=clean) as s:
+    with tracer.start_as_current_span(name, kind=kind, attributes=clean) as s:
         yield s
+
+
+def flush(timeout_ms: int = 5000) -> None:
+    """Export buffered spans now (#215).
+
+    A BatchSpanProcessor exports on a timer, but an Agent Engine process can be throttled between
+    requests, so the spans of the last operation of a burst may sit in the buffer for a long time
+    (the live proof never saw them). Every engine operation calls this before it returns. A no-op
+    without an SDK provider; a failing flush never breaks an operation.
+    """
+    provider = trace.get_tracer_provider()
+    force_flush = getattr(provider, "force_flush", None)
+    if force_flush is None:
+        return
+    try:
+        force_flush(timeout_ms)
+    except Exception:  # noqa: BLE001 - tracing must never break a journey
+        logging.getLogger(__name__).debug("span flush failed", exc_info=True)
 
 
 def set_attributes(s: Span, **attrs: object) -> None:
