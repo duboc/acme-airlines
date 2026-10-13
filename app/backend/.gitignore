@@ -7,3 +7,8 @@ __pycache__/
 .coverage.*
 htmlcov/
 coverage.xml
+
+# mutmut working copy and coverage data (#232)
+mutants/
+.coverage
+.coverage.*
