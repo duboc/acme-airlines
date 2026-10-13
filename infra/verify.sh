@@ -111,7 +111,7 @@ gh_var() {
 }
 
 # engines_ok <reasoningEngines-list-json>: exactly one acme-customer-agent and one
-# acme-sales-agent, both running as acme-agent-engine, with no reserved GOOGLE_CLOUD_* env.
+# acme-sales-agent, both running as acme-agent-engine, with no reserved GOOGLE_CLOUD_* env and maxInstances=1.
 engines_ok() {
   local j="$1" sa="acme-agent-engine@${PROJECT_ID:-acme-airlines-factory}.iam.gserviceaccount.com" n bad
   for n in acme-customer-agent acme-sales-agent; do
@@ -126,6 +126,10 @@ engines_ok() {
   bad="$(jq -r '[.reasoningEngines[]? | .spec.deploymentSpec.env[]? | .name
           | select(test("^GOOGLE_CLOUD_(PROJECT|LOCATION|REGION|QUOTA_PROJECT)$"))] | join(",")' <<<"${j}")"
   [[ -z "${bad}" ]] || { echo "reserved env vars on engines: ${bad}"; return 1; }
+  # The demo state lives on one container's disk (#200): every acme engine must be pinned to 1.
+  bad="$(jq -r '[.reasoningEngines[]? | select(.displayName|startswith("acme-"))
+          | select((.spec.deploymentSpec.maxInstances // -1) != 1) | .displayName] | join(",")' <<<"${j}")"
+  [[ -z "${bad}" ]] || { echo "engines without maxInstances=1 (container-local state): ${bad}"; return 1; }
   echo "engines: $(jq -r '[.reasoningEngines[]? | .displayName] | join(", ")' <<<"${j}")"
 }
 

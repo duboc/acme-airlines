@@ -211,3 +211,23 @@ container, not one process, so in-memory scenario/journey state is not shared be
 - Limits, same as the in-memory state it replaces: container-local and lost on restart; **`max_instances=1`
   is mandatory** (a second container would not share the disk). Part 2 wires the engine operations,
   sets `ACME_STATE_DB` and makes the deploy check fail if `max_instances` is not 1.
+
+## Cross-process demo state (#200), part 2: wiring
+
+- Every stateful Customer engine operation (`async_stream_query`, `a2a_skill`, `scenario_start`,
+  `scenario_state`, `scenario_step`, `journeys_list`, `journey_detail`, `journey_events`, `reset`,
+  `trigger_cancellation`, `whatsapp_*`) is wrapped by `@shared` and runs under
+  `SharedState.operation`: lock, load the newest snapshot, run, save. `diagnostics` and
+  `scenarios_list` are stateless and unwrapped.
+- The deploy sets `ACME_STATE_DB=/tmp/acme-state/state.db` on both engines. Without it (local runs,
+  unit tests) operations behave exactly as before and workers are independent.
+- The Sales engine shares its only state, the radar's sent-set (JSON blob in the same file), under the
+  same kind of lock around the whole tick, so processes never both propose for one journey.
+- **`max_instances` must be 1 on both engines** (state is on one container's disk). The deploy pins
+  `min_instances=max_instances=1` for both, `acme.engines.deploy.verify_started` fails the job unless
+  every engine reports `max_instances == 1` (unreadable also fails), and `infra/verify.sh engines`
+  asserts `maxInstances == 1`.
+- Tests: two workers alternating through scenario 1-5; four real OS processes tapping Accept at once
+  (one charge, one 2A, one seat release: #88 across processes); four processes polling at 22:09
+  (one notification: #97 across processes); `engine-smoke` runs two simulated workers over one state
+  file in a clean venv.

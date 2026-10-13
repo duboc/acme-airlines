@@ -7,7 +7,10 @@ comes from an in-process simulator authenticated as `sales` only. No network cal
 
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -35,6 +38,7 @@ class SalesEngineApp:
         self._customer_engine = customer_engine  # tests inject a fake handle
         self.startup_error: str | None = None
         self.started = False
+        self.shared: Any = None  # SharedState when ACME_STATE_DB is set (built in set_up)
 
     def __getattr__(self, name: str) -> Any:
         if name in SalesEngineApp._STARTED:
@@ -84,6 +88,10 @@ class SalesEngineApp:
         self._runner = Runner(
             app_name=APP_NAME, agent=build_sales_agent(self.radar), session_service=self._sessions
         )
+        if state_db := os.environ.get("ACME_STATE_DB"):
+            from acme.state.shared import SharedState
+
+            self.shared = SharedState(state_db)
 
     @staticmethod
     def _env() -> dict[str, str]:
@@ -97,14 +105,30 @@ class SalesEngineApp:
         from google.genai import types
 
         sid = session_id or f"s-{user_id}"
-        got = await self._sessions.get_session(app_name=APP_NAME, user_id=user_id, session_id=sid)
-        if got is None:
-            await self._sessions.create_session(app_name=APP_NAME, user_id=user_id, session_id=sid)
-        content = types.Content(role="user", parts=[types.Part(text=message)])
-        async for event in self._runner.run_async(
-            user_id=user_id, session_id=sid, new_message=content
-        ):
-            yield event.model_dump(mode="json", exclude_none=True)
+        # The radar's sent-set is the only Sales state: share it across processes (#200). The
+        # lock covers the whole tick, so two processes never both propose for the same journey.
+        async with self._exclusive():
+            if self.shared is not None and (blob := self.shared.get_blob("sales_sent")):
+                self.radar.import_sent(json.loads(blob))
+            try:
+                got = await self._sessions.get_session(
+                    app_name=APP_NAME, user_id=user_id, session_id=sid
+                )
+                if got is None:
+                    await self._sessions.create_session(
+                        app_name=APP_NAME, user_id=user_id, session_id=sid
+                    )
+                content = types.Content(role="user", parts=[types.Part(text=message)])
+                async for event in self._runner.run_async(
+                    user_id=user_id, session_id=sid, new_message=content
+                ):
+                    yield event.model_dump(mode="json", exclude_none=True)
+            finally:
+                if self.shared is not None:
+                    self.shared.set_blob("sales_sent", json.dumps(self.radar.export_sent()))
+
+    def _exclusive(self):
+        return contextlib.nullcontext() if self.shared is None else self.shared.exclusive()
 
     def register_operations(self) -> dict[str, list[str]]:
         return {"": ["diagnostics"], "async_stream": ["async_stream_query"]}

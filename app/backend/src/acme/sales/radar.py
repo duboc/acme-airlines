@@ -32,6 +32,13 @@ class SalesRadar:
         self._inventory = inventory
         self._sent: set[tuple[str, str, str]] = set()  # (journey_id, run_id, flight)
 
+    def export_sent(self) -> list[list[str]]:
+        """The sent-set as JSON rows (shared across Agent Engine processes, #200)."""
+        return [list(key) for key in sorted(self._sent)]
+
+    def import_sent(self, rows: list[list[str]]) -> None:
+        self._sent = {(j, r, f) for j, r, f in rows}
+
     async def tick(self) -> list[Offer]:
         """One radar pass. Returns the offers proposed in this pass."""
         proposed: list[Offer] = []

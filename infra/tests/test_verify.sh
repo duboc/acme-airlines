@@ -83,7 +83,9 @@ eexpect() {  # eexpect <0|1> <name> <json>
   if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
 }
 SA_OK="acme-agent-engine@acme-airlines-factory.iam.gserviceaccount.com"
-mkeng() { printf '{"displayName":"%s","name":"projects/p/locations/us-central1/reasoningEngines/%s","spec":{"serviceAccount":"%s","deploymentSpec":{"env":[%s]}}}' "$1" "$2" "$3" "$4"; }
+mkeng() {  # mkeng <name> <id> <sa> <env-json-items> [maxInstances-json-fragment]
+  printf '{"displayName":"%s","name":"projects/p/locations/us-central1/reasoningEngines/%s","spec":{"serviceAccount":"%s","deploymentSpec":{%s"env":[%s]}}}' "$1" "$2" "$3" "${5-"\"maxInstances\":1,"}" "$4"
+}
 C="$(mkeng acme-customer-agent 1 "$SA_OK" '{"name":"LLM_MODE","value":"vertex"},{"name":"ACME_GENAI_LOCATION","value":"global"}')"
 S="$(mkeng acme-sales-agent 2 "$SA_OK" '{"name":"LLM_MODE","value":"vertex"}')"
 eexpect 0 "both engines, right SA, clean env" "{\"reasoningEngines\":[$C,$S]}"
@@ -92,6 +94,8 @@ eexpect 1 "sales missing" "{\"reasoningEngines\":[$C]}"
 eexpect 1 "duplicate customer" "{\"reasoningEngines\":[$C,$C,$S]}"
 eexpect 1 "wrong SA" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 other@x '' ),$S]}"
 eexpect 0 "telemetry env var is allowed" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '{"name":"GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY","value":"true"}'),$S]}"
+eexpect 1 "maxInstances 2 (state is container-local)" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '' '"maxInstances":2,'),$S]}"
+eexpect 1 "maxInstances missing" "{\"reasoningEngines\":[$C,$(mkeng acme-sales-agent 2 "$SA_OK" '' '')]}"
 eexpect 1 "reserved env var" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '{"name":"GOOGLE_CLOUD_LOCATION","value":"global"}'),$S]}"
 
 texp() {  # texp <0|1> <name> <json>
