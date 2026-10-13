@@ -66,3 +66,49 @@ def test_uvicorn_access_is_pinned_so_request_urls_never_reach_logs(caplog):
     caplog.set_level(logging.DEBUG)
     logging.getLogger("uvicorn.access").info('GET /passengers/P-MARIANA?phone=1 "200"')
     assert not [r for r in caplog.records if r.name == "uvicorn.access"]
+
+
+ACCESS_LOG_SCRIPT = """
+import threading, time
+import httpx, uvicorn
+from fastapi import FastAPI
+from acme.logging_setup import configure_logging
+
+configure_logging()  # as every entrypoint does, BEFORE uvicorn configures its own logging
+app = FastAPI()
+
+@app.get("/passengers/{name}")
+def passenger(name: str):
+    return {"ok": True}
+
+server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="info"))
+t = threading.Thread(target=server.run, daemon=True)
+t.start()
+while not server.started:
+    time.sleep(0.05)
+for path in ("/passengers/Mariana", "/passengers/x", "/missing"):
+    httpx.get(f"http://127.0.0.1:PORT{path}")
+server.should_exit = True
+t.join(5)
+"""
+
+
+def test_uvicorn_access_log_has_no_logging_errors_and_stays_redacted():
+    """#204: the redaction factory used to null `record.args`, which uvicorn's AccessFormatter
+    unpacks, so every request printed a '--- Logging error ---' traceback."""
+    import socket
+    import subprocess
+    import sys
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    run = subprocess.run(
+        [sys.executable, "-W", "ignore", "-c", ACCESS_LOG_SCRIPT.replace("PORT", str(port))],
+        capture_output=True, text=True, timeout=60, check=True,
+    )  # fmt: skip
+    assert "Logging error" not in run.stderr, run.stderr
+    out = run.stdout + run.stderr  # uvicorn writes access lines to stdout
+    assert '"GET /passengers/' in out  # access lines are still emitted ...
+    assert "Mariana" not in out  # ... and still redacted
+    assert "[redacted]" in out
