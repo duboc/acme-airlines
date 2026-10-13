@@ -19,7 +19,7 @@ This is what the team can rely on for running the IRROPS ADK agents on
 | Staging bucket | `gs://acme-airlines-factory-agent-engine` |
 | Deployer (GitHub Actions, WIF) | the existing `vars.OBSERVATORY_WIF_PROVIDER` + `vars.OBSERVATORY_DEPLOYER_SA`. It can create/update reasoning engines, write to the staging bucket and read its metadata (`legacyBucketReader`, since the SDK calls `buckets.get`; #186), and act as the runtime SA. |
 | Querying engines | `acme-irrops-demo` (the Cloud Run SA) has `aiplatform.user`. The demo API calls the engines with ADC. |
-| Engine logs | The deployer (`acme-observatory-deployer`, used by the deploy workflow) has `roles/logging.viewer`. On a failed deploy, print the engine's recent errors: `gcloud logging read 'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND severity>=WARNING' --freshness=1h --limit=50`. Agents don't get log access on their own identity |
+| Engine logs and traces | The deployer (`acme-observatory-deployer`, used by the deploy and live-proof workflows) has `roles/logging.viewer` and `roles/cloudtrace.user` (#195, #198). On a failed deploy, print the engine's recent errors: `gcloud logging read 'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND severity>=WARNING' --freshness=1h --limit=50`. Agents don't get log access on their own identity |
 | GitHub variables | `AGENT_ENGINE_SA`, `AGENT_ENGINE_STAGING_BUCKET`, `AGENT_ENGINE_LOCATION` |
 
 ## Expected shape (owned by the team)
@@ -37,7 +37,7 @@ This is what the team can rely on for running the IRROPS ADK agents on
 - **Mocks:** the mocked enterprise systems are packaged in process inside each
   engine. No external calls, and no MCP network servers are needed on Agent
   Engine.
-- **Tracing:** deploy with `enable_tracing=True`, so traces go to Cloud Trace
+- **Tracing:** pass `project_id` explicitly to `CloudTraceSpanExporter` (the ADC project on Agent Engine is the project *number*, which Cloud Trace rejects; #203). Deploy with `enable_tracing=True`, so traces go to Cloud Trace
   and logs to Cloud Logging. Add useful span attributes, such as the scenario
   and journey id. **Never put PII** (names, PNR contents) in span attributes or
   logs.

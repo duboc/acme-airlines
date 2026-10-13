@@ -382,6 +382,7 @@ check_agent_engine() {
   done
   _has roles/aiplatform.user "serviceAccount:acme-observatory-deployer@${p}.iam.gserviceaccount.com" || missing+=" aiplatform.user->deployer"
   _has roles/logging.viewer "serviceAccount:acme-observatory-deployer@${p}.iam.gserviceaccount.com" || missing+=" logging.viewer->deployer"
+  _has roles/cloudtrace.user "serviceAccount:acme-observatory-deployer@${p}.iam.gserviceaccount.com" || missing+=" cloudtrace.user->deployer"
   _has roles/aiplatform.user "serviceAccount:acme-irrops-demo@${p}.iam.gserviceaccount.com" || missing+=" aiplatform.user->irrops-demo"
   gcloud iam service-accounts get-iam-policy "${rt}" --project="${p}" --format=json 2>/dev/null \
     | jq -e '.bindings[]? | select(.role=="roles/iam.serviceAccountUser") | .members | index("serviceAccount:acme-observatory-deployer@'"${p}"'.iam.gserviceaccount.com")' >/dev/null \
