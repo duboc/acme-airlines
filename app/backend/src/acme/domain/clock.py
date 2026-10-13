@@ -26,3 +26,9 @@ class FixedClock:
 
     def advance(self, delta: timedelta) -> None:
         self._instant += delta
+
+    def set(self, instant: datetime) -> None:
+        """Jump to an instant (restoring a shared snapshot); `advance` is the normal way."""
+        if instant.tzinfo is None:
+            raise ValueError("FixedClock requires a timezone-aware datetime")
+        self._instant = instant

@@ -27,6 +27,21 @@ class DcsState:
         self.boarding_passes: dict[str, dict[str, Any]] = {}
         self.bag_routing: dict[str, str] = {}
 
+    def export_data(self) -> dict[str, Any]:
+        """JSON-able state (shared snapshot, #200); tuple keys become lists."""
+        return {
+            "holds": [[f, s, pnr] for (f, s), pnr in self.holds.items()],
+            "assigned": [[f, s, pnr, cabin] for (f, s), (pnr, cabin) in self.assigned.items()],
+            "boarding_passes": self.boarding_passes,
+            "bag_routing": self.bag_routing,
+        }
+
+    def import_data(self, data: dict[str, Any]) -> None:
+        self.holds = {(f, s): pnr for f, s, pnr in data["holds"]}
+        self.assigned = {(f, s): (pnr, cabin) for f, s, pnr, cabin in data["assigned"]}
+        self.boarding_passes = dict(data["boarding_passes"])
+        self.bag_routing = dict(data["bag_routing"])
+
     # --- seats ---
     def _open(self, flight: str) -> dict[str, list[str]]:
         return self._sim.flight(flight).open_seats  # type: ignore[return-value]
