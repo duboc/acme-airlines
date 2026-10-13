@@ -8,6 +8,7 @@ trace layers are injected so CI unit-tests this with fakes (`test_agent_engine_p
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ DEFAULT_PRESETS = ("happy-path", "declines-upgrade", "unsatisfiable-request", "s
 # Span kinds that must show up somewhere in the run (prefix match on the span name).
 REQUIRED_SPANS = ("acme.customer.specialist.", "acme.guardrail.decision", "acme.a2a.",
                   "acme.sales.pitch")  # fmt: skip
+POLL_GROWTH, POLL_MAX = 1.5, 45.0  # seconds: 15 -> 22.5 -> 33.75 -> 45 ...
+RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 EXTRA_PII = ("Can I leave after 10am?", "Perfect, thanks!")
 
 
@@ -111,7 +114,7 @@ async def run_proof(
     project: str = "",
     pii: set[str] | None = None,
     ingest_wait: float = 120.0,
-    poll: float = 10.0,
+    poll: float = 15.0,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     monotonic: Callable[[], float] = time.monotonic,
@@ -131,13 +134,14 @@ async def run_proof(
             if structural(got) != structural(want):
                 report.failures.append(f"{sid} turn {turn}: engine {structural(got)} != "
                                        f"local {structural(want)}")  # fmt: skip
-            found, deadline = None, monotonic() + ingest_wait
+            found, deadline, delay = None, monotonic() + ingest_wait, poll
             while True:  # Cloud Trace ingestion lags; poll until the step trace appears
                 window = await traces.list_traces(start, now() + timedelta(seconds=5))
                 found = step_trace(window, sid)
                 if found or monotonic() >= deadline:
                     break
-                await sleep(poll)
+                await sleep(delay)
+                delay = min(delay * POLL_GROWTH, POLL_MAX)  # fewer list calls as the wait grows
             if found is None:
                 report.failures.append(f"{sid} turn {turn}: no Customer step trace in Cloud Trace")
                 continue
@@ -149,19 +153,81 @@ async def run_proof(
     return report
 
 
+class TraceQueryFailed(RuntimeError):
+    """Cloud Trace kept failing transiently (429/5xx/network) until the retry budget ran out."""
+
+
 class CloudTraceV1:
-    """Cloud Trace v1 REST (`projects.traces.list`, COMPLETE view) with ADC. Never used in CI."""
+    """Cloud Trace v1 REST (`projects.traces.list`, COMPLETE view) with ADC. Never used in CI.
 
-    def __init__(self, project: str) -> None:
-        import google.auth
-        from google.auth.transport.requests import AuthorizedSession
+    Transient failures (HTTP 429/500/502/503/504 and network errors) are retried with exponential
+    backoff and full jitter, honouring `Retry-After`, within `max_attempts` and `max_total`
+    seconds of sleeping; then `TraceQueryFailed`. Any other 4xx (e.g. 403) fails immediately.
+    """
 
-        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/trace.readonly"])
-        self._session = AuthorizedSession(creds)
+    def __init__(
+        self,
+        project: str,
+        *,
+        session: Any = None,
+        sleep: Callable[[float], None] = time.sleep,
+        jitter: Callable[[], float] = random.random,
+        max_attempts: int = 6,
+        max_total: float = 90.0,
+        base: float = 2.0,
+        cap: float = 30.0,
+    ) -> None:
+        if session is None:
+            import google.auth
+            from google.auth.transport.requests import AuthorizedSession
+
+            creds, _ = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/trace.readonly"]
+            )
+            session = AuthorizedSession(creds)
+        self._session = session
         self.project = project
+        self._sleep, self._jitter = sleep, jitter
+        self._max_attempts, self._max_total, self._base, self._cap = (
+            max_attempts, max_total, base, cap,
+        )  # fmt: skip
 
     async def list_traces(self, start: datetime, end: datetime) -> list[Trace]:
         return await asyncio.to_thread(self._list, start, end)
+
+    def _delay(self, attempt: int, response: Any) -> float:
+        retry_after = getattr(response, "headers", {}).get("Retry-After") if response else None
+        try:
+            if retry_after is not None:
+                return min(max(float(retry_after), 0.0), self._cap)
+        except ValueError:
+            pass  # an HTTP-date Retry-After: fall back to backoff
+        ceiling = min(self._cap, self._base * 2**attempt)
+        return ceiling * (0.5 + self._jitter() / 2)  # jitter in [50%, 100%] of the ceiling
+
+    def _get(self, url: str, params: dict[str, Any]) -> Any:
+        slept = 0.0
+        for attempt in range(self._max_attempts):
+            response, error = None, ""
+            try:
+                response = self._session.get(url, params=params, timeout=30)
+                if response.status_code not in RETRYABLE_STATUS:
+                    response.raise_for_status()  # non-transient 4xx raises here, no retry
+                    return response
+                error = f"HTTP {response.status_code}"
+            except OSError as exc:
+                if response is not None:  # raise_for_status() on a non-retryable status
+                    raise
+                error = f"{type(exc).__name__}: {exc}"
+            delay = self._delay(attempt, response)
+            if attempt + 1 >= self._max_attempts or slept + delay > self._max_total:
+                raise TraceQueryFailed(
+                    f"Cloud Trace list failed after {attempt + 1} attempt(s), "
+                    f"{slept:.0f}s of backoff; last error: {error}"
+                )
+            self._sleep(delay)
+            slept += delay
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def _list(self, start: datetime, end: datetime) -> list[Trace]:
         url = f"https://cloudtrace.googleapis.com/v1/projects/{self.project}/traces"
@@ -170,9 +236,7 @@ class CloudTraceV1:
                                   "endTime": end.isoformat().replace("+00:00", "Z")}  # fmt: skip
         out: list[Trace] = []
         while True:
-            r = self._session.get(url, params=params, timeout=30)
-            r.raise_for_status()
-            body = r.json()
+            body = self._get(url, params).json()
             for t in body.get("traces", []):
                 spans = tuple(Span(s["name"], dict(s.get("labels", {}))) for s in t["spans"])
                 out.append(Trace(t["traceId"], spans))

@@ -106,3 +106,27 @@ def test_fixture_pii_has_the_ac1234_passenger_and_pnr():
 
 async def _noop():
     pass
+
+
+async def test_polling_backs_off_so_a_missing_trace_costs_few_list_calls():
+    """Fixed 10 s polling made 12 list calls per 120 s wait; widening keeps it well below."""
+    sleeps: list[float] = []
+
+    async def record(delay):
+        sleeps.append(delay)
+
+    elapsed = {"t": 0.0}
+
+    async def advancing(delay):
+        await record(delay)
+        elapsed["t"] += delay
+
+    src = FakeTraces([])
+    await run_proof(
+        FakeBackend(), FakeBackend(), src, ("s",), pii=set(), now=lambda: T0,
+        sleep=advancing, monotonic=lambda: elapsed["t"], ingest_wait=120.0,
+    )  # fmt: skip
+    assert sleeps[:4] == [15.0, 22.5, 33.75, 45.0]  # widening interval, capped at 45 s
+    assert max(sleeps) <= 45.0
+    # Two turns wait the full 120 s: ~26 calls with a fixed 10 s poll, at most 12 now.
+    assert src.calls <= 12, f"{src.calls} list calls for two missing-trace waits"
