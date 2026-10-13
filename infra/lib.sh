@@ -75,7 +75,7 @@ hub_cli() {
   local tok args
   tok="$(gcloud auth print-identity-token 2>/dev/null)"
   printf -v args '%q ' "$@"
-  { printf '%s\n' "${tok}"; [[ -n "${HUB_CLI_STDIN:-}" ]] && printf '%s' "${HUB_CLI_STDIN}"; } | \
+  { printf '%s\n' "${tok}"; if [[ -n "${HUB_CLI_STDIN:-}" ]]; then printf '%s' "${HUB_CLI_STDIN}"; fi; } | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
       --tunnel-through-iap --quiet --command="
         IFS= read -r SCION_HUB_TOKEN; export SCION_HUB_TOKEN

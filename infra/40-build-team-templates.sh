@@ -94,7 +94,7 @@ Upstream: https://github.com/scion-frontiers/agent-team/tree/${AGENT_TEAM_SHA}/t
     upstream_env="$(awk '/^env:/{f=1;next} f&&/^[^ #]/{f=0} f&&/^  [A-Z_]+:/' "${UP}/${upstream}/scion-agent.yaml")"
     if [[ -n "${upstream_env}" || "${harness}" == "claude" ]]; then
       echo "env:"
-      [[ -n "${upstream_env}" ]] && echo "${upstream_env}"
+      if [[ -n "${upstream_env}" ]]; then echo "${upstream_env}"; fi
       if [[ "${harness}" == "claude" ]]; then
         echo "  # claude-haiku-4-5 (harness default) is not enabled on Vertex; 5.5 is."
         echo "  ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-5-5"

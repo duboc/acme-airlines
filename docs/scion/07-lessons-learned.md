@@ -37,11 +37,20 @@ Full write-ups are in [`docs/setup/03-troubleshooting.md`](../setup/03-troublesh
    temporary federation trusting gcloud ID tokens for `ORG_DOMAIN`
    (`30-hub-admin-access.sh`); run the CLI on the VM against localhost, and
    always disable afterwards.
-9. **Admin access left enabled after a silent script exit.** The hub's restart
-   sometimes takes more than 60 seconds. The disable step's `curl … && echo`
-   returned non-zero, and `set -e` aborted the caller with its output sent to
-   `/dev/null`. **Fix:** wait up to 180 seconds with an explicit error, and
-   callers verify `status == disabled` before continuing.
+9. **Scripts exited silently after their first hub call, and admin access was
+   left enabled.** At first we blamed a slow hub restart; that diagnosis was
+   **wrong**. The real cause, found in the audit: `hub_cli` piped
+   `{ printf token; [[ -n "$HUB_CLI_STDIN" ]] && printf …; }` into SSH. With
+   no extra stdin, the brace group returned 1, so under `set -o pipefail`
+   every successful `hub_cli` call "failed" and `set -e` aborted the caller
+   right after its side effect (a minted token, a created schedule). The
+   documented `60-factory.sh pause`/`resume` switch was affected too.
+   **Fix:** `if …; then printf …; fi`, plus the regression test
+   `infra/tests/test_lib.sh` (stub gcloud, asserts rc 0/0/7). We kept the
+   180-second health wait and the `status == disabled` verification.
+   *Meta-lesson:* our "fix" passed only because the re-run skipped the
+   already-done step. Verify a fix by reproducing the failure first.
+
 10. **`scion hub secret set` can't take a value from stdin.** `@file`
     base64-encodes it into a *file* secret. **Fix:** PUT
     `/api/v1/secrets/<KEY>` with `encoding: raw` from stdin

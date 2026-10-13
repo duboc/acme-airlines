@@ -99,6 +99,10 @@ discovery path). The hub's global scope is the single source of truth.
 
 ## Scripts exited silently right after minting a hub token
 
+> [!WARNING]
+> **Correction (audit, 2026-10-12):** the root cause below was wrong. The real cause was a `pipefail` bug in `hub_cli` (an empty `HUB_CLI_STDIN` made every call return 1). It is fixed in `infra/lib.sh` and covered by `infra/tests/test_lib.sh`. See docs/scion/07-lessons-learned.md, item 9.
+
+
 **Symptom:** `70-budget-guard.sh` and `80-observatory-platform.sh` stopped,
 with no error, right after `Created version [1] of the secret …`. Once, admin
 access was left enabled.
