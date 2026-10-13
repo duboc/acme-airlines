@@ -276,3 +276,15 @@ Evidence first, then the fix. What is in place to find the cause:
 - Reading it: a missing trace whose op line shows `is_recording: false` / `parent.sampled: false` is
   platform sampling; `flush_ok: false` or an `export` line with `ok: false` is our exporter; different
   `pid` / `instance` values per call point to the multi-process or multi-instance hypotheses.
+
+## Live-proof probe and engine logs (#221)
+
+The live proof workflow gained two diagnostics for the missing-trace investigation (engine-side
+instrumentation is a separate PR: per-operation `ACME_DIAG` lines and the `acme.engine.op` span):
+
+- **Unary probe**: input `probe_calls` (N) runs N back-to-back and N/2 spaced read-only
+  `journeys_list` calls on the Customer engine, then counts the `acme.engine.op` traces (sent vs found,
+  lost call indices, per kind) into the job summary. It reports the loss and does not fail the job.
+- **Engine logs**: both engines' log lines for the run window are uploaded as the `engine-logs`
+  artifact (`{engine, ts, severity, text}` JSON lines; fixture-PII lines redacted; needs
+  `logging.viewer`, which the deployer has; a read failure is written into the file, never fatal).
