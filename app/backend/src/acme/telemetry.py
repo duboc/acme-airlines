@@ -218,6 +218,32 @@ TELEMETRY_ENV = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"  # SDK flag (reserv
 TRACING_ENV = "ACME_ENABLE_TRACING"  # ours: what the deploy sets (#190)
 
 
+SAMPLER_ENV = "ACME_TRACE_SAMPLER"  # "parent" restores ParentBased; anything else = always on
+
+
+def build_provider(service_name: str, exporter):
+    """Our engine TracerProvider: batch export, `service.name` = the engine display name, and an
+    ALWAYS_ON sampler (#221).
+
+    Agent Engine head-samples incoming requests (about one per 10-20 s; the live-proof diagnostics
+    showed 56 of 73 Customer requests arriving with an UNSAMPLED parent) and the default
+    `ParentBased` sampler turned that into silence for every span of the request, the platform's
+    own server spans included, so whole traces were missing. This is a demo with a handful of
+    requests: record them all. `ACME_TRACE_SAMPLER=parent` opts back into the platform's decision.
+    """
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON, ParentBased
+
+    sampler = ParentBased(ALWAYS_ON) if os.environ.get(SAMPLER_ENV) == "parent" else ALWAYS_ON
+    provider = TracerProvider(
+        resource=Resource.create({"service.name": service_name}), sampler=sampler
+    )
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    return provider
+
+
 def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
     """Install a Cloud Trace exporter when the engine asks for telemetry and none exists yet.
 
@@ -231,9 +257,7 @@ def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
     ):
         return False
     try:
-        from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
         if isinstance(trace.get_tracer_provider(), TracerProvider):
             return False
@@ -246,9 +270,8 @@ def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
         # Always the project ID: the injected GOOGLE_CLOUD_PROJECT is the project number, which
         # Cloud Trace rejects ("400 Invalid project id in name", #203).
         project_id = os.environ.get("ACME_GENAI_PROJECT") or llm_config.PROJECT
-        provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
-        provider.add_span_processor(
-            BatchSpanProcessor(logged_exporter(exporter_factory(project_id=project_id)))
+        provider = build_provider(
+            service_name, logged_exporter(exporter_factory(project_id=project_id))
         )
         trace.set_tracer_provider(provider)
     except Exception:  # noqa: BLE001 - tracing must never stop an engine from starting
