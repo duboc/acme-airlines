@@ -2,7 +2,8 @@
 
 ```mermaid
 flowchart TD
-  tick["TICK every 30 min (hub schedule)"] --> pass
+  wd["Watchdog every 5 min (wakes only on GitHub/agent diff)"] --> pass
+  tick["TICK every 6 h (hub safety-net schedule)"] --> pass
   ev["Worker event: done / blocked / PR ready"] --> pass
   po["Product owner message"] --> pass
   pass["Lead loop pass"] --> s1["1 Sweep agents (unstick, recover LIMITS_EXCEEDED)"]
@@ -65,7 +66,8 @@ cleaning the backlog" without spending tokens on work nobody asked for.
 |---|---|
 | A worker stalls or crashes | The lead's sweep: message first ("continue"), recreate under the same name only if that fails |
 | A worker hits its cap (`LIMITS_EXCEEDED`) | It commits, pushes and comments state; the lead sends "continue" once, then recreates |
-| The lead goes quiet | `TICK` every 30 minutes. `verify.sh lead loop` and the status-issue timestamp show it. As a last resort an operator messages it (needs admin access) |
+| The lead goes quiet or stalls | `acme-factory-watchdog` (every 5 min) wakes an idle lead when GitHub/agent state changes, recovers a stopped/errored lead (`scion resume`), and reincarnates a stalled lead after 10 min while firing `acme-factory-watchdog-po-alert` to email `ADMIN_EMAIL`. `acme-factory-tick` (`0 */6 * * *`) is the 6-hour safety net |
+| Lead context grows over days | `acme-lead-reincarnate` (`0 4 * * *` UTC) reincarnates `acme-lead` daily with a handoff built from `"🏭 Factory status"` |
 | A platform permission is missing | Agents file `needs operator`; the operator verifies the diagnosis, grants least privilege, codifies it in `infra/` and `verify.sh`, and closes with evidence |
 | `main` is red | p0 fix issue, merged before anything else |
 | Spend overrun | The budget guard suspends all agents at 100%; `infra/60-factory.sh resume` restarts |

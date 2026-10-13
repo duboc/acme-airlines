@@ -12,8 +12,8 @@ Use this before and while running [`scripts/bootstrap.sh`](scripts/bootstrap.sh)
       custom IAP OAuth client.
 - [ ] **Product owner email** (`ADMIN_EMAIL`): the hub super-admin, and the
       person the lead messages
-- [ ] **Monthly budget** (`BUDGET_USD`) and loop interval (`TICK_CRON`, at
-      least 30 minutes)
+- [ ] **Monthly budget** (`BUDGET_USD`, e.g. `2000`) and fallback loop interval
+      (`TICK_CRON`, default `0 */6 * * *` alongside the 5-min wake-on-change watchdog)
 - [ ] **Models** you will enable in Model Garden. They must match the
       templates (Opus/Sonnet/Haiku plus Gemini Flash)
 - [ ] **Product brief** (`docs/product/<brief>.md`), the lead's first input

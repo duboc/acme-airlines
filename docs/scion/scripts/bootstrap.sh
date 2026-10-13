@@ -39,6 +39,12 @@ pause() {  # pause <what to do>
   if [[ -t 0 ]]; then read -rp "Press Enter when done (Ctrl-C to stop)… " _; else echo "(non-interactive: stopping here)"; exit 3; fi
 }
 admin() { bash "${INFRA}/30-hub-admin-access.sh" "$1"; }
+ensure_admin_off() {
+  if [[ "${LIST}" == 0 ]] && [[ "$(admin status 2>/dev/null | tail -1)" == "enabled" ]]; then
+    admin disable >/dev/null 2>&1 || true
+  fi
+}
+trap ensure_admin_off EXIT
 
 push_templates() { bash "${INFRA}/45-push-templates.sh"; }  # opens/closes the admin window itself
 
@@ -49,13 +55,14 @@ STEPS=(
   "3|Vertex access + Claude image (+ Model Garden)|vertex claude-image|step3"
   "4|Custom IAP OAuth client (external domains)|iap-oauth|step4"
   "5|Domain web access (IAP + hub sign-in policy)|webaccess|step5"
-  "6|Hub project + GITHUB_TOKEN secret|hubproject|step6"
-  "7|Agent team templates (build + push)|team cost skills|step7"
-  "8|Start the lead (it forms the standing roster)|lead|step8"
-  "9|Loop schedule (TICK)|loop|step9"
-  "10|Budget guard (suspends agents at 100%)|budget|step10"
-  "11|Observatory platform (optional)|observatory|step11"
-  "12|Daily boot-disk snapshots|backups|step12"
+  "6|GitHub repo labels, status issue, branch protection + Hub project|hubproject|step6"
+  "7|Least-privilege agent SA (assign mode) + Hub telemetry|identity telemetry|step7"
+  "8|Agent team templates (build + push)|team cost skills|step8"
+  "9|Start the lead (it forms the standing roster)|lead|step9"
+  "10|Loop schedule (6h TICK) + 5m wake-on-change watchdog|loop watchdog|step10"
+  "11|Budget guard (suspends agents at 100%)|budget|step11"
+  "12|Observatory platform (optional)|observatory|step12"
+  "13|Daily boot-disk snapshots|backups|step13"
 )
 
 step1()  { bash "${INFRA}/00-bootstrap-project.sh"; }
@@ -70,27 +77,37 @@ step4()  { pause "Google Auth Platform (project ${PROJECT_ID}):
 Next, the script prompts for the client ID and (hidden) secret."
            bash "${INFRA}/55-iap-oauth-client.sh"; }
 step5()  { bash "${INFRA}/50-web-access.sh"; }
-step6()  { admin enable; trap 'admin disable' RETURN
-           hub_cli hub projects create "https://github.com/${GITHUB_REPO}.git" || true
-           local pid; pid="$(hub_cli hub projects --json 2>/dev/null | jq -r --arg r "${GITHUB_REPO}" '.[] | select(.gitRemote=="github.com/"+$r) | .id')"
-           [[ -n "${pid}" ]] || { echo "hub project for ${GITHUB_REPO} not found" >&2; return 1; }
-           pause "Create a GitHub fine-grained PAT on ${GITHUB_REPO}: Contents, Pull requests, Issues and Workflows (read/write)."
-           local pat; read -rsp "Paste the PAT (hidden): " pat; echo
-           printf '%s' "${pat}" | bash "${INFRA}/31-set-project-secret.sh" "${pid}" GITHUB_TOKEN; unset pat; }
-step7()  { bash "${INFRA}/40-build-team-templates.sh"; push_templates; }
-step8()  { admin enable; trap 'admin disable' RETURN
-           hub_cli --project "${HUB_PROJECT_SLUG}" start acme-lead --type acme-lead --role full --no-wait \
-             "You are acme-lead. Read your instructions and the product brief. Form the standing roster (your instructions, section Standing roster). Create the pinned issue titled exactly: 🏭 Factory status. Plan the MVP as GitHub issues, then start the factory loop."; }
-step9()  { bash "${INFRA}/60-factory.sh" tick-install; }
-step10() { bash "${INFRA}/70-budget-guard.sh"
+step6()  { bash "${INFRA}/35-github-repo.sh"
+           (
+             admin enable
+             trap 'admin disable >/dev/null 2>&1 || true' EXIT
+             hub_cli hub projects create "https://github.com/${GITHUB_REPO}.git" || true
+             pid="$(hub_cli hub projects --json 2>/dev/null | jq -r --arg r "${GITHUB_REPO}" '.[] | select(.gitRemote=="github.com/"+$r) | .id')"
+             [[ -n "${pid}" ]] || { echo "hub project for ${GITHUB_REPO} not found" >&2; exit 1; }
+             pause "Create a GitHub fine-grained PAT on ${GITHUB_REPO}: Contents, Pull requests, Issues and Workflows (read/write)."
+             read -rsp "Paste the PAT (hidden): " pat; echo
+             printf '%s' "${pat}" | bash "${INFRA}/31-set-project-secret.sh" "${pid}" GITHUB_TOKEN
+             unset pat
+           ); }
+step7()  { bash "${INFRA}/25-agent-identity.sh"; }
+step8()  { bash "${INFRA}/40-build-team-templates.sh"; push_templates; }
+step9()  { (
+             admin enable
+             trap 'admin disable >/dev/null 2>&1 || true' EXIT
+             hub_cli --project "${HUB_PROJECT_SLUG}" start acme-lead --type acme-lead --role full --no-wait \
+               "You are acme-lead. Read your instructions and the product brief. Form the standing roster (your instructions, section Standing roster). Create the pinned issue titled exactly: 🏭 Factory status. Plan the MVP as GitHub issues, then start the factory loop."
+           ); }
+step10() { bash "${INFRA}/60-factory.sh" tick-install
+           bash "${INFRA}/76-watchdog.sh"; }
+step11() { bash "${INFRA}/70-budget-guard.sh"
            gcloud pubsub topics publish acme-budget-alerts --project="${PROJECT_ID}" \
              --message='{"costAmount":1.23,"budgetAmount":1000.0}' --format=none
            echo "Wiring test published; the guard log should show: cost=1.23 budget=1000.0 -> no action (HTTP 204)"; }
-step11() { bash "${INFRA}/80-observatory-platform.sh"
+step12() { bash "${INFRA}/80-observatory-platform.sh"
            pause "Billing → Billing export → Standard usage cost → project ${PROJECT_ID}, dataset billing_export.
 Then store a GitHub token for the collector:
   read -rs T && printf %s \"\$T\" | gcloud secrets versions add acme-observatory-github-token --project=${PROJECT_ID} --data-file=- && unset T"; }
-step12() { bash "${INFRA}/75-backups.sh"; }
+step13() { bash "${INFRA}/75-backups.sh"; }
 
 for s in "${STEPS[@]}"; do
   IFS='|' read -r n title checks fn <<<"${s}"

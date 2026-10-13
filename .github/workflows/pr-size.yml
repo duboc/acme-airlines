@@ -1,0 +1,43 @@
+name: PR size
+
+# Team rule: keep PRs under ~400 changed lines (factory/team/team-rules.md).
+# Lockfiles and generated role templates do not count. A larger PR passes only
+# with the label `size:exception`, added by the lead with a reason in the PR body.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-size:
+    name: pr-size
+    runs-on: ubuntu-latest
+    steps:
+      - name: Count changed lines
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          LIMIT: "400"
+        run: |
+          set -euo pipefail
+          total="$(gh api "repos/${REPO}/pulls/${PR}/files" --paginate \
+            --jq '.[] | select(.filename | test("(^|/)(uv\\.lock|package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock)$|^factory/templates/") | not) | .changes' \
+            | awk '{s += $1} END {print s + 0}')"
+          echo "Changed lines (lockfiles and factory/templates excluded): ${total} (limit ${LIMIT})"
+          if (( total <= LIMIT )); then exit 0; fi
+          if jq -e 'index("size:exception")' <<<"${LABELS}" >/dev/null; then
+            echo "::warning::${total} changed lines exceed ${LIMIT}; allowed by the size:exception label."
+            exit 0
+          fi
+          echo "::error::${total} changed lines exceed ${LIMIT}. Split the PR, or (lead only) add the size:exception label with a reason in the PR body."
+          exit 1

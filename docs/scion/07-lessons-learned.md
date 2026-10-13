@@ -115,6 +115,28 @@ Full write-ups are in [`docs/setup/03-troubleshooting.md`](../setup/03-troublesh
     passed while the hub refused the skill URI, and `e2e` now checks real
     engines and real agent spans. Every `verify.sh` check got a RED run
     before the fix, and parsers have unit tests (`infra/tests/test_verify.sh`).
+25. **Long-lived Opus coordinators + 30-min ticks expire the 5-min prompt
+    cache.** Waking a multi-day Claude Opus conversation every 30 minutes
+    rewrites the full context into cache ($18.75/MTok) even on no-op passes.
+    **Fix:** an external stdlib Python **watchdog** (`infra/76-watchdog.sh`)
+    polls GitHub every 5 minutes and wakes `acme-lead` only when issues, PRs,
+    or CI runs changed, recovers stalled/errored states automatically, and
+    reincarnates `acme-lead` daily at 04:00 UTC with a compact handoff built
+    from the pinned status issue. The Hub `TICK` schedule is kept at 6 hours
+    as a fallback heartbeat.
+26. **Scion's `deploy.sh` grants `roles/iam.serviceAccountAdmin` to the VM SA
+    and defaults to `passthrough` metadata.** Any agent container could read
+    the VM SA token from metadata and escalate across the project. **Fix:**
+    `infra/25-agent-identity.sh` creates a dedicated low-privilege `acme-agent`
+    SA, sets `default_gcp_identity_mode: block` (`"hub_sa_minting": false` in
+    `deploy-config.json`), assigns `acme-agent` on the project (`assign` mode),
+    and removes `roles/iam.serviceAccountAdmin` from the VM SA.
+27. **Public repositories amplify prompt injection and untrusted PR risks.**
+    With a shared `GITHUB_TOKEN`, untrusted issue/PR text or modified workflows
+    can attempt secret exfiltration. **Fix:** `infra/35-github-repo.sh` sets
+    `collaborators_only` interaction limits, protects `main` (PR required,
+    `enforce_admins=true`, required status checks `test` and `pr-size`), and
+    `team-rules.md` Rule #9 forbids fetching or running code from untrusted PRs.
 
 ## Upstream suggestions for Scion
 

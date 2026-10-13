@@ -7,6 +7,7 @@
   "chat_plugins": [],
   "container_images": { "source": "build", "registry": "", "force_rebuild": false },
   "admin_email": "po@example.com",
+  "hub_sa_minting": false,
   "update_policy": "notify",
   "release_channel": "nightly"
 }

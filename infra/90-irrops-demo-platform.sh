@@ -60,6 +60,8 @@ if ! gcloud run services describe "${SERVICE}" --region="${R}" --project="${P}" 
     --set-env-vars="LLM_MODE=fake"
 fi
 gcloud run services add-iam-policy-binding "${SERVICE}" --region="${R}" --project="${P}" \
+  --member="serviceAccount:${SA_DEPL}" --role=roles/run.developer --format=none
+gcloud run services add-iam-policy-binding "${SERVICE}" --region="${R}" --project="${P}" \
   --member="serviceAccount:service-${PNUM}@gcp-sa-iap.iam.gserviceaccount.com" --role=roles/run.invoker --format=none
 read -ra DOMS <<<"${WEB_DOMAINS}"
 for d in "${DOMS[@]}"; do

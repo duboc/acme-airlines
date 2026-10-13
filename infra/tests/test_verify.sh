@@ -100,6 +100,7 @@ texp() {  # texp <0|1> <name> <json>
 }
 texp 0 "ADK agent spans present" '{"traces":[{"spans":[{"name":"invoke_agent acme_customer"},{"name":"call_llm"}]}]}'
 texp 0 "tool span counts" '{"traces":[{"spans":[{"name":"execute_tool rebook"}]}]}'
+texp 0 "acme.* engine span counts" '{"traces":[{"spans":[{"name":"acme.guardrail.evaluate"}]}]}'
 texp 1 "only Cloud Run request spans" '{"traces":[{"spans":[{"name":"/api/scenarios"}]}]}'
 texp 1 "no traces" '{}'
 
