@@ -7,6 +7,7 @@ default_harness_config: antigravity
 model: medium
 max_duration: "45m"
 max_turns: 150
+max_model_calls: 450
 skills:
   # code-review absorbs the universally-applicable parts of addyosmani's
   # code-review-and-quality. That skill is deliberately NOT listed here: its severity

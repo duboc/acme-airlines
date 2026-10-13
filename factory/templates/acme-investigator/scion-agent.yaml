@@ -7,6 +7,7 @@ default_harness_config: antigravity
 model: medium
 max_duration: "30m"
 max_turns: 100
+max_model_calls: 300
 skills:
   - uri: "gh://scion-frontiers/agent-team/artifact-durability"
   # agents.md requires a scope tier from software-engineering-process → Sizing

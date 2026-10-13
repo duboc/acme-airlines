@@ -7,3 +7,4 @@ default_harness_config: antigravity
 model: medium
 max_duration: "30m"
 max_turns: 100
+max_model_calls: 300

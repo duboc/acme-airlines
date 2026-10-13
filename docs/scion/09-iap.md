@@ -117,7 +117,7 @@ server:
   auth:
     user_access_mode: domain_restricted        # defence in depth if IAP grants widen
     authorized_domains: ["google.com", "duboc.altostrat.com"]
-    default_user_role: member                  # or viewer (safer outside experiments)
+    default_user_role: viewer                  # DEFAULT_USER_ROLE; viewers can't start agents
 ```
 
 `admin_emails` users are always admins. Changing `default_user_role` affects
