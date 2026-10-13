@@ -127,7 +127,6 @@ class EngineBackend:
     def __init__(self, customer: EngineHandle, sales: EngineHandle) -> None:
         self._customer, self._sales = customer, sales
         self._active: str | None = None
-        self._step = 0  # the caller-side step counter sent with every call (#266)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> EngineBackend:
@@ -144,26 +143,18 @@ class EngineBackend:
     async def scenarios_list(self) -> list[dict]:
         return await self._customer.call("scenarios_list")
 
-    def _ctx(self) -> dict[str, Any]:
-        """Where the scenario is, on every call: a container that does not hold that state (another
-        replica, a restart) rebuilds it deterministically instead of failing (#266)."""
-        return {} if self._active is None else {"preset": self._active, "step": self._step}
-
     async def scenario_start(self, scenario_id: str) -> dict:
         state = await self._customer.call("scenario_start", scenario_id=scenario_id)
-        self._active, self._step = scenario_id, state["step_index"]
+        self._active = scenario_id
         return state
 
     async def scenario_state(self) -> dict:
-        state = await self._customer.call("scenario_state", **self._ctx())
-        self._step = state["step_index"]
-        return state
+        return await self._customer.call("scenario_state")
 
     async def scenario_step(self, scenario_id: str) -> dict:
         """Customer step, then one Sales engine turn (its own trace). `409` conditions are the
         route's job: it checks `active` and `state["done"]` before calling this."""
-        await self._customer.call("scenario_step", **self._ctx())
-        self._step += 1
+        await self._customer.call("scenario_step")
         async for _ in self._sales.stream(message="tick", user_id="demo"):
             pass
         return await self.scenario_state()
@@ -173,15 +164,13 @@ class EngineBackend:
         return self._active
 
     async def journeys_list(self) -> list[dict]:
-        return await self._customer.call("journeys_list", **self._ctx())
+        return await self._customer.call("journeys_list")
 
     async def journey_detail(self, journey_id: str) -> dict:
-        return await self._customer.call("journey_detail", journey_id=journey_id, **self._ctx())
+        return await self._customer.call("journey_detail", journey_id=journey_id)
 
     async def journey_events(self, journey_id: str, since: int = 0) -> list[dict]:
-        return await self._customer.call(
-            "journey_events", journey_id=journey_id, since=since, **self._ctx()
-        )
+        return await self._customer.call("journey_events", journey_id=journey_id, since=since)
 
     async def reset(self) -> dict:
         self._active = None
@@ -189,8 +178,7 @@ class EngineBackend:
 
     async def api(self, op: str, **kwargs: Any) -> Any:
         """Phone panel and trigger ops, which return API errors as data."""
-        ctx = self._ctx() if op.startswith("whatsapp_") else {}  # not trigger_cancellation
-        return ok(await self._customer.call(op, **kwargs, **ctx))
+        return ok(await self._customer.call(op, **kwargs))
 
 
 def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:

@@ -136,23 +136,3 @@ def test_log_read_failure_is_recorded_not_fatal(tmp_path):
     write_engine_logs(str(out), {"customer": entries})
     (row,) = [json.loads(line) for line in out.read_text().splitlines()]
     assert row == {"engine": "customer", "event": "log_read_failed", "error": "HTTPError"}
-
-
-def test_rebuild_events_are_allowlisted_with_validated_fields(tmp_path):
-    rebuild = {"event": "rebuild", "preset": "happy-path", "from_step": None, "to_step": 3,
-               "reason": "no_local_scenario", "ms": 41.2, "proc": "1a2b3c4d",
-               "container": "9f8e7d6c", "pid": 15, "note": "Mariana Silva"}  # fmt: skip
-    _, rows = written(tmp_path, [diag(rebuild)])
-    assert rows[0] == {
-        "engine": "customer",
-        "event": "rebuild",
-        "severity": "INFO",
-        "ts": "2026-01-01T12:00:01Z",
-        "preset": "happy-path",
-        "to_step": 3,
-        "reason": "no_local_scenario",
-        "ms": 41.2,
-        "proc": "1a2b3c4d",
-        "container": "9f8e7d6c",
-        "pid": 15,
-    }  # fmt: skip  (from_step null and the free-text note are dropped)

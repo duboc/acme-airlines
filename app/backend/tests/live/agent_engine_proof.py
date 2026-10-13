@@ -597,11 +597,6 @@ DIAG_FIELDS: dict[str, dict[str, Callable[[Any], bool]]] = {
         "db_inode": _is_int,
     },
     "export": {"ok": _is_bool, "n": _is_int, "ms": _is_num, "error": _matches(_NAME)},
-    "rebuild": {  # a scenario rebuilt by replay on this container (#266)
-        "preset": _matches(_PRESET), "from_step": _is_int, "to_step": _is_int,
-        "reason": _matches(_NAME), "ms": _is_num, "proc": _matches(_HEX8),
-        "container": _matches(_HEX8_OR_NA), "pid": _is_int,
-    },
 }  # fmt: skip
 
 
