@@ -429,11 +429,29 @@ check_demo_engine() {
   pass "demo-engine"
 }
 check_webaccess() {
-  # New web users get the least privilege by default (audit: Googlers must not start agents).
-  local role
-  role="$(vm_ssh "sudo grep -E '^ +default_user_role:' /home/scion/.scion/settings.yaml" 2>/dev/null | awk '{print $2}' | tail -1)"
-  [[ "${role}" == "viewer" ]] || { fail webaccess "default_user_role='${role:-unset}' (want viewer)"; return 1; }
-  pass webaccess
+  # 1. New web users get the least privilege by default (viewer).
+  # 2. Every domain in WEB_DOMAINS is in Hub settings.yaml authorized_domains.
+  # 3. Every domain in WEB_DOMAINS has roles/iap.httpsResourceAccessor on all deployed IAP Cloud Run services.
+  local auth_block role d s pol missing=""
+  auth_block="$(vm_ssh "sudo sed -n '/^  auth:/,/^  [a-z_]*:\$/p' /home/scion/.scion/settings.yaml" 2>/dev/null)"
+  role="$(awk '/default_user_role:/ {print $2}' <<<"${auth_block}" | tail -1)"
+  [[ "${role}" == "viewer" ]] || missing+=" default_user_role:${role:-unset}(want:viewer)"
+  local -a doms
+  read -ra doms <<<"${WEB_DOMAINS}"
+  for d in "${doms[@]}"; do
+    grep -q "\"${d}\"" <<<"${auth_block}" || missing+=" hub-authorized_domains:${d}"
+  done
+  for s in "${PROXY_SVC}" "${FACTORY_PREFIX}-observatory" "${FACTORY_PREFIX}-irrops-demo"; do
+    if gcloud run services describe "${s}" --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+      pol="$(gcloud iap web get-iam-policy --project="${PROJECT_ID}" --resource-type=cloud-run --service="${s}" --region="${REGION}" --format=json 2>/dev/null)"
+      for d in "${doms[@]}"; do
+        jq -e --arg m "domain:${d}" '.bindings[]? | select(.role=="roles/iap.httpsResourceAccessor") | .members | index($m)' <<<"${pol}" >/dev/null \
+          || missing+=" iap(${s}):domain:${d}"
+      done
+    fi
+  done
+  [[ -z "${missing}" ]] || { fail webaccess "${missing# }"; return 1; }
+  pass "webaccess (viewer default; domains: ${WEB_DOMAINS})"
 }
 check_backups() {
   # The hub VM boot disk has a daily snapshot schedule attached.

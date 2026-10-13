@@ -137,6 +137,15 @@ Full write-ups are in [`docs/setup/03-troubleshooting.md`](../setup/03-troublesh
     `collaborators_only` interaction limits, protects `main` (PR required,
     `enforce_admins=true`, required status checks `test` and `pr-size`), and
     `team-rules.md` Rule #9 forbids fetching or running code from untrusted PRs.
+28. **Adding a domain in the GCP IAP Console (`domain:zup.com.br`) still failed
+    on the Hub (`Proxy auth: user not authorized`) and on the other two UIs.**
+    Adding `domain:<d>` on `scion-hub-acme-iap-proxy` in the Console only opens
+    Layer 2 on one service: Scion Hub's own `server.auth.authorized_domains`
+    (Layer 4) rejected the user after IAP succeeded, and `acme-observatory` /
+    `acme-irrops-demo` still lacked the IAP binding. **Fix:** add the domain to
+    `WEB_DOMAINS` in `infra/factory.env` and run `infra/50-web-access.sh`,
+    which binds all three IAP Cloud Run services and updates Hub
+    `authorized_domains` in one step; `verify.sh webaccess` asserts both.
 
 ## Upstream suggestions for Scion
 
