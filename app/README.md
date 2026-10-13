@@ -106,7 +106,7 @@ GitHub Actions workflows in `.github/workflows/`:
 
 ## Customer agent
 
-`uv run acme-customer` (from `app/backend`) serves the runtime API on `ACME_CUSTOMER_PORT` (default 8800) with the
+`uv run acme-customer` (from `app/backend`) serves the runtime API on `ACME_CUSTOMER_PORT` (default 8800) and a separate A2A-only listener on `ACME_A2A_PORT` (default 8802; the Sales agent is pointed there, and a Sales-credentialed request gets 403 on every route but `POST /a2a`, #230) with the
 Customer agent and in-process simulators. `POST /scenario/trigger-cancellation` runs scenario 1
 (silent ingestion and profile evaluation); see `docs/product/policy-rules.md` for the quiet-hours rule.
 

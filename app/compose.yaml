@@ -19,6 +19,9 @@ services:
     command: ["acme-customer"]
     environment:
       ACME_CUSTOMER_HOST: 0.0.0.0
+      ACME_A2A_PORT: "8802"  # A2A-only listener; Sales is pointed here, never at 8800
+      # Recognises Sales by its credential and refuses it everywhere except POST /a2a (#230).
+      ACME_SALES_TOKEN: ${ACME_SALES_TOKEN:?set ACME_SALES_TOKEN (the sales token)}
       LLM_MODE: ${LLM_MODE:-fake}
       GOOGLE_CLOUD_PROJECT: acme-airlines-factory
       ACME_GENAI_LOCATION: global
@@ -43,7 +46,7 @@ services:
     environment:
       ACME_SALES_HOST: 0.0.0.0
       ACME_SIM_URL: http://acme-sim:8700
-      ACME_CUSTOMER_URL: http://customer-runtime:8800
+      ACME_CUSTOMER_URL: http://customer-runtime:8802
       # Only the sales credential: acme-sim answers 403 for every server except `inventory`.
       ACME_SALES_TOKEN: ${ACME_SALES_TOKEN:?set ACME_SALES_TOKEN (the sales token)}
     networks: [sim-net, a2a-net]

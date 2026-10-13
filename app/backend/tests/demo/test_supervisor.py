@@ -15,7 +15,8 @@ def test_child_env_defaults_fake_and_scopes_tokens():
     cust = child_env("customer", t, {})
     assert sim["ACME_SIM_TOKENS"] == t.sim_tokens
     assert sales["ACME_SALES_TOKEN"] == t.sales and "ACME_SIM_TOKENS" not in sales
-    assert "ACME_SALES_TOKEN" not in cust and "ACME_SIM_TOKENS" not in cust
+    assert cust["ACME_SALES_TOKEN"] == t.sales and "ACME_SIM_TOKENS" not in cust
+    assert sales["ACME_CUSTOMER_URL"].endswith(f":{cust['ACME_A2A_PORT']}")  # A2A listener only
     assert cust["LLM_MODE"] == "fake"
 
 
