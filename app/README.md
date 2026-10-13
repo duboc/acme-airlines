@@ -81,6 +81,15 @@ Vite dev server (`http://localhost:5173`). `GET /journeys/{id}/events` is Server
 
 ## CI
 
+**Supply chain (#234):** every third-party action is pinned to a full commit SHA with a version
+comment (`uses: actions/checkout@<sha> # v4`). The `action-pins` CI job
+(`python3 .github/scripts/check_action_pins.py`, tested by `.github/scripts/test_check_action_pins.py`)
+fails on tags, branches, short SHAs, missing version comments and un-digested `docker://` refs.
+Dependabot (`.github/dependabot.yml`) updates github-actions, uv and npm weekly in grouped PRs and
+rewrites the SHA and the comment. The `containers` job runs Trivy twice: a secrets scan and a
+vulnerability scan that fails on CRITICAL findings with a fix available (`--ignore-unfixed`) and
+uploads the full SARIF report to code scanning (category `trivy-containers`).
+
 GitHub Actions workflows in `.github/workflows/`:
 - `ci.yml`: runs on every PR and push to `main` (backend ruff + pytest; frontend lint + vitest + build).
 - `containers.yml`: builds container images, runs non-root checks, and verifies no secrets/env files.

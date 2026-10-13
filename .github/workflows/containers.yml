@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write # upload Trivy SARIF to code scanning
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -29,7 +30,7 @@ jobs:
       LLM_MODE: fake
       COMPOSE: docker compose -f app/compose.yaml
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Generate throwaway per-caller tokens (masked, never stored)
         run: |
@@ -73,6 +74,28 @@ jobs:
               --skip-files /app/.venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc \
               --exit-code 1 --no-progress "$img"
           done
+
+      - name: Vulnerability scan (trivy, fail on CRITICAL with a fix available, SARIF)
+        # Fails only on CRITICAL findings that have a fixed version (`--ignore-unfixed`); everything
+        # (all severities, fixed or not) goes to the SARIF report for code scanning.
+        run: |
+          mkdir -p trivy-sarif
+          for img in acme-backend:local acme-frontend:local; do
+            out="trivy-sarif/${img%%:*}.sarif"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/trivy-sarif:/out" \
+              aquasec/trivy:0.57.1 image --scanners vuln --format sarif \
+              --output "/out/$(basename "$out")" --no-progress "$img"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:0.57.1 image --scanners vuln --severity CRITICAL --ignore-unfixed \
+              --exit-code 1 --no-progress "$img"
+          done
+
+      - name: Upload Trivy SARIF
+        if: always() && hashFiles('trivy-sarif/*.sarif') != ''
+        uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
+        with:
+          sarif_file: trivy-sarif
+          category: trivy-containers
 
       - name: Bring the stack up (fake LLM) and wait for health
         run: |
