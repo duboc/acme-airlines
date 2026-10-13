@@ -93,12 +93,21 @@ def missing_spans(traces: list[Trace]) -> list[str]:
     return [p for p in REQUIRED_SPANS if not any(n.startswith(p) for n in names)]
 
 
-def step_trace(traces: list[Trace], scenario_id: str) -> Trace | None:
-    """The Customer `scenario_step` trace: its root span carries `acme.scenario`."""
+def step_trace(
+    traces: list[Trace], scenario_id: str, exclude: frozenset[str] | set[str] = frozenset()
+) -> Trace | None:
+    """The first not-yet-claimed Customer `scenario_step` trace (root span has `acme.scenario`)."""
     for t in traces:
-        if any(s.attrs.get("acme.scenario") == scenario_id for s in t.spans):
+        if t.trace_id not in exclude and any(
+            s.attrs.get("acme.scenario") == scenario_id for s in t.spans
+        ):
             return t
     return None
+
+
+def span_kinds_seen(traces: list[Trace], limit: int = 25) -> list[str]:
+    """Distinct span names in the window (bounded), to tell a product gap from harness timing."""
+    return sorted({s.name for t in traces for s in t.spans})[:limit]
 
 
 def structural(state: dict[str, Any]) -> dict[str, Any]:
@@ -114,14 +123,42 @@ async def run_proof(
     project: str = "",
     pii: set[str] | None = None,
     ingest_wait: float = 120.0,
+    settle_wait: float = 120.0,
     poll: float = 15.0,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     monotonic: Callable[[], float] = time.monotonic,
 ) -> Report:
+    """Run presets, claim each turn's Customer step trace, then settle and assert on the whole run.
+
+    Per turn: poll a window starting at that turn (cheap, keeps attribution). A turn whose trace
+    is not there after `ingest_wait` becomes *pending*, not a failure. Every listed trace is kept
+    (deduplicated by trace_id, richer copies win), so nothing is lost at a turn boundary.
+    After all presets, a settle pass lists the whole run window (`run_start` .. now), polling with
+    widening intervals for up to `settle_wait` only while turns are pending or span kinds are
+    missing. Assertions use the settled set. List calls: ~1-2 per turn plus <= 6 in the settle pass.
+    """
     report = Report(project=project)
     pii = fixture_pii() if pii is None else pii
-    seen: list[Trace] = []
+    pool: dict[str, Trace] = {}
+    claimed: set[str] = set()
+    pending: list[tuple[str, int]] = []
+    order = {sid: i for i, sid in enumerate(presets)}
+    run_start = now() - timedelta(seconds=5)
+
+    def absorb(window: list[Trace]) -> None:
+        for t in window:
+            if t.trace_id not in pool or len(t.spans) > len(pool[t.trace_id].spans):
+                pool[t.trace_id] = t
+
+    def claim(sid: str, turn: int) -> bool:
+        found = step_trace(list(pool.values()), sid, claimed)
+        if found is None:
+            return False
+        claimed.add(found.trace_id)
+        report.rows.append(Row(sid, turn, found.trace_id))
+        return True
+
     for sid in presets:
         await backend.scenario_start(sid)
         want = await local.scenario_start(sid)
@@ -134,22 +171,35 @@ async def run_proof(
             if structural(got) != structural(want):
                 report.failures.append(f"{sid} turn {turn}: engine {structural(got)} != "
                                        f"local {structural(want)}")  # fmt: skip
-            found, deadline, delay = None, monotonic() + ingest_wait, poll
+            deadline, delay = monotonic() + ingest_wait, poll
             while True:  # Cloud Trace ingestion lags; poll until the step trace appears
-                window = await traces.list_traces(start, now() + timedelta(seconds=5))
-                found = step_trace(window, sid)
-                if found or monotonic() >= deadline:
+                absorb(await traces.list_traces(start, now() + timedelta(seconds=5)))
+                if claim(sid, turn) or monotonic() >= deadline:
                     break
                 await sleep(delay)
                 delay = min(delay * POLL_GROWTH, POLL_MAX)  # fewer list calls as the wait grows
-            if found is None:
-                report.failures.append(f"{sid} turn {turn}: no Customer step trace in Cloud Trace")
-                continue
-            report.rows.append(Row(sid, turn, found.trace_id))
-            seen.extend(window)
-    report.failures += [f"missing span kind {m!r} in every trace of the run"
-                        for m in missing_spans(seen)]  # fmt: skip
-    report.failures += pii_failures(seen, pii)
+            if not any(r.scenario == sid and r.turn == turn for r in report.rows):
+                pending.append((sid, turn))  # settled below, not failed yet
+
+    # Settle pass: one run-wide window, re-listed with backoff only while something is missing.
+    deadline, delay = monotonic() + settle_wait, poll
+    while True:
+        absorb(await traces.list_traces(run_start, now() + timedelta(seconds=5)))
+        pending = [(sid, turn) for sid, turn in pending if not claim(sid, turn)]
+        if (not pending and not missing_spans(list(pool.values()))) or monotonic() >= deadline:
+            break
+        await sleep(delay)
+        delay = min(delay * POLL_GROWTH, POLL_MAX)
+
+    settled = list(pool.values())
+    scanned = f"{len(settled)} traces scanned in the run window; span names seen: " \
+              f"{span_kinds_seen(settled)}"  # fmt: skip
+    report.failures += [f"{sid} turn {turn}: no Customer step trace in Cloud Trace after settle "
+                        f"({scanned})" for sid, turn in pending]  # fmt: skip
+    report.failures += [f"missing span kind {m!r} after settle ({scanned})"
+                        for m in missing_spans(settled)]  # fmt: skip
+    report.failures += pii_failures(settled, pii)
+    report.rows.sort(key=lambda r: (order[r.scenario], r.turn))
     return report
 
 
