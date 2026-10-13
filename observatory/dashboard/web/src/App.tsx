@@ -4,6 +4,7 @@ import { ModelsPanel } from './panels/ModelsPanel';
 import { SpendBody } from './panels/SpendPanel';
 import { BILLING_EMPTY, GITHUB_EMPTY } from './format';
 import { AgentEnginePanel } from './panels/AgentEnginePanel';
+import { IrropsPanel } from './panels/IrropsPanel';
 import { AgentsBody } from './panels/AgentsPanel';
 import { GithubBody } from './panels/GithubPanel';
 import { CollectorHealth } from './CollectorHealth';
@@ -43,6 +44,7 @@ export default function App() {
           {(d) => <AgentsBody data={d} />}
         </Panel>
         <AgentEnginePanel />
+        <IrropsPanel />
         <Panel id="github" title="GitHub" result={github} emptyMessage={GITHUB_EMPTY}>
           {(d) => <GithubBody data={d} />}
         </Panel>

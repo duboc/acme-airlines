@@ -23,6 +23,8 @@ const ok = {
   snapshot: null,
   merges_per_day: [],
   engines: [],
+  guardrail: [],
+  demo_health: 'unknown',
 };
 
 function mockApi(overrides: Record<string, unknown> = {}) {
@@ -43,15 +45,23 @@ afterEach(() => {
 });
 
 describe('App shell', () => {
-  it('has landmarks, one h1 and six titled panels', async () => {
+  it('has landmarks, one h1 and seven titled panels', async () => {
     mockApi();
     render(<App />);
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'ACME Observatory' })).toBeInTheDocument();
-    for (const t of ['Spend', 'Model usage', 'Agents', 'Agent Engine', 'GitHub', 'Budget']) {
+    for (const t of [
+      'Spend',
+      'Model usage',
+      'Agents',
+      'Agent Engine',
+      'IRROPS product',
+      'GitHub',
+      'Budget',
+    ]) {
       expect(screen.getByRole('region', { name: t })).toBeInTheDocument();
     }
-    expect(await screen.findAllByText('Live')).toHaveLength(6);
+    expect(await screen.findAllByText('Live')).toHaveLength(7);
     expect(screen.getByText('Latest data 2026-10-10 12:00Z')).toBeInTheDocument();
   });
 
@@ -86,7 +96,7 @@ describe('App shell', () => {
     const panel = screen.getByRole('region', { name: 'Model usage' });
     expect(await within(panel).findByText('Failed to load')).toBeInTheDocument();
     expect(within(panel).getByRole('status')).toHaveTextContent('Could not reach the API');
-    expect(await screen.findAllByText('Live')).toHaveLength(5);
+    expect(await screen.findAllByText('Live')).toHaveLength(6);
   });
 
   it('shows a red collector health banner when the pipeline is down', async () => {

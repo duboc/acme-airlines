@@ -9,10 +9,10 @@ in under ten seconds: *Is the factory healthy? What is it costing? Is the budget
 They return several times a day, often between other tasks, and need to trust what they see.
 
 ## What it shows
-Six read-only panels fed by `/api/*` (see `API.md`): cloud **Spend**, **Model** token use, **Agents**
+Seven read-only panels fed by `/api/*` (see `API.md`): cloud **Spend**, **Model** token use, **Agents**
 fleet, **Agent Engine** (per-engine p50/p95 latency, error rate, requests and recent Cloud Trace links; if
 trace access is not granted the metrics still show with a "Trace access not granted" note), **GitHub**
-work flow and CI, and **Budget** against guard thresholds. It never writes.
+work flow and CI, **IRROPS product** (guardrail decisions by rule and outcome, offers, template fallbacks, needs_human, notification p50/p95, 5xx and hosted-demo health; metrics not yet reported read "No data yet", never zero), and **Budget** against guard thresholds. It never writes.
 
 ## Tone: dense, calm, legible
 - Dense: many facts per screen, no scrolling to find the headline number.
