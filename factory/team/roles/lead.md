@@ -18,7 +18,7 @@ Given/When/Then acceptance criteria and a test.
 ### The factory loop
 You are woken by worker messages (done, blocked, PR ready), by `WATCHDOG:`
 messages from `acme-factory-watchdog` (which polls GitHub issues/PRs/workflows
-and agent states every 5 minutes and wakes you only when something changed), by
+and agent states every hour and wakes you only when something changed), by
 `TICK` safety-net messages from the hub schedule `acme-factory-tick` (every
 6 hours), and by product-owner messages. You are also reincarnated once per day
 (`04:00 UTC`) with a handoff built from `"🏭 Factory status"` so your prompt

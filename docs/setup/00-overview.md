@@ -26,7 +26,7 @@ flowchart LR
     vertex["Vertex AI (global endpoint): Gemini + Claude"]
   end
   a1 & a2 -->|egress| nat --> gh["GitHub duboc/acme-airlines"]
-  a1 & a2 -->|"ADC via VM SA"| vertex
+  a1 & a2 -->|"ADC via acme-agent@ (assign mode)"| vertex
 ```
 
 ## Project
@@ -60,7 +60,9 @@ flowchart LR
 | Hub URL | <https://scion-hub-acme-iap-proxy-vdhcml5ceq-uc.a.run.app> | Google login via IAP |
 | GCE VM | `scion-hub-acme` (`us-central1-a`) | n2-standard-16, 500 GB, Ubuntu 22.04, Shielded VM, no public IP |
 | Scion | `nightly-20261009` | Hub + runtime broker in one systemd unit `scion-hub.service` |
-| VM service account | `scion-hub-acme@acme-airlines-factory.iam.gserviceaccount.com` | Agents' identity for Vertex AI |
+| VM service account | `scion-hub-acme@acme-airlines-factory.iam.gserviceaccount.com` | Hub/Broker host SA (`iam.serviceAccountTokenCreator` on `acme-agent@`; no `serviceAccountAdmin`) |
+| Agent service account | `acme-agent@acme-airlines-factory.iam.gserviceaccount.com` | Dedicated agent identity (`assign` mode; `aiplatform.user`, `logging.logWriter`, `monitoring.metricWriter`, `cloudtrace.agent`) |
+| Watchdog | Cloud Run `acme-factory-watchdog` + Scheduler (`0 * * * *`, `0 4 * * *`) | Hourly wake-on-change, stall recovery, daily `04:00 UTC` lead reincarnation, PO alert policy |
 | Proxy service account | `scion-hub-acme-proxy@…` | No project roles |
 | Cloud Run | `scion-hub-acme-iap-proxy` | IAP-enforced reverse proxy → VM:8080 |
 | Artifact Registry | `cloud-run-source-deploy` (`us-central1`) | Holds the proxy image |
@@ -74,4 +76,4 @@ About **$650/month** if left running 24/7, plus Vertex AI usage. See the breakdo
 
 ## Agent team
 
-Five role templates (lead, backend, frontend, QA, reviewer): see [docs/factory/team.md](../factory/team.md).
+Thirteen role templates (`acme-lead`, `acme-eng-manager`, `acme-architect`, `acme-backend`, `acme-frontend`, `acme-qa`, `acme-qa-tester`, `acme-reviewer`, `acme-security-auditor`, `acme-investigator`, `acme-researcher`, `acme-doc-writer`, `acme-release-notes`): see [docs/factory/team.md](../factory/team.md) and [docs/scion/11-scion-configuration-reference.md](../scion/11-scion-configuration-reference.md).

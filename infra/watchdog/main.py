@@ -5,9 +5,9 @@ HUB_ENDPOINT using a project-scoped UAT (agent:list, agent:read, agent:message,
 agent:lifecycle) from Secret Manager, plus GitHub REST API with GITHUB_TOKEN.
 
 Modes (JSON body {"mode": "..."} or request path):
-  - check (every 5 min): fingerprint GitHub + worker phases; wake acme-lead only when
-    idle and state changed (rate-limited to 1 wake / 10 min); recover a stalled/errored
-    lead (message/resume first, reincarnate + alert PO if still unhealthy after 10 min);
+  - check (every hour): fingerprint GitHub + worker phases; wake acme-lead only when
+    idle and state changed (rate-limited to 1 wake / 55 min); recover a stalled/errored
+    lead (message/resume first, reincarnate + alert PO if still unhealthy on next hourly check);
     NEVER resume a lead in phase 'suspended' (intentional pause by guard or operator).
   - reincarnate (daily 04:00 UTC): reincarnate acme-lead with a handoff built from the
     pinned '🏭 Factory status' issue and current child-agent roster, resetting multi-day
@@ -85,8 +85,8 @@ def decide_action(
     fp: str,
     state: dict,
     now: float,
-    min_wake_interval: int = 600,
-    stall_escalate_sec: int = 600,
+    min_wake_interval: int = 3300,
+    stall_escalate_sec: int = 3300,
 ) -> dict:
     new_state = dict(state)
     if lead is None:
@@ -207,7 +207,7 @@ All task state lives on GitHub Issues and PRs; check open `status:in-progress` a
 
 ## Pending waits and scheduled events
 
-- `acme-factory-watchdog` wakes you on GitHub or agent state changes (every 5 min, rate-limited).
+- `acme-factory-watchdog` wakes you on GitHub or agent state changes (every hour, rate-limited).
 - `acme-factory-tick` runs every 6 hours as a safety net.
 
 ## Open questions to humans (already asked and not yet asked)
@@ -375,8 +375,8 @@ def run_once(mode: str) -> tuple[int, dict]:
         fp,
         state,
         now=now,
-        min_wake_interval=int(os.environ.get("MIN_WAKE_INTERVAL_SEC", "600")),
-        stall_escalate_sec=int(os.environ.get("STALL_ESCALATE_SEC", "600")),
+        min_wake_interval=int(os.environ.get("MIN_WAKE_INTERVAL_SEC", "3300")),
+        stall_escalate_sec=int(os.environ.get("STALL_ESCALATE_SEC", "3300")),
     )
     out = execute_action(decision["action"], decision["reason"], handoff_text=handoff)
     save_state(decision["new_state"])

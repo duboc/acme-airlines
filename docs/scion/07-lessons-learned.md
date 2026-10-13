@@ -119,7 +119,7 @@ Full write-ups are in [`docs/setup/03-troubleshooting.md`](../setup/03-troublesh
     cache.** Waking a multi-day Claude Opus conversation every 30 minutes
     rewrites the full context into cache ($18.75/MTok) even on no-op passes.
     **Fix:** an external stdlib Python **watchdog** (`infra/76-watchdog.sh`)
-    polls GitHub every 5 minutes and wakes `acme-lead` only when issues, PRs,
+    polls GitHub every hour (`0 * * * *`) and wakes `acme-lead` only when issues, PRs,
     or CI runs changed, recovers stalled/errored states automatically, and
     reincarnates `acme-lead` daily at 04:00 UTC with a compact handoff built
     from the pinned status issue. The Hub `TICK` schedule is kept at 6 hours

@@ -456,3 +456,13 @@ created. **Re-run the script after the first deploy** to add its bindings
 
 Brief: [#157](https://github.com/duboc/acme-airlines/issues/157).
 Check: `infra/verify.sh agent-engine`.
+
+## 10. Post-audit hardening & day-2 configuration (ADR 0016)
+
+See [ADR 0016](../decisions/0016-factory-audit-hardening.md) and [11-scion-configuration-reference.md](../scion/11-scion-configuration-reference.md):
+
+1. **Dedicated agent identity (`infra/25-agent-identity.sh`):** creates `acme-agent@acme-airlines-factory.iam.gserviceaccount.com` (`assign` mode), sets Hub default to `block`, removes `roles/iam.serviceAccountAdmin` from `scion-hub-acme@`, scopes `acme-observatory-deployer@` `roles/run.developer` to individual Cloud Run resources, and enables Scion Cloud Monitoring telemetry export (`verify.sh identity telemetry`).
+2. **GitHub repository guardrails (`infra/35-github-repo.sh`):** creates standard labels, pinned `🏭 Factory status` issue, `collaborators_only` interaction limit, and branch protection on `main` (`enforce_admins=true`, required status checks `backend`, `engine-smoke`, `frontend`, `pr-size`).
+3. **Multi-domain IAP & Hub access (`infra/50-web-access.sh`):** grants `WEB_DOMAINS="google.com duboc.altostrat.com zup.com.br"` on all 3 IAP-protected Cloud Run services (`scion-hub-acme-iap-proxy`, `acme-observatory`, `acme-irrops-demo`), updates `server.auth.authorized_domains` + `default_user_role: viewer`, and syncs `hub_settings.access` (`verify.sh webaccess`).
+4. **Daily boot-disk backups (`infra/75-backups.sh`):** attaches snapshot schedule `scion-hub-acme-daily` (`03:00 UTC`, `7d` retention) to `scion-hub-acme` (`verify.sh backups`).
+5. **Hourly wake-on-change watchdog & daily lead reincarnation (`infra/76-watchdog.sh`):** deploys Cloud Run `acme-factory-watchdog`, schedules hourly `acme-factory-watchdog` (`0 * * * *`) and daily `acme-lead-reincarnate` (`0 4 * * *`), moves `acme-factory-tick` to `0 */6 * * *`, and wires `acme-factory-watchdog-po-alert` to `ADMIN_EMAIL` (`verify.sh watchdog`).

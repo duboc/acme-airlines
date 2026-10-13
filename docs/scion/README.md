@@ -32,7 +32,7 @@ click. The full sequence, with the reasoning behind it, is in
 | **Hub VM** | Scion Hub + Runtime Broker on one GCE VM (no public IP), reached through a Cloud Run **IAP** proxy |
 | **Agent team** | 13 role templates (lead, eng-manager, architect, backend, frontend, qa, qa-tester, reviewer, security-auditor, investigator, researcher, doc-writer, release-notes): Opus plans, Sonnet codes, Gemini Flash does the rest |
 | **Standing roster** | One persistent agent per role under the lead, visible as a tree in the hub's lineage graph |
-| **Autonomous loop** | 5-minute wake-on-change watchdog (`acme-factory-watchdog`) plus a 6-hour fallback tick and worker events. The lead triages, dispatches, merges (reviewer verdict + green CI) and reports on a pinned status issue; the watchdog recovers stalled/errored states and reincarnates the lead daily |
+| **Autonomous loop** | Hourly wake-on-change watchdog (`acme-factory-watchdog`, `0 * * * *`) plus a 6-hour fallback tick and worker events. The lead triages, dispatches, merges (reviewer verdict + green CI) and reports on a pinned status issue; the watchdog recovers stalled/errored states and reincarnates the lead daily |
 | **Backlog policy** | When the backlog is empty, the lead proposes ≤10 `status:proposed` issues and waits for human approval |
 | **Cost & security controls** | Dedicated `acme-agent` SA (`assign` mode), per-role turn + model-call caps, concurrency cap, `pause`/`resume`, and a $2,000/month budget guard that **suspends agents** at 100% (it never stops the VM) |
 | **Observability** | `infra/verify.sh` (21 platform checks + `e2e`), Scion Cloud Monitoring telemetry export, the Observatory dashboard, PO email alerts, and Agent Engine traces in Cloud Trace |
@@ -49,7 +49,8 @@ click. The full sequence, with the reasoning behind it, is in
 8. [New-factory checklist](08-new-factory-checklist.md)
 9. [IAP: user access to the web UIs](09-iap.md): access layers, the custom OAuth client, troubleshooting
 10. [Evaluation methodology](10-eval-methodology.md): 5-layer governance suite, structural parity, live Agent Engine proof, and factory evaluation
-11. [Scripts](scripts/README.md): `bootstrap.sh`, `factory.env.example`, and the infra script map
+11. [Scion configuration reference](11-scion-configuration-reference.md): the 6 configuration planes, 4-layer heartbeat, and 13-agent hierarchy
+12. [Scripts](scripts/README.md): `bootstrap.sh`, `factory.env.example`, and the infra script map
 
 ## Related records in this repo
 

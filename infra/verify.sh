@@ -473,6 +473,9 @@ check_watchdog() {
     st="$(gcloud scheduler jobs describe "${j}" --location="${r}" --project="${p}" --format='value(state)' 2>/dev/null || true)"
     [[ "${st}" == "ENABLED" ]] || missing+=" scheduler:${j}(${st:-missing})"
   done
+  local wd_sched
+  wd_sched="$(gcloud scheduler jobs describe acme-factory-watchdog --location="${r}" --project="${p}" --format='value(schedule)' 2>/dev/null || true)"
+  [[ "${wd_sched}" == "${WATCHDOG_CRON:-0 * * * *}" ]] || missing+=" watchdog-cron:${wd_sched:-unset}(want:${WATCHDOG_CRON:-0 * * * *})"
   gcloud alpha monitoring policies list --project="${p}" --filter='displayName="acme-factory-watchdog-po-alert" AND enabled=true' \
     --format='value(name)' 2>/dev/null | grep -q . || missing+=" alert:acme-factory-watchdog-po-alert"
   [[ -z "${missing}" ]] || { fail watchdog "missing:${missing}"; return 1; }
@@ -480,7 +483,7 @@ check_watchdog() {
        | jq -e '[.bindings[]?.members[]?] | any(. == "allUsers" or . == "allAuthenticatedUsers")' >/dev/null; then
     fail watchdog "${svc} is publicly invokable"; return 1
   fi
-  pass "watchdog (5m wake-on-change, 04:00Z daily reincarnate, PO alert policy)"
+  pass "watchdog (hourly wake-on-change, 04:00Z daily reincarnate, PO alert policy)"
 }
 check_identity() {
   # Dedicated low-privilege agent SA (assign mode), hub default block, least-privilege IAM (infra/25-agent-identity.sh).

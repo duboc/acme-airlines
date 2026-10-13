@@ -4,21 +4,21 @@ The team is thirteen Scion role templates, generated from `factory/team/` by
 `infra/40-build-team-templates.sh` into `factory/templates/acme-*` and pushed to
 the hub at **global** scope. Design: [addendum A](../superpowers/specs/2026-10-09-addendum-a-agent-team.md).
 
-| Role | Template | Harness / model | Hub agent role | Cap |
+| Role | Template | Harness / model | Hub agent role | Cap (`max_duration` / `max_turns` / `max_model_calls`) |
 |------|----------|-----------------|----------------|-----|
-| Lead / tech lead | `acme-lead` | claude / **Opus 5.5** | `full` | — |
-| Engineering manager | `acme-eng-manager` | claude / **Opus 5.5** | `full` | 4h |
-| Architect | `acme-architect` | claude / **Opus 5.5** | `baseline` | 1h |
-| Backend developer | `acme-backend` | claude / **Sonnet 5.5** | `baseline` | 2h |
-| Frontend developer (+ **impeccable**) | `acme-frontend` | claude / **Sonnet 5.5** | `baseline` | 2h |
-| QA / test engineer | `acme-qa` | claude / **Sonnet 5.5** | `baseline` | 2h |
-| Code reviewer | `acme-reviewer` | antigravity / **Gemini Flash** | `baseline` | 45m |
-| Security auditor | `acme-security-auditor` | antigravity / **Gemini Flash** | `baseline` | 45m |
-| QA tester (Playwright) | `acme-qa-tester` | antigravity / **Gemini Flash** | `baseline` | 45m |
-| Investigator | `acme-investigator` | antigravity / **Gemini Flash** | `baseline` | 30m |
-| Researcher | `acme-researcher` | antigravity / **Gemini Flash** | `baseline` | 30m |
-| Documentation writer | `acme-doc-writer` | antigravity / **Gemini Flash** | `baseline` | 30m |
-| Release engineer | `acme-release-notes` | antigravity / **Gemini Flash** | `baseline` | 30m |
+| Lead / tech lead | `acme-lead` | claude / **Opus** | `full` | — |
+| Engineering manager | `acme-eng-manager` | claude / **Opus** | `full` | 4h / 800 / 2400 |
+| Architect | `acme-architect` | claude / **Opus** | `baseline` | 1h / 200 / 600 |
+| Backend developer | `acme-backend` | claude / **Sonnet** | `baseline` | 2h / 400 / 1200 |
+| Frontend developer (+ **impeccable**) | `acme-frontend` | claude / **Sonnet** | `baseline` | 2h / 400 / 1200 |
+| QA / test engineer | `acme-qa` | claude / **Sonnet** | `baseline` | 2h / 400 / 1200 |
+| Code reviewer | `acme-reviewer` | antigravity / **Gemini Flash** | `baseline` | 45m / 150 / 450 |
+| Security auditor | `acme-security-auditor` | antigravity / **Gemini Flash** | `baseline` | 45m / 150 / 450 |
+| QA tester (Playwright) | `acme-qa-tester` | antigravity / **Gemini Flash** | `baseline` | 45m / 150 / 450 |
+| Investigator | `acme-investigator` | antigravity / **Gemini Flash** | `baseline` | 30m / 100 / 300 |
+| Researcher | `acme-researcher` | antigravity / **Gemini Flash** | `baseline` | 30m / 100 / 300 |
+| Documentation writer | `acme-doc-writer` | antigravity / **Gemini Flash** | `baseline` | 30m / 100 / 300 |
+| Release engineer | `acme-release-notes` | antigravity / **Gemini Flash** | `baseline` | 30m / 100 / 300 |
 
 The lead runs at most **4 agents** at once besides itself, counting
 eng-managers and their workers. When to use which role is in
@@ -26,7 +26,8 @@ eng-managers and their workers. When to use which role is in
 
 Claude templates set `ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5`, because
 the harness default `claude-haiku-4-5` is not enabled on Vertex. All model
-traffic goes to Vertex AI `global` using the VM service account.
+traffic goes to Vertex AI `global` using the dedicated `acme-agent@` service
+account (`assign` mode).
 
 ## How the team works
 
@@ -34,12 +35,12 @@ traffic goes to Vertex AI `global` using the VM service account.
 flowchart LR
   po["Product owner (you)"] -- "approve plan / steer" --> lead["acme-lead (Opus)"]
   lead -- "GitHub Issues backlog" --> gh[("duboc/acme-airlines")]
-  lead -- "scion start --type acme-*" --> be["acme-be-* (Sonnet)"] & fe["acme-fe-* (Gemini)"] & qa["acme-qa-* (Gemini)"]
+  lead -- "scion message --wake" --> be["acme-backend (Sonnet)"] & fe["acme-frontend (Sonnet)"] & qa["acme-qa (Sonnet)"]
   be & fe & qa -- "PR per issue" --> gh
-  lead -- "start reviewer per PR" --> rev["acme-rev-* (Opus)"]
-  rev -- "gh pr review" --> gh
-  lead -- "merge after approval + green CI" --> gh
-  lead -- "status messages" --> po
+  lead -- "wake reviewer per PR" --> rev["acme-reviewer (Gemini Flash)"]
+  rev -- "gh pr review (VERDICT:)" --> gh
+  lead -- "merge after VERDICT: APPROVE + green CI" --> gh
+  lead -- "status issue + alerts" --> po
 ```
 
 1. **Phase 0 (planning).**
@@ -49,19 +50,21 @@ flowchart LR
    - A reviewer agent reviews it.
    - The lead messages you, then **waits for your approval**: approve or merge
      the PR, or message the lead.
-> [!WARNING]
-> All agents act as one GitHub user (the token owner), so there are two gaps:
-> - **No formal approvals.** Reviews are comment reviews starting with
+> [!NOTE]
+> All agents authenticate to GitHub with one token (`GITHUB_TOKEN`), so GitHub's
+> native review state cannot separate author from reviewer. Instead:
+> - **Verdict comments:** `acme-reviewer` posts a review whose first line is
 >   `VERDICT: APPROVE` or `VERDICT: REQUEST CHANGES`.
-> - **No branch protection** on this private repo's plan.
+> - **Branch protection on `main` (`infra/35-github-repo.sh`):** enforces PR-only
+>   merges (`enforce_admins=true`) and 4 required status checks (`backend`,
+>   `engine-smoke`, `frontend`, `pr-size`).
 >
-> See [ADR 0006](../decisions/0006-github-fine-grained-pat.md) for the risk and
-> the options.
+> See [ADR 0006](../decisions/0006-github-fine-grained-pat.md) and [ADR 0016](../decisions/0016-factory-audit-hardening.md).
 
 2. **Delivery loop.**
    - The lead runs at most 4 workers at once.
    - Each issue gets one branch and one PR, reviewed by `acme-reviewer`.
-   - The lead merges only with reviewer approval **and** green CI.
+   - The lead merges only with `VERDICT: APPROVE` **and** green CI.
 
 ## The autonomous loop
 
@@ -71,12 +74,15 @@ flowchart LR
   issue.
 - **Comments.** Agents write structured `[agent] STATUS/DONE/NEXT/BLOCKER`
   comments, and file new work as `status:triage`.
-- **Wake-ups.** The lead wakes on worker events and on the 30-minute
-  `acme-factory-tick`. Each pass, it merges what's approved and green,
-  triages, and dispatches.
+- **Wake-ups (4-layer heartbeat).** The lead wakes on immediate worker events
+  (`scion message acme-lead`), on the hourly wake-on-change watchdog
+  (`acme-factory-watchdog`, `0 * * * *`), on daily `04:00 UTC` reincarnation
+  (`acme-lead-reincarnate`), and on the 6-hour safety-net schedule
+  (`acme-factory-tick`, `0 */6 * * *`). Each pass, it merges what's approved
+  and green, triages, and dispatches.
 - **Your inbox.** The lead messages you **only** when the backlog is empty.
   Send more backlog by filing issues or messaging `acme-lead`.
-- **Cost.** `infra/60-factory.sh pause|resume` (the VM is never stopped), plus the $1000
+- **Cost.** `infra/60-factory.sh pause|resume` (the VM is never stopped), plus the $2,000
   budget guard (see [operations](../setup/02-operations.md)).
 
 ## Seeing the topology in the UI
@@ -145,9 +151,9 @@ infra/30-hub-admin-access.sh disable
    change the role table in `infra/40-build-team-templates.sh`.
 2. Run `infra/40-build-team-templates.sh` and commit the regenerated
    `factory/templates/acme-*`.
-3. Push to the hub. With admin access enabled, copy the templates into the
-   VM's `~/factory/templates/`, then run `hub_cli --global templates push acme-<role>`
-   for each role. See runbook §5.
+3. Push to the hub with `infra/45-push-templates.sh` (which opens and closes
+   admin access automatically and pushes every `acme-*` template at global
+   scope).
 4. New agents pick up the change. Running agents keep their old instructions;
    ask the lead to recycle them.
 
