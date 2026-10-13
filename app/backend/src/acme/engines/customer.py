@@ -34,7 +34,7 @@ from pydantic import ConfigDict
 
 from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
-from acme.telemetry import EngineOp, flush, span
+from acme.telemetry import EngineOp, flush, process_identity, span
 
 log = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ def shared(fn):
             except Exception as exc:
                 raise describe_error(exc) from exc
             finally:
-                op.log(flush())  # export this operation's spans before the process is throttled
+                op.log(flush(), **self._op_context())  # flush before the process is throttled
 
         return wrapped_gen
     if inspect.iscoroutinefunction(fn):
@@ -174,7 +174,7 @@ def shared(fn):
             except Exception as exc:
                 raise describe_error(exc) from exc
             finally:
-                op.log(await asyncio.to_thread(flush))
+                op.log(await asyncio.to_thread(flush), **self._op_context())
 
         return wrapped_async
 
@@ -189,7 +189,7 @@ def shared(fn):
         except Exception as exc:
             raise describe_error(exc) from exc
         finally:
-            op.log(flush())
+            op.log(flush(), **self._op_context())
 
     return wrapped
 
@@ -234,6 +234,40 @@ class CustomerEngineApp:
             self.started, self.startup_error = False, format_error(exc)
             logging.getLogger(__name__).error("engine start-up failed: %s", self.startup_error)
 
+    def _op_context(self) -> dict[str, Any]:
+        """Scenario and shared-state facts for the `ACME_DIAG` op line (#266): which scenario this
+        process believes is active, and the snapshot versions, so a 'no scenario' can be matched
+        to a process that never saw `scenario_start`."""
+        runner = self.__dict__.get("scenarios")
+        active = runner.active if runner is not None else None
+        ctx: dict[str, Any] = {
+            "scenario": active.id if active else None,
+            "step": runner.index if active else None,
+            "shared_version": None,
+            "loaded_version": None,
+            "db_inode": None,
+        }
+        if self.shared is not None:
+            try:
+                ctx["shared_version"] = self.shared.version()
+                ctx["loaded_version"] = self.shared._loaded_version  # noqa: SLF001
+                ctx["db_inode"] = os.stat(self.shared.path).st_ino
+            except Exception:  # noqa: BLE001 - diagnostics must never break an operation
+                pass
+        return ctx
+
+    def _no_scenario(self) -> EngineOperationError:
+        """The readable error: ids and counters of the process that answered (no PII)."""
+        ident, ctx = process_identity(), self._op_context()
+        db = "none" if ctx["db_inode"] is None else (
+            f"ino{ctx['db_inode']}:v{ctx['shared_version']}/loaded{ctx['loaded_version']}"
+        )  # fmt: skip
+        return EngineOperationError(
+            "no scenario is started "
+            f"(container={ident['container']} proc={ident['proc']} pid={ident['pid']} "
+            f"scenario=none db={db})"
+        )
+
     def diagnostics(self) -> dict[str, Any]:
         """Start-up status for the deploy check and operators (not an A2A skill)."""
         status = "ready" if self.started else ("failed" if self.startup_error else "starting")
@@ -242,6 +276,7 @@ class CustomerEngineApp:
             "status": status,
             "startup_error": self.startup_error,
             "llm_mode": self.llm_mode,
+            "identity": process_identity(),
         }
 
     def _set_up(self) -> None:
@@ -361,7 +396,7 @@ class CustomerEngineApp:
     @shared
     def scenario_state(self) -> dict[str, Any]:
         if self.scenarios.active is None:
-            raise EngineOperationError("no scenario is started")
+            raise self._no_scenario()
         return self.scenarios.state().model_dump(mode="json")
 
     @shared
@@ -369,7 +404,7 @@ class CustomerEngineApp:
         """Customer half of a step as an ADK turn. The Sales tick is driven by the demo."""
         runner = self.scenarios
         if runner.active is None:
-            raise EngineOperationError("no scenario is started")
+            raise self._no_scenario()
         if runner.index >= len(runner.active.steps):
             raise EngineOperationError("scenario is finished; start it again")
         # A span this code owns carries the scenario for EVERY turn (cold first turn included):

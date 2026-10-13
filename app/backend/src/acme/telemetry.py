@@ -9,6 +9,7 @@ tracing can never break a journey. Behaviour is identical in local mode and on A
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -17,6 +18,7 @@ import socket
 import sys
 import time
 import traceback
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -171,6 +173,29 @@ def span_info(s: Span) -> dict[str, object]:
     }
 
 
+_IDENTITIES: dict[int, dict[str, object]] = {}
+
+
+def process_identity() -> dict[str, object]:
+    """Non-PII identity of this process and its container (#266).
+
+    `proc`: a random id per PID (so forked workers differ even if the module was imported before
+    the fork); `pid`; `container`: a hash of the kernel boot id and the start time of PID 1 (the
+    hostname is `localhost` on Agent Engine, so it cannot tell replicas or restarts apart; a new
+    container or replica gets a new value). Ids only.
+    """
+    pid = os.getpid()
+    if pid not in _IDENTITIES:
+        try:
+            boot = open("/proc/sys/kernel/random/boot_id").read().strip()  # noqa: SIM115
+            started = f"{os.stat('/proc/1').st_ctime_ns}"
+            container = hashlib.sha1(f"{boot}:{started}".encode()).hexdigest()[:8]  # noqa: S324
+        except OSError:
+            container = "na"
+        _IDENTITIES[pid] = {"proc": uuid.uuid4().hex[:8], "pid": pid, "container": container}
+    return dict(_IDENTITIES[pid])
+
+
 class EngineOp:
     """Wrap one engine operation: an owned `acme.engine.op` span, then one `ACME_DIAG` line with
     the trace/span ids, recording and sampled flags (own and incoming), the flush outcome, pid
@@ -189,8 +214,9 @@ class EngineOp:
             self.own = span_info(s)
             yield s
 
-    def log(self, flushed: FlushResult) -> None:
+    def log(self, flushed: FlushResult, **context: object) -> None:
         provider = trace.get_tracer_provider()
+        ident = process_identity()
         diag(
             "op",
             op=self.name,
@@ -205,6 +231,9 @@ class EngineOp:
             span_id=self.own.get("span_id"),
             is_recording=self.own.get("is_recording"),
             sampled=self.own.get("sampled"),
+            proc=ident["proc"],
+            container=ident["container"],
+            **context,
         )
 
 

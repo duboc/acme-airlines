@@ -43,6 +43,8 @@ GOOD_OP = {
     "is_recording": True, "sampled": True, "parent": {"valid": True, "sampled": False},
     "flush_ok": True, "flush_ms": 12.5, "flush_error": None, "pid": 41,
     "instance": "abc123-host", "provider": "TracerProvider", "ts": "2026-01-01T12:00:01+00:00",
+    "proc": "1a2b3c4d", "container": "9f8e7d6c", "scenario": "happy-path", "step": 2,
+    "shared_version": 7, "loaded_version": 6, "db_inode": 123456,
 }  # fmt: skip
 
 
@@ -77,6 +79,8 @@ def test_only_allowlisted_acme_diag_fields_survive(tmp_path):
         "op": "journeys_list", "trace_id": "a" * 32, "span_id": "b" * 16, "is_recording": True,
         "sampled": True, "parent_valid": True, "parent_sampled": False, "flush_ok": True,
         "flush_ms": 12.5, "pid": 41, "instance": "abc123-host", "provider": "TracerProvider",
+        "proc": "1a2b3c4d", "container": "9f8e7d6c", "scenario": "happy-path", "step": 2,
+        "shared_version": 7, "loaded_version": 6, "db_inode": 123456,
     }  # fmt: skip
     assert rows[1]["event"] == "export" and rows[1]["error"] == "ConnectionError"
     assert "note" not in rows[2] and "payload" not in rows[2]
@@ -105,7 +109,8 @@ def test_pii_tracebacks_bearer_tokens_and_container_stderr_never_survive(tmp_pat
     assert set(ops[0]) <= {
         "engine", "event", "severity", "ts", "trace_id", "span_id", "is_recording", "sampled",
         "parent_valid", "parent_sampled", "flush_ok", "flush_ms", "flush_error", "pid",
-        "instance", "provider", "op",
+        "instance", "provider", "op", "proc", "container", "scenario", "step", "shared_version",
+        "loaded_version", "db_inode",
     }  # fmt: skip
     assert "op" not in ops[0] and "trace_id" not in ops[0] and "pid" not in ops[0]
 

@@ -95,7 +95,8 @@ def test_log_lines_hold_only_ids_flags_and_counters(provider, diag_lines):
     (line,) = ops(diag_lines)
     assert set(line) == {
         "event", "ts", "op", "trace_id", "span_id", "is_recording", "sampled", "parent",
-        "flush_ok", "flush_ms", "flush_error", "pid", "instance", "provider",
+        "flush_ok", "flush_ms", "flush_error", "pid", "instance", "provider", "proc", "container",
+        "scenario", "step", "shared_version", "loaded_version", "db_inode",
     }  # fmt: skip
 
 
