@@ -90,6 +90,33 @@ Finding #88 (accept re-checks guardrail after charge and before seat assignment;
 1 race test; disabling the accept-time re-check in `_convert` (#28) fails 2; replacing the
 per-journey lock with a fresh lock fails the duplicate-accept test.
 
+## Coverage and mutation gates (#232)
+
+What CI enforces (and nothing more):
+
+| Gate | Where | Fails when |
+|------|-------|------------|
+| Policy branch coverage | `ci.yml` backend job: `pytest --cov --cov-branch`, then `coverage report --include='src/acme/policy/*' --fail-under=100` | any statement or branch of `acme/policy/` (incl. the guardrail) is not executed by the suite |
+| Overall coverage floor | same run, `fail_under` in `app/backend/pyproject.toml` (94, measured 94.7% on 2026-10-13) | total statement+branch coverage drops below the recorded baseline; raise it when coverage improves |
+| Mutation testing | `.github/workflows/mutation.yml`, nightly 03:17 UTC and on demand, **not** a PR check | a mutant of `acme/policy/` survives, has no test, is suspicious or crashes; survivors are listed in the run summary and the results are uploaded |
+
+Gaps are closed with Given/When/Then tests, never `# pragma: no cover`. Mutation testing uses
+`mutmut` (`[tool.mutmut]` in `pyproject.toml`: mutate `src/acme/policy/*`, run `tests/policy` plus
+the governance policy tests). Locally:
+
+```bash
+cd app/backend
+uv run mutmut run && uv run mutmut results     # list survivors
+uv run mutmut show <mutant>                    # the diff a test must catch
+```
+
+A survivor means a behaviour no test pins (a boundary, a reason string, a metric label). Add a
+test that fails for it; only for a provably equivalent mutant mark the line `# pragma: no mutate`
+with the reason (currently one: the redundant `if tier` guard in `margin_opt.recovery_quote`).
+Timeouts are kept generous (`timeout_constant`, `timeout_multiplier`): with the default limit,
+31 survivors were misreported as "timeout", which mutmut scores as killed. The `mutation_gate.py`
+tests live next to the script under `.github/scripts/`.
+
 ## Fact → test traceability
 
 `test_harness.py` fails if a scenario test is missing from this table (or the table cites a

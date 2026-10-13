@@ -1,0 +1,53 @@
+name: mutation
+
+# Nightly (and on demand) mutation testing of acme/policy (#232). NOT a PR check: a run takes a
+# few minutes and a surviving mutant means a missing test, which is handled as a follow-up.
+# Fake LLM only, no credentials, no network beyond package installs.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation
+  cancel-in-progress: false
+
+jobs:
+  mutmut:
+    name: mutmut
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LLM_MODE: fake
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: app/backend/uv.lock
+      - run: uv sync --frozen
+      - name: Run mutmut on acme/policy
+        run: uv run mutmut run || true # the gate below decides; a failing run must still report
+      - name: Export results
+        if: always()
+        run: |
+          uv run mutmut export-cicd-stats
+          uv run mutmut results > mutants/results.txt
+      - name: Gate and summarize (surviving mutants fail the run and are listed)
+        run: python3 ../../.github/scripts/mutation_gate.py mutants/mutmut-cicd-stats.json mutants/results.txt "$GITHUB_STEP_SUMMARY"
+      - name: Upload mutation results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutmut-results
+          path: |
+            app/backend/mutants/results.txt
+            app/backend/mutants/mutmut-cicd-stats.json
+          retention-days: 14

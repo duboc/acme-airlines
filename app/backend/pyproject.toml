@@ -27,6 +27,7 @@ acme-demo = "acme.demo.supervisor:main"
 dev = [
     "httpx>=0.28.1",
     "hypothesis>=6.168.5",
+    "mutmut>=3.8.0",
     "opentelemetry-sdk>=1.27",
     "pytest>=8",
     "pytest-asyncio>=0.24",
@@ -43,6 +44,7 @@ build-backend = "hatchling.build"
 packages = ["src/acme"]
 
 [tool.ruff]
+extend-exclude = ["mutants"]  # mutmut's working copy (#232)
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
@@ -59,3 +61,23 @@ addopts = "-m 'not live'"
 markers = [
     "live: calls live external services (e.g. Vertex AI); deselected by default and in CI",
 ]
+
+# Mutation testing of the policy code (#232): `uv run mutmut run`, see docs/product/test-strategy.md.
+[tool.mutmut]
+source_paths = ["src"]
+only_mutate = ["src/acme/policy/*"]
+timeout_constant = 60.0
+timeout_multiplier = 5.0
+pytest_add_cli_args_test_selection = ["tests/policy", "tests/governance/test_policy_properties.py", "tests/governance/test_claims_vs_inventory.py", "tests/governance/test_state.py"]
+
+# Coverage gates (#232). CI runs `pytest --cov --cov-branch`, then requires 100% branch coverage of
+# src/acme/policy (coverage report --include ... --fail-under=100) and this overall floor.
+# Baseline measured 94.7% (statements+branches) on 2026-10-13; raise it when coverage improves.
+[tool.coverage.run]
+source = ["acme"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 94
+show_missing = true
+skip_covered = true

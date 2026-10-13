@@ -39,7 +39,10 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check
       - run: uv run ruff format --check
-      - run: uv run pytest -m "not live"
+      # #232: coverage is measured; below the overall floor (pyproject fail_under) the job fails.
+      - run: uv run pytest -m "not live" --cov --cov-branch
+      - name: Policy code needs 100% branch coverage
+        run: uv run coverage report --include='src/acme/policy/*' --fail-under=100
 
   # #185: the engines crashed at container start-up (no top-level `acme` in the extra_packages
   # tarball). Stage the deploy artifacts exactly as the SDK uploads them, then load them in a
