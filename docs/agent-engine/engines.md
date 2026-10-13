@@ -314,3 +314,18 @@ recorded and exported whatever the platform decided (same trace id, so the platf
 It is a demo with a handful of requests, so volume is not a concern. `ACME_TRACE_SAMPLER=parent`
 restores the platform's decision. See [ADR 0101](../decisions/0101-always-on-tracing-sampler.md)
 for the architecture decision record.
+
+restores the platform's decision.
+
+## Log redaction (#233)
+
+`acme.logging_setup.configure_logging` installs a redaction backstop on the log record factory, so it
+covers every handler. It masks, in the message **and in tracebacks and stack info** (the formatted
+exception, including the `__cause__`/`__context__` chain, replaces `exc_info`: exception messages carry
+tool payloads on exactly the error paths): the fixture passengers' literals plus patterns for passengers
+that are **not** in the fixture: emails, E.164 phone numbers, PNR shape (6 upper-case letters/digits
+with at least one of each, excluding flight numbers such as `AC1234`), passenger ids (`P-...`) and
+loyalty member ids (`FFP-...`). Names of non-fixture passengers cannot be matched by a pattern, so
+passenger free text must still never be logged at all: the operator timeline (SSE `passenger_message`
+events) carries it to the console behind IAP only, and a test asserts it never appears in any log
+record. `acme.diagnostics.scrub` (engine start-up errors) uses the same `redact`.
