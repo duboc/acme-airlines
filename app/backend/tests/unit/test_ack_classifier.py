@@ -80,3 +80,46 @@ def test_vertex_valid_kinds():
     assert parse_response(json.dumps({"kind": "acknowledge"}), "t") == Acknowledge()
     r = parse_response(json.dumps({"kind": "departure_after", "time": "10:00"}), "t")
     assert r == DepartureAfter(time=time(10, 0))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '```json\n{"kind": "acknowledge"}\n```',
+        '```\n{"kind":"acknowledge"}\n```',
+        '{"kind": "Acknowledge"}',
+        '{"kind": "ACKNOWLEDGE", "time": null}',
+        'Here is the result:\n{"kind": "acknowledge"}\n',
+        '  \n{"kind": "acknowledge"}  ',
+        '[{"kind": "acknowledge"}]',
+    ],
+)
+def test_real_gemini_shapes_of_an_acknowledgement_are_recognised(raw):  # #266
+    assert parse_response(raw, "Perfect, thanks!") == Acknowledge()
+
+
+def test_fenced_departure_after_is_recognised():
+    raw = '```json\n{"kind": "departure_after", "time": "10:00"}\n```'
+    assert parse_response(raw, "x") == DepartureAfter(time=time(10, 0))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "```json\n```",
+        "acknowledge",
+        '{"kind": "other"}',
+        '{"kind": "acknowledged"}',
+        '{"kind": "not acknowledge"}',
+        '{"kind": ["acknowledge", "other"]}',
+        "[]",
+        "{}",
+        '{"kind": "departure_after"}',
+        '{"kind": "departure_after", "time": "soon"}',
+        '{"kind": "acknowledge"',
+        "I cannot help with that.",
+    ],
+)
+def test_unparseable_or_other_output_stays_other(raw):
+    assert parse_response(raw, "No thanks") == Other(text="No thanks")
