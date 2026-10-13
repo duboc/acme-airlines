@@ -23,6 +23,11 @@ DEFAULT_PRESETS = ("happy-path", "declines-upgrade", "unsatisfiable-request", "s
 REQUIRED_SPANS = ("acme.customer.specialist.", "acme.guardrail.decision", "acme.a2a.",
                   "acme.sales.pitch")  # fmt: skip
 POLL_GROWTH, POLL_MAX = 1.5, 45.0  # seconds: 15 -> 22.5 -> 33.75 -> 45 ...
+# Cloud Trace v1 `filter`: `span:PREFIX` keeps traces with a span whose name starts with PREFIX
+# (`+span:NAME` would require an exact name). Terms are ANDed. Syntax:
+# https://cloud.google.com/trace/docs/trace-filters
+SPAN_FILTER_PREFIX = "acme."
+PAGE_SIZE, MAX_PAGES = 100, 10  # worst case 1000 traces per listing, then TraceListTruncated
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 EXTRA_PII = ("Can I leave after 10am?", "Perfect, thanks!")
 
@@ -192,7 +197,10 @@ async def run_proof(
         delay = min(delay * POLL_GROWTH, POLL_MAX)
 
     settled = list(pool.values())
-    scanned = f"{len(settled)} traces scanned in the run window; span names seen: " \
+    pages = getattr(traces, "pages_fetched", None)
+    capped = "yes" if getattr(traces, "cap_hit", False) else "no"
+    paging = "" if pages is None else f"; {pages} pages fetched, page cap hit: {capped}"
+    scanned = f"{len(settled)} traces scanned in the run window{paging}; span names seen: " \
               f"{span_kinds_seen(settled)}"  # fmt: skip
     report.failures += [f"{sid} turn {turn}: no Customer step trace in Cloud Trace after settle "
                         f"({scanned})" for sid, turn in pending]  # fmt: skip
@@ -201,6 +209,10 @@ async def run_proof(
     report.failures += pii_failures(settled, pii)
     report.rows.sort(key=lambda r: (order[r.scenario], r.turn))
     return report
+
+
+class TraceListTruncated(RuntimeError):
+    """The listing hit the page cap while more pages remained: never silently truncated."""
 
 
 class TraceQueryFailed(RuntimeError):
@@ -226,6 +238,8 @@ class CloudTraceV1:
         max_total: float = 90.0,
         base: float = 2.0,
         cap: float = 30.0,
+        span_prefix: str = SPAN_FILTER_PREFIX,
+        max_pages: int = MAX_PAGES,
     ) -> None:
         if session is None:
             import google.auth
@@ -238,6 +252,8 @@ class CloudTraceV1:
         self._session = session
         self.project = project
         self._sleep, self._jitter = sleep, jitter
+        self._span_prefix, self._max_pages = span_prefix, max_pages
+        self.pages_fetched, self.cap_hit = 0, False  # cumulative, for failure messages
         self._max_attempts, self._max_total, self._base, self._cap = (
             max_attempts, max_total, base, cap,
         )  # fmt: skip
@@ -281,15 +297,24 @@ class CloudTraceV1:
 
     def _list(self, start: datetime, end: datetime) -> list[Trace]:
         url = f"https://cloudtrace.googleapis.com/v1/projects/{self.project}/traces"
-        params: dict[str, Any] = {"view": "COMPLETE", "pageSize": 100,
+        params: dict[str, Any] = {"view": "COMPLETE", "pageSize": PAGE_SIZE,
                                   "startTime": start.isoformat().replace("+00:00", "Z"),
                                   "endTime": end.isoformat().replace("+00:00", "Z")}  # fmt: skip
+        if self._span_prefix:  # server-side: unrelated hub/demo traffic cannot crowd out ours
+            params["filter"] = f"span:{self._span_prefix}"
         out: list[Trace] = []
-        while True:
+        for _page in range(self._max_pages):
             body = self._get(url, params).json()
+            self.pages_fetched += 1
             for t in body.get("traces", []):
                 spans = tuple(Span(s["name"], dict(s.get("labels", {}))) for s in t["spans"])
                 out.append(Trace(t["traceId"], spans))
             if not body.get("nextPageToken"):
                 return out
             params["pageToken"] = body["nextPageToken"]
+        self.cap_hit = True
+        raise TraceListTruncated(
+            f"Cloud Trace listing still had more pages after {self._max_pages} pages "
+            f"({len(out)} traces) for the window {params['startTime']}..{params['endTime']}; "
+            "narrow the window or the filter instead of reading a truncated set"
+        )
