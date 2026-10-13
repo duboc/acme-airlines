@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+import traceback
 from functools import lru_cache
 
 NOISY = (
@@ -21,6 +22,15 @@ NOISY = (
 MASK = "[redacted]"
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PHONE = re.compile(r"\+\d[\d\s().-]{7,}\d")
+# Passengers that are NOT in the fixture (#233): shapes, not literals.
+_PAX_ID = re.compile(r"\bP-[A-Za-z0-9]{2,}\b")  # passenger ids: P-MARIANA, P-JOANA
+_MEMBER = re.compile(r"\bFFP-\d{3,}\b")  # loyalty member ids
+# PNR: 6 upper-case letters/digits with at least one of each, but not a flight number (two
+# letters + 3-4 digits: AC1234), which is not personal data.
+_PNR = re.compile(
+    r"(?<![A-Za-z0-9])(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])(?![A-Z]{2}\d{3,4}(?![A-Za-z0-9]))"
+    r"[A-Z0-9]{6}(?![A-Za-z0-9])"
+)
 
 
 @lru_cache(maxsize=1)
@@ -45,7 +55,24 @@ def redact(text: str) -> str:
     literals = _literals()
     if literals:
         text = literals.sub(MASK, text)
-    return _PHONE.sub(MASK, _EMAIL.sub(MASK, text))
+    for pattern in (_EMAIL, _PHONE, _PAX_ID, _MEMBER, _PNR):
+        text = pattern.sub(MASK, text)
+    return text
+
+
+def _redact_error_paths(record: logging.LogRecord) -> None:
+    """The traceback and stack are formatted by the handler, after the message was redacted, so
+    they must be redacted here (#233): exception messages carry tool payloads on exactly the error
+    paths. The formatted traceback (the whole `__cause__`/`__context__` chain) replaces
+    `exc_info`; handlers print `exc_text`."""
+    if record.exc_info and record.exc_info[0] is not None:
+        formatted = "".join(traceback.format_exception(*record.exc_info)).rstrip("\n")
+        record.exc_text = redact(formatted)
+        record.exc_info = None
+    elif record.exc_text:
+        record.exc_text = redact(record.exc_text)
+    if record.stack_info:
+        record.stack_info = redact(record.stack_info)
 
 
 _installed = False
@@ -71,6 +98,7 @@ def configure_logging() -> None:
                 return record
             record.msg = redact(record.getMessage())
             record.args = None
+            _redact_error_paths(record)
         except Exception:  # noqa: BLE001 (logging must never raise)
             pass
         return record
