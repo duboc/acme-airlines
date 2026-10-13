@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any, Protocol
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from acme.api.app import (
     ActionResult,
@@ -43,6 +44,7 @@ ASYNC_OPS = {
     "whatsapp_action",
 }  # registered with mode "async"
 POLL_SECONDS = 0.5
+log = logging.getLogger(__name__)
 
 
 class EngineConfigError(ValueError):
@@ -54,25 +56,45 @@ class EngineHandle(Protocol):
     def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]: ...
 
 
-class _AdcEngine:
-    """A deployed engine, queried with ADC. Never constructed in CI."""
+class EngineUnavailable(RuntimeError):
+    """An engine could not be reached or resolved (credentials, network); no detail is leaked."""
 
-    def __init__(self, resource_name: str) -> None:
+
+class _AdcEngine:
+    """A deployed engine, queried with ADC. Lazy: nothing is resolved until the first call,
+    so the demo starts without credentials (#199). Never constructed in CI."""
+
+    def __init__(self, resource: str | Callable[[], str]) -> None:
+        self._resource = resource
+        self._engine: Any = None
+
+    def _connect(self, resource_name: str) -> Any:
         import vertexai
         from vertexai import agent_engines
 
         _, project, _, location, *_ = resource_name.split("/")  # regional resource location
         vertexai.init(project=project, location=location)
-        self._engine = agent_engines.get(resource_name)
+        return agent_engines.get(resource_name)
+
+    async def _get(self) -> Any:
+        if self._engine is None:
+            name = self._resource() if callable(self._resource) else self._resource
+            try:
+                self._engine = await asyncio.to_thread(self._connect, name)
+            except Exception as e:  # not cached: the next request retries
+                log.warning("engine connect failed: %s", type(e).__name__)
+                raise EngineUnavailable("The Agent Engine is unavailable right now.") from e
+        return self._engine
 
     async def call(self, op: str, **kwargs: Any) -> Any:
-        method = getattr(self._engine, op)
+        method = getattr(await self._get(), op)
         if op in ASYNC_OPS:
             return await method(**kwargs)
         return await asyncio.to_thread(method, **kwargs)
 
-    def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
-        return self._engine.async_stream_query(**kwargs)
+    async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        async for item in (await self._get()).async_stream_query(**kwargs):
+            yield item
 
 
 def _resource(env: Mapping[str, str], key: str) -> str:
@@ -106,8 +128,14 @@ class EngineBackend:
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> EngineBackend:
         env = os.environ if env is None else env
-        customer, sales = _resource(env, ENV_CUSTOMER), _resource(env, ENV_SALES)
-        return cls(_AdcEngine(customer), _AdcEngine(sales))
+
+        # Lazy (#199): names are validated and engines resolved on the first request, so a
+        # missing ADC or a bad name is a clear 503 then, not a startup crash.
+        def name(key: str) -> str:
+            _resource(env, ENV_CUSTOMER), _resource(env, ENV_SALES)  # report any bad name first
+            return env[key]
+
+        return cls(_AdcEngine(lambda: name(ENV_CUSTOMER)), _AdcEngine(lambda: name(ENV_SALES)))
 
     async def scenarios_list(self) -> list[dict]:
         return await self._customer.call("scenarios_list")
@@ -155,6 +183,14 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     backend = backend or EngineBackend.from_env()
     app = FastAPI(title="ACME Airlines runtime API (agent-engine mode)", version="0.1.0")
     app.state.engine_backend = backend
+
+    @app.exception_handler(EngineConfigError)
+    async def config_error(_: Request, e: EngineConfigError) -> JSONResponse:
+        return JSONResponse({"detail": str(e)}, status_code=503)
+
+    @app.exception_handler(EngineUnavailable)
+    async def unavailable(_: Request, e: EngineUnavailable) -> JSONResponse:
+        return JSONResponse({"detail": str(e)}, status_code=503)
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

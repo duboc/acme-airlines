@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from acme.api.app import create_app
-from acme.api.engine_backend import EngineBackend, EngineConfigError
+from acme.api.engine_backend import EngineBackend
 from acme.demo.supervisor import child_names
 from acme.engines.customer import build_customer_engine_app
 from acme.engines.sales import build_sales_engine_app
@@ -159,14 +159,46 @@ GOOD = "projects/acme-airlines-factory/locations/us-central1/reasoningEngines/1"
         {"AGENT_ENGINE_CUSTOMER": "x", "AGENT_ENGINE_SALES": "y"},
     ],
 )
-def test_agent_engine_mode_fails_fast_without_resources(monkeypatch, env):
+async def test_bad_engine_config_starts_and_fails_at_request_time(monkeypatch, env):
+    """#199: nothing resolves at startup; a bad config is a clear 503 on the first engine call."""
     monkeypatch.setenv("ENGINE_MODE", "agent-engine")
     for k in ("AGENT_ENGINE_CUSTOMER", "AGENT_ENGINE_SALES"):
         monkeypatch.delenv(k, raising=False)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
-    with pytest.raises(EngineConfigError, match="AGENT_ENGINE_"):
-        create_app()
+    async with client(create_app()) as c:
+        assert (await c.get("/healthz")).json()["engine"] == "agent-engine"
+        r = await c.get("/scenarios")
+    assert r.status_code == 503
+    assert "AGENT_ENGINE_" in r.json()["detail"]
+
+
+async def test_engines_are_resolved_lazily_without_adc(monkeypatch):
+    """#199: valid names, no ADC. Startup must not touch Vertex; the first call fails clearly."""
+    import sys
+
+    monkeypatch.setenv("ENGINE_MODE", "agent-engine")
+    monkeypatch.setenv("AGENT_ENGINE_CUSTOMER", GOOD)
+    monkeypatch.setenv("AGENT_ENGINE_SALES", GOOD)
+    monkeypatch.delitem(sys.modules, "vertexai", raising=False)
+    app = create_app()
+    assert "vertexai" not in sys.modules
+
+    import acme.api.engine_backend as eb
+
+    calls = []
+
+    def no_adc(self, name):
+        calls.append(name)
+        raise RuntimeError("DefaultCredentialsError: no ADC")
+
+    monkeypatch.setattr(eb._AdcEngine, "_connect", no_adc)
+    async with client(app) as c:
+        r = await c.get("/scenarios")
+        assert r.status_code == 503 and "unavailable" in r.json()["detail"]
+        assert "ADC" not in r.json()["detail"]
+        await c.get("/scenarios")
+    assert len(calls) == 2  # failures are not cached: a later request retries
 
 
 def test_valid_names_are_accepted_by_project_id_or_number(monkeypatch):

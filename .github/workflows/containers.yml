@@ -138,13 +138,30 @@ jobs:
           ! docker logs demo 2>&1 | grep -E 'customer=[0-9a-f]{48}|sales=[0-9a-f]{48}'
           docker rm -f demo
 
+      - name: Demo image in ENGINE_MODE=agent-engine without credentials (smoke, #199)
+        run: |
+          docker run -d --name demo-ae -p 127.0.0.1:8091:8080 \
+            -e ENGINE_MODE=agent-engine -e AGENT_ENGINE_CUSTOMER=dummy -e AGENT_ENGINE_SALES=dummy \
+            acme-demo:local
+          ok=
+          for i in $(seq 1 10); do
+            curl -fsS http://127.0.0.1:8091/api/healthz > /tmp/ae-health.json && ok=1 && break; sleep 1
+          done
+          test -n "$ok" || { echo "::error::agent-engine mode did not listen within 10s"; exit 1; }
+          test "$(jq -r '.engine' /tmp/ae-health.json)" = "agent-engine"
+          # a bad/absent engine surfaces as a clear 503 at request time, never a startup crash
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8091/api/scenarios)" = "503"
+          docker rm -f demo-ae
+
       - name: Logs on failure
         if: failure()
         run: $COMPOSE logs --no-color
 
       - name: Demo logs on failure
         if: failure()
-        run: docker logs demo 2>&1 || true
+        run: |
+          docker logs demo 2>&1 || true
+          docker logs demo-ae 2>&1 || true
 
       - name: Tear down
         if: always()
