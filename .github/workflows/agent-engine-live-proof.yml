@@ -48,7 +48,7 @@ jobs:
       - name: Publish the trace table
         if: always()
         run: cat "${{ runner.temp }}/trace-table.md" >> "$GITHUB_STEP_SUMMARY" || true
-      - name: Upload the trace inventory (no PII: acme.* values scrubbed)
+      - name: "Upload the trace inventory (no PII, acme.* values scrubbed)"
         if: always()
         uses: actions/upload-artifact@v4
         with:
