@@ -5,7 +5,10 @@
 `infra/verify.sh <check>` prints `PASS`/`FAIL` with a reason. `all` runs the
 platform checks; `e2e` runs the live product path. Parsing logic is
 unit-tested in `infra/tests/test_verify.sh`. Every check was seen failing
-(RED) before its fix.
+(RED) before its fix. For the full product and factory evaluation pyramid
+(5-layer governance suite, Hypothesis policy oracle, TOCTOU race injection,
+and live Vertex AI Agent Engine acceptance proof), see
+[10-eval-methodology.md](10-eval-methodology.md).
 
 | Check | Asserts |
 |---|---|
