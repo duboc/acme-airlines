@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from acme import metrics
 from acme.domain.journey import DisruptionStatus, JourneyState
 from acme.domain.models import CabinInventory, Offer
 from acme.policy.margin_opt import recovery_quote
@@ -130,6 +131,7 @@ def evaluate_traced(
         acme__step=step,
     ) as s:
         decision = evaluate(journey, offer, inventory)
+        metrics.guardrail_decision(decision.approved, decision.reasons, step)
         set_attributes(
             s,
             acme__guardrail__decision="approve" if decision.approved else "reject",

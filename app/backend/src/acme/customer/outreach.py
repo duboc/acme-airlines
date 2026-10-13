@@ -11,6 +11,7 @@ import uuid
 from datetime import time
 from typing import TYPE_CHECKING, Any
 
+from acme import metrics
 from acme.customer.quiet_hours import can_send_proactive
 from acme.domain.fixtures import GRU
 from acme.domain.journey import DisruptionStatus, PassengerRequest
@@ -78,7 +79,18 @@ async def notify_resolution(rt: CustomerRuntime, rec: JourneyRecord) -> None:
             raise ValueError("missing resolution fact")
     except Exception:  # noqa: BLE001 (any LLM failure falls back to the template)
         text, source = fallback, "template"
+        metrics.template_fallback("resolution")
     msg = await rt.send(rec.passenger_id, text, attachments=["hotel_voucher", "meal_voucher"])
+    resolved_at = max(
+        (
+            e.timestamp
+            for e in rec.state.timeline
+            if e.type == "status_changed" and e.payload.get("to") == DisruptionStatus.RESOLVED
+        ),
+        default=None,
+    )
+    if resolved_at is not None:
+        metrics.notification_latency((rt.clock.now() - resolved_at).total_seconds())
     rec.state.append_event(
         "customer_agent", "notification_sent", {"message_id": msg.message_id, "source": source}
     )

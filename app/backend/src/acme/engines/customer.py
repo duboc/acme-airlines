@@ -227,10 +227,12 @@ class CustomerEngineApp:
         from acme.customer.runtime import CustomerRuntime
         from acme.customer.skills import CustomerSkills
         from acme.logging_setup import configure_logging
+        from acme.metrics import configure_cloud_monitoring
         from acme.telemetry import configure_cloud_trace
 
         configure_logging()  # no passenger PII in Cloud Logging (#170)
         configure_cloud_trace(DISPLAY_NAME)
+        configure_cloud_monitoring(DISPLAY_NAME)
         self.runtime = CustomerRuntime()  # in-process simulators, LlmPort from LLM_MODE
         self.skills = CustomerSkills(self.runtime)
         self._sessions = InMemorySessionService()
