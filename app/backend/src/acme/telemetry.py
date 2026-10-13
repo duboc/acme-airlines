@@ -27,6 +27,8 @@ from datetime import UTC, datetime
 from opentelemetry import trace
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
+from acme.replay import is_replaying
+
 tracer = trace.get_tracer("acme")
 
 ALLOWED_ATTRIBUTES = frozenset(
@@ -102,6 +104,9 @@ def span(name: str, *, kind: SpanKind = SpanKind.INTERNAL, **attrs: object) -> I
     """Start a span. Keyword `__` stands for `.`: `span("x", acme__guardrail__decision="approve")`
     (or pass dotted keys via `**{"acme.flight": "AC1252"}`)."""
     clean = _clean(attrs)
+    if is_replaying():  # a scenario rebuild recreates state already reported elsewhere (#266)
+        yield trace.INVALID_SPAN
+        return
     # The SDK's own exception recording is off: it would export `str(exc)` and the traceback
     # verbatim (tool payloads, passenger PII), bypassing the log redaction (#258).
     with tracer.start_as_current_span(

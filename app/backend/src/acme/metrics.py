@@ -13,6 +13,7 @@ import os
 
 from opentelemetry import metrics
 
+from acme.replay import is_replaying
 from acme.telemetry import is_safe_value
 
 _meter = metrics.get_meter("acme")
@@ -37,25 +38,35 @@ def _v(value: object) -> str:
 
 
 def guardrail_decision(approved: bool, reasons: list[str], step: str) -> None:
+    if is_replaying():  # a scenario rebuild must not double count (#266)
+        return
     outcome = "approve" if approved else "reject"
     for rule in reasons if not approved else ["all"]:
         _guardrail.add(1, {"rule": _v(rule), "outcome": outcome, "step": _v(step)})
 
 
 def offer(status: str) -> None:
+    if is_replaying():  # a scenario rebuild must not double count (#266)
+        return
     _offers.add(1, {"status": _v(status)})
 
 
 def template_fallback(surface: str) -> None:
+    if is_replaying():  # a scenario rebuild must not double count (#266)
+        return
     _fallbacks.add(1, {"surface": _v(surface)})
 
 
 def needs_human(payload: dict[str, object]) -> None:
+    if is_replaying():  # a scenario rebuild must not double count (#266)
+        return
     who = payload.get("specialist") or str(payload.get("step", "unknown")).split(":")[0]
     _needs_human.add(1, {"specialist": _v(who)})
 
 
 def notification_latency(seconds: float) -> None:
+    if is_replaying():  # a scenario rebuild must not double count (#266)
+        return
     _notify_latency.record(max(seconds, 0.0))
 
 
