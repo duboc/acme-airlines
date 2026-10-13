@@ -9,7 +9,7 @@ diagnose access problems.
 
 | Service | IAP | Who reaches it | Notes |
 |---|---|---|---|
-| `scion-hub-acme-iap-proxy` | on | `domain:google.com`, `domain:duboc.altostrat.com` | Reverse proxy to the hub VM (`:8080`). The hub trusts IAP's signed header (`auth.mode: proxy`) |
+| `scion-hub-acme-iap-proxy` | on | `domain:google.com`, `domain:duboc.altostrat.com`, `domain:zup.com.br` | Reverse proxy to the hub VM (`:8080`). The hub trusts IAP's signed header (`auth.mode: proxy`) |
 | `acme-observatory` | on | same domains | Dashboard |
 | `acme-irrops-demo` | on | same domains | Product demo |
 | `acme-budget-guard` | **off** (by design) | only Pub/Sub, via OIDC push, as `roles/run.invoker` for the guard SA | Machine-to-machine; IAP would block Pub/Sub |
@@ -24,22 +24,24 @@ the VM. The budget guard and the Observatory collector reach the hub over
 operator CLI runs on the VM through IAP **SSH tunnelling**, which is a
 different IAP product (TCP forwarding, `roles/iap.tunnelResourceAccessor`).
 
-## The access layers (all must allow a user)
+## The 5 access layers (all must allow a user)
 
 ```mermaid
 flowchart LR
   u["User browser"] --> o["1 · OAuth client: Google-managed = org users only; custom = External"]
-  o --> a["2 · IAP policy on the service: roles/iap.httpsResourceAccessor (domain:/user:/group:)"]
+  o --> a["2 · IAP policy on EACH service: roles/iap.httpsResourceAccessor (domain:/user:/group:)"]
   a --> i["3 · Cloud Run invoker: IAP service agent has roles/run.invoker"]
-  i --> app["4 · App's own policy (hub: auth.mode proxy + user_access_mode / authorized_domains / default_user_role)"]
+  i --> app["4 · Hub sign-in policy: server.auth.authorized_domains + default_user_role"]
+  app --> proj["5 · Hub project membership: project-scoped role binding on duboc-acme-airlines"]
 ```
 
 | Layer | Fails as | Configure with |
 |---|---|---|
 | 1. OAuth client | IAP shows **"You don't have access"** to users outside the project's org, *even when layer 2 grants them* | Custom OAuth client: `infra/55-iap-oauth-client.sh` |
-| 2. IAP policy | **"You don't have access"** | `gcloud iap web add-iam-policy-binding --resource-type=cloud-run --service=S --region=R --member=domain:D --role=roles/iap.httpsResourceAccessor` (`infra/50-web-access.sh`) |
+| 2. IAP policy (per service) | **"You don't have access"** on that specific Cloud Run URL (`scion-hub-acme-iap-proxy`, `acme-observatory`, or `acme-irrops-demo`) | `infra/50-web-access.sh` (loops over all 3 services and grants `domain:<d>` for every entry in `WEB_DOMAINS`) |
 | 3. Invoker | 403 from Cloud Run after login | `gcloud run services add-iam-policy-binding S --member=serviceAccount:service-<num>@gcp-sa-iap.iam.gserviceaccount.com --role=roles/run.invoker` |
-| 4. App policy | The app's own "not authorized" or role limits | Hub: the marked block under `server.auth` in `settings.yaml` (`infra/50-web-access.sh`) |
+| 4. Hub sign-in policy | IAP succeeds, then Hub returns 403 and logs `WARN Proxy auth: user not authorized` (`email=...`) in `journalctl -u scion-hub` | `infra/50-web-access.sh` (updates `server.auth.authorized_domains` in `/home/scion/.scion/settings.yaml` and restarts `scion-hub`) |
+| 5. Hub project membership | User logs into the Hub UI (`viewer` or `member`), but cannot see inside the `duboc-acme-airlines` project | System-scoped `viewer`/`member` roles intentionally exclude cross-project visibility (`project.read`/`agent.read`); grant project access under **Project → Members** in the Hub UI |
 
 ## Learning 1: the Google-managed OAuth client admits only your organization
 
@@ -116,12 +118,45 @@ sign-in policy:
 server:
   auth:
     user_access_mode: domain_restricted        # defence in depth if IAP grants widen
-    authorized_domains: ["google.com", "duboc.altostrat.com"]
+    authorized_domains: ["google.com", "duboc.altostrat.com", "zup.com.br"]
     default_user_role: viewer                  # DEFAULT_USER_ROLE; viewers can't start agents
 ```
 
 `admin_emails` users are always admins. Changing `default_user_role` affects
 new users only.
+
+## Checklist: adding a new domain (e.g. `zup.com.br`) or external user
+
+Adding `domain:<d>` in the GCP Console on `scion-hub-acme-iap-proxy` alone is
+**not enough**: IAP will let the user through, and Scion Hub will immediately
+reject them (`Proxy auth: user not authorized`), while `acme-observatory` and
+`acme-irrops-demo` will still block them at IAP.
+
+1. **Google identity prerequisite:** the domain (`domain:zup.com.br`) must be a
+   Google Workspace / Cloud Identity domain (or individual users must have a
+   Google Account for their email) so Google Sign-In and IAM `domain:`
+   bindings recognize it.
+2. **Add the domain to `WEB_DOMAINS`** in [`infra/factory.env`](../../infra/factory.env):
+   ```bash
+   WEB_DOMAINS="google.com duboc.altostrat.com zup.com.br"
+   ```
+3. **Run [`infra/50-web-access.sh`](../../infra/50-web-access.sh):**
+   - Grants `roles/iap.httpsResourceAccessor` for every domain in `WEB_DOMAINS`
+     across **all three** IAP-protected Cloud Run services
+     (`scion-hub-acme-iap-proxy`, `acme-observatory`, `acme-irrops-demo`).
+   - Updates `server.auth.authorized_domains` in `/home/scion/.scion/settings.yaml`,
+     ensures the `access` row in `hub.db` (`hub_settings`) has `origin='seeded'`
+     (so a prior UI edit cannot shadow `settings.yaml`), and restarts `scion-hub`.
+4. **Verify all services and Hub settings:**
+   ```bash
+   bash infra/verify.sh webaccess
+   ```
+5. **(For Scion Hub project visibility):** System-scoped `viewer` and `member`
+   roles intentionally do not grant cross-project read access
+   (`project.read`/`agent.read`). Once the user signs in to the Hub once, add
+   them under **Project (`duboc-acme-airlines`) → Members** in the Hub UI if
+   they need to inspect agents, lineage, or messages inside that project
+   (the Observatory dashboard and IRROPS Demo need no extra step).
 
 ## Learning 4: re-deploys reset hub settings
 

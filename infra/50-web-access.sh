@@ -23,15 +23,22 @@ SETTINGS=/home/scion/.scion/settings.yaml
 BEGIN="# BEGIN acme-web-access (infra/50-web-access.sh)"
 END="# END acme-web-access"
 
-echo "==> IAP: grant roles/iap.httpsResourceAccessor on ${PROXY_SVC} to: ${WEB_DOMAINS}"
+echo "==> IAP: grant roles/iap.httpsResourceAccessor on all deployed IAP Cloud Run services to: ${WEB_DOMAINS}"
 read -ra DOMS <<<"${WEB_DOMAINS}"
-for d in "${DOMS[@]}"; do
-  gcloud iap web add-iam-policy-binding --project="${PROJECT_ID}" \
-    --resource-type=cloud-run --service="${PROXY_SVC}" --region="${REGION}" \
-    --member="domain:${d}" --role=roles/iap.httpsResourceAccessor --condition=None --format=none
+for svc in "${PROXY_SVC}" "${FACTORY_PREFIX}-observatory" "${FACTORY_PREFIX}-irrops-demo"; do
+  if ! gcloud run services describe "${svc}" --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+    echo "  (${svc} not deployed yet — skipping)"
+    continue
+  fi
+  echo "  -> ${svc}"
+  for d in "${DOMS[@]}"; do
+    gcloud iap web add-iam-policy-binding --project="${PROJECT_ID}" \
+      --resource-type=cloud-run --service="${svc}" --region="${REGION}" \
+      --member="domain:${d}" --role=roles/iap.httpsResourceAccessor --condition=None --format=none
+  done
+  gcloud iap web get-iam-policy --project="${PROJECT_ID}" --resource-type=cloud-run \
+    --service="${svc}" --region="${REGION}" --format='value(bindings)'
 done
-gcloud iap web get-iam-policy --project="${PROJECT_ID}" --resource-type=cloud-run \
-  --service="${PROXY_SVC}" --region="${REGION}" --format='value(bindings)'
 
 read -ra DOMS <<<"${WEB_DOMAINS}"
 domains_yaml="$(printf '"%s", ' "${DOMS[@]}")"; domains_yaml="[${domains_yaml%, }]"
@@ -50,6 +57,8 @@ vm_ssh "
     default_user_role: ${DEFAULT_USER_ROLE}\\
     ${END}' ${SETTINGS}
   sudo sed -n '/^  auth:/,/^  [a-z_]*:\$/p' ${SETTINGS} | head -12
+  # Ensure hub_settings 'access' section stays origin='seeded' so settings.yaml always wins on restart
+  sudo sqlite3 /home/scion/.scion/hub.db \"UPDATE hub_settings SET origin='seeded', updated_by='seed' WHERE section='access';\" 2>/dev/null || true
   sudo systemctl restart scion-hub
   for i in \$(seq 1 30); do curl -sf http://localhost:8080/healthz >/dev/null && break; sleep 2; done
   curl -sf http://localhost:8080/healthz >/dev/null && echo 'hub healthy'
