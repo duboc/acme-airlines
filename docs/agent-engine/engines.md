@@ -225,8 +225,8 @@ container, not one process, so in-memory scenario/journey state is not shared be
   same kind of lock around the whole tick, so processes never both propose for one journey.
 - **`max_instances` must be 1 on both engines** (state is on one container's disk). The deploy pins
   `min_instances=max_instances=1` for both, `acme.engines.deploy.verify_started` fails the job unless
-  every engine reports `max_instances == 1` (unreadable also fails), and `infra/verify.sh engines`
-  asserts `maxInstances == 1`.
+  every engine reports `max_instances == 1` (unreadable also fails). The operator-owned
+  `infra/verify.sh engines` should assert `maxInstances == 1` too (requested on #200).
 - Tests: two workers alternating through scenario 1-5; four real OS processes tapping Accept at once
   (one charge, one 2A, one seat release: #88 across processes); four processes polling at 22:09
   (one notification: #97 across processes); `engine-smoke` runs two simulated workers over one state
