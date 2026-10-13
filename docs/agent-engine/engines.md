@@ -231,3 +231,28 @@ container, not one process, so in-memory scenario/journey state is not shared be
   (one charge, one 2A, one seat release: #88 across processes); four processes polling at 22:09
   (one notification: #97 across processes); `engine-smoke` runs two simulated workers over one state
   file in a clean venv.
+
+## Trace export and span attributes (#215)
+
+The live proof saw no `acme.a2a.*` spans and no `acme.scenario` on some Customer step traces (turn 1
+of most scenarios, a few later turns), although the structural parity was 100%. The spans were
+created (offline, with the real entrypoints, they are exported); the likely cause is export timing:
+a `BatchSpanProcessor` exports on a timer, Agent Engine runs several processes per container and can
+throttle a process between requests, so the spans of the last operation of a burst stay in that
+process's buffer. Fixes:
+
+- **Every engine operation flushes the tracer provider before returning** (`acme.telemetry.flush`,
+  bounded 5 s, never raises): the Customer operations (`@shared` wrapper) and the Sales
+  `async_stream_query`. Regression tests use a batch processor whose timer never fires.
+- **Each scenario turn runs inside a span the code owns**, `acme.scenario.step`, created in the
+  `scenario_step` operation with `acme.scenario` and `acme.step` set at creation. The attribute no
+  longer depends on `trace.get_current_span()` inside the ADK agent being recording (the agent still
+  sets it there too, best effort). `step_trace` in the live proof keeps matching on `acme.scenario`.
+- **A2A spans on both sides**: the Customer side keeps its `acme.a2a.<skill>` spans (kind SERVER);
+  the Sales clients (`EngineCustomerClient`, `A2ACustomerClient`) now add `acme.a2a.<skill>` spans
+  (kind CLIENT) under `acme.sales.pitch`, in the **same trace** as the pitch. No trace context crosses
+  the engine boundary (`a2a_skill(skill, args)` carries none, and the allowlisted `args` must stay
+  exactly the skill's fields), so the Customer's server span is a separate trace; correlate the two
+  by `acme.journey_id` and `acme.skill` (no PII in either).
+
+`REQUIRED_SPANS` in the live proof is unchanged.

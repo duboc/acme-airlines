@@ -23,6 +23,7 @@ from acme.engines.customer import (
     validate_env,
 )
 from acme.sales.client import CustomerEngineHandle, build_customer_client
+from acme.telemetry import flush
 
 DISPLAY_NAME = "acme-sales-agent"
 APP_NAME = "acme-sales"
@@ -126,6 +127,7 @@ class SalesEngineApp:
             finally:
                 if self.shared is not None:
                     self.shared.set_blob("sales_sent", json.dumps(self.radar.export_sent()))
+                flush()  # export the pitch and A2A spans before the process can be throttled
 
     def _exclusive(self):
         return contextlib.nullcontext() if self.shared is None else self.shared.exclusive()

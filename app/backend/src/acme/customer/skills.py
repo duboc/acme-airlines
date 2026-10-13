@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any
 
 from a2a.types import DataPart, Message, MessageSendParams, Role, TextPart
+from opentelemetry.trace import SpanKind
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from acme.customer.runtime import CustomerRuntime, JourneyRecord
@@ -292,14 +293,20 @@ class CustomerSkills:
     async def _dispatch(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
         # spans carry skill + journey id only, never the offer or any message text
         if skill == "list_journeys" and not args:
-            with span("acme.a2a.list_journeys", acme__skill=skill):
+            with span("acme.a2a.list_journeys", kind=SpanKind.SERVER, acme__skill=skill):
                 return {"journey_ids": self.list_journeys()}
         if skill == "journey_status" and set(args) == {"journey_id"}:
-            with span("acme.a2a.journey_status", acme__skill=skill, **_jid(args["journey_id"])):
+            with span(
+                "acme.a2a.journey_status",
+                kind=SpanKind.SERVER,
+                acme__skill=skill,
+                **_jid(args["journey_id"]),
+            ):
                 return self.journey_status(str(args["journey_id"])).model_dump()
         if skill == "propose_offer" and set(args) == {"offer"} and isinstance(args["offer"], dict):
             with span(
                 "acme.a2a.propose_offer",
+                kind=SpanKind.SERVER,
                 acme__skill=skill,
                 **_jid(args["offer"].get("journey_id")),
             ):
