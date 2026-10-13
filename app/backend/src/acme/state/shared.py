@@ -53,18 +53,34 @@ class SharedState:
         self._lock_path = f"{path}.lock"
         self._key = f"{id(self)}"  # reentrancy is per SharedState object, not per file
         self._lock_timeout = lock_timeout
-        self._db = sqlite3.connect(path, check_same_thread=False, timeout=10)
         self._loaded_version: int | None = None
         self._last_json: str | None = None
-        # Opening the file switches it to WAL and creates tables, which fails with "database is
-        # locked" when two processes start at once: do it under the cross-process lock.
-        with self.exclusive_sync():
-            self._db.execute("PRAGMA journal_mode=WAL")
-            self._db.execute(
-                "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-            )
-            self._db.commit()
-            self._journeys = SqliteJourneyStore(path)  # the #16 adapter, same file
+        # The files hold passenger data: a directory WE create is 0700, and the database, its
+        # -wal/-shm and the lock file are 0600 (umask 077 while they are created, chmod after).
+        parent = os.path.dirname(os.path.abspath(path))
+        if not os.path.isdir(parent):
+            os.makedirs(parent, mode=0o700, exist_ok=True)
+            os.chmod(parent, 0o700)
+        previous_umask = os.umask(0o077)
+        try:
+            self._db = sqlite3.connect(path, check_same_thread=False, timeout=10)
+            # Opening the file switches it to WAL and creates tables, which fails with "database
+            # is locked" when two processes start at once: do it under the cross-process lock.
+            with self.exclusive_sync():
+                self._db.execute("PRAGMA journal_mode=WAL")
+                self._db.execute(
+                    "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+                )
+                self._db.commit()
+                self._journeys = SqliteJourneyStore(path)  # the #16 adapter, same file
+                self._secure_files()
+        finally:
+            os.umask(previous_umask)
+
+    def _secure_files(self) -> None:
+        for suffix in ("", "-wal", "-shm", ".lock"):
+            with contextlib.suppress(FileNotFoundError):
+                os.chmod(f"{self.path}{suffix}", 0o600)
 
     # --- lock -------------------------------------------------------------------------------
     def _try_lock(self) -> int | None:
@@ -153,6 +169,7 @@ class SharedState:
                 (str(version),),
             )
         self._loaded_version, self._last_json = version, text
+        self._secure_files()  # -wal/-shm are created lazily by the first write
 
     # --- one engine operation ---------------------------------------------------------------
     @contextlib.asynccontextmanager

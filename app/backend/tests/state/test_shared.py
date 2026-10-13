@@ -178,3 +178,60 @@ def test_a_corrupt_snapshot_row_is_ignored_and_overwritten(tmp_path):
     with s.operation_sync(rt):
         pass  # does not raise; state keeps this process's runtime
     assert s.version() >= 8
+
+
+def _modes(path):
+    import os
+    import stat
+
+    return {
+        suffix: stat.S_IMODE(os.stat(f"{path}{suffix}").st_mode)
+        for suffix in ("", "-wal", "-shm", ".lock")
+        if os.path.exists(f"{path}{suffix}")
+    }
+
+
+async def test_state_dir_is_0700_and_db_wal_shm_lock_are_0600_even_with_a_open_umask(tmp_path):
+    import os
+    import stat
+
+    old = os.umask(0o000)  # a hostile umask: files would default to world-readable
+    try:
+        path = tmp_path / "state" / "s.db"
+        a, sa = worker(path)
+        async with sa.operation(a):
+            await a.trigger_cancellation("AC1234", "x")  # real write: WAL/SHM exist now
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700
+    modes = _modes(path)
+    assert {"", ".lock"} <= set(modes)
+    assert all(m == 0o600 for m in modes.values()), modes
+
+
+async def test_files_stay_0600_for_a_second_worker_and_after_more_writes(tmp_path):
+    import os
+
+    old = os.umask(0o022)
+    try:
+        path = tmp_path / "state" / "s.db"
+        (a, sa), (b, sb) = worker(path), worker(path)
+        async with sa.operation(a):
+            await a.trigger_cancellation("AC1234", "x")
+        async with sb.operation(b):
+            await b.handle_inbound(PID, "hello")
+        assert os.umask(0o022) == 0o022  # SharedState does not leave a changed process umask
+    finally:
+        os.umask(old)
+    assert all(m == 0o600 for m in _modes(path).values()), _modes(path)
+
+
+def test_an_existing_shared_directory_is_not_chmodded(tmp_path):
+    import os
+    import stat
+
+    d = tmp_path / "shared"
+    d.mkdir(mode=0o755)
+    os.chmod(d, 0o755)
+    SharedState(str(d / "s.db"))
+    assert stat.S_IMODE(os.stat(d).st_mode) == 0o755  # only directories we create are 0700
