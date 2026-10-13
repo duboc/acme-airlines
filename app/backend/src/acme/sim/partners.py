@@ -45,6 +45,24 @@ class PartnerState:
     def _now(self) -> str:
         return self._sim.clock.now().isoformat()
 
+    _DATA = (
+        "hotel_bookings",
+        "transfers",
+        "vouchers",
+        "charges",
+        "transcripts",
+        "surveys",
+        "inbound",
+    )
+
+    def export_data(self) -> dict[str, Any]:
+        """JSON-able state (shared snapshot, #200)."""
+        return {name: getattr(self, name) for name in self._DATA}
+
+    def import_data(self, data: dict[str, Any]) -> None:
+        for name in self._DATA:
+            setattr(self, name, data[name])
+
     # --- concierge ---
     def book_hotel(self, hotel_id: str, nights: int, pax: int, passenger_id: str | None) -> dict:
         if nights < 1 or pax < 1:

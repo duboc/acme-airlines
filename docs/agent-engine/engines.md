@@ -188,3 +188,26 @@ both engines after create/update and fails the job, printing the error, unless e
 `ready`, so a broken engine is never green. `startup_error` is scrubbed by `acme.diagnostics.scrub`:
 no local variable values, env values whose name looks secret (TOKEN/KEY/SECRET/PASSWORD/AUTH ...),
 credential shapes (Bearer, `ya29.`, `AIza`, PEM, long opaque strings), passenger PII, 4000 chars max.
+
+## Cross-process demo state (#200), part 1: the store
+
+Agent Engine runs **9 agent processes per container** (docs: "The value 9 represents the number of
+agent processes running in parallel within each container"; `container_concurrency` only scales
+requests per process, and no deployment setting pins one worker). `max_instances=1` pins one
+container, not one process, so in-memory scenario/journey state is not shared between turns.
+
+`acme.state` makes it shared through the container's disk (nothing new for the operator):
+- `snapshot.capture/restore`: a **pydantic JSON** snapshot of the whole runtime (world, simulator
+  state, journey record metadata, cursor, scripted clock, scenario cursor), restored **in place** so
+  skills, runners and the scenario runner keep their references. No pickle: the file is data written
+  by another process, loading it cannot run code.
+- Journey states reuse the `journeys` table of `SqliteJourneyStore` (#16); the snapshot and a version
+  counter live in a `meta` table of the same SQLite file (WAL).
+- `SharedState.operation(rt)`: take a cross-process `flock`, load the newest snapshot if another
+  process wrote one, run, write a new snapshot only if something changed, release. The lock covers the
+  whole operation, so the per-journey guarantees of #88 and #97 (one charge, one notification) hold
+  across processes. It is reentrant per task/thread, acquired by polling (a cancelled waiter cannot
+  leak it) and a wait over `lock_timeout` raises `LockTimeout`.
+- Limits, same as the in-memory state it replaces: container-local and lost on restart; **`max_instances=1`
+  is mandatory** (a second container would not share the disk). Part 2 wires the engine operations,
+  sets `ACME_STATE_DB` and makes the deploy check fail if `max_instances` is not 1.
