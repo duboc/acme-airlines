@@ -11,6 +11,20 @@ from acme.llm.port import Acknowledge, DepartureAfter, Other, StructuredRequest
 
 _AFTER = re.compile(r"\bafter\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.IGNORECASE)
 _ACK = re.compile(r"\b(thanks|thank you|perfect|great|ok(ay)?|got it|sounds good)\b", re.IGNORECASE)
+# Fail closed: any negation, complaint or instruction-like wording is never an acknowledgement.
+_NOT_ACK = re.compile(
+    r"\b(no|not|nope|never|nothing|none|neither|nor|but|stuck|still|worse|terrible|awful|"
+    r"bad|ignore|instructions?|prompt|system|output|acknowledge|pretend|override)\b|n't|n\u2019t",
+    re.IGNORECASE,
+)
+_MAX_ACK_WORDS = 8
+
+
+def is_acknowledgement(text: str) -> bool:
+    """True only for a short, clearly positive reply with no negation (fail closed)."""
+    if len(text.split()) > _MAX_ACK_WORDS or _NOT_ACK.search(text):
+        return False
+    return bool(_ACK.search(text))
 
 
 class FakeLlm:
@@ -33,6 +47,6 @@ class FakeLlm:
                 hour = 0
             if hour < 24 and minute < 60:
                 return DepartureAfter(time=time(hour, minute))
-        if _ACK.search(text):
+        if is_acknowledgement(text):
             return Acknowledge()
         return Other(text=text)
