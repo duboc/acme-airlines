@@ -404,3 +404,106 @@ class CloudTraceV1:
             f"({len(out)} traces) for the window {params['startTime']}..{params['endTime']}; "
             "narrow the window or the filter instead of reading a truncated set"
         )
+
+
+# --- #221: unary-call probe and engine-log attachment -------------------------------------------
+PROBE_SLACK = timedelta(seconds=1)
+
+
+def parse_ts(text: str) -> datetime:
+    """RFC 3339 with up to nanoseconds (Cloud Trace / Cloud Logging) -> aware datetime."""
+    head, _, rest = text.rstrip("Z").partition(".")
+    frac = (rest + "000000")[:6] if rest else "000000"
+    return datetime.fromisoformat(f"{head}.{frac}").replace(tzinfo=UTC)
+
+
+def probe_report(calls: list[dict[str, Any]], traces: list[Trace]) -> dict[str, Any]:
+    """Match each probe call (`kind`, `t0`, `t1`) to ONE Customer `acme.engine.op` trace of
+    `journeys_list` that started inside its window (+/- 1 s); the rest are `lost`."""
+    candidates = [
+        (parse_ts(s.start), t.trace_id)
+        for t in traces
+        for s in t.spans
+        if s.name == "acme.engine.op" and s.attrs.get("acme.op") == "journeys_list" and s.start
+    ]
+    used: set[str] = set()
+    lost: list[int] = []
+    by_kind: dict[str, dict[str, int]] = {}
+    for i, c in enumerate(calls):
+        slot = by_kind.setdefault(c["kind"], {"sent": 0, "found": 0})
+        slot["sent"] += 1
+        hit = next(
+            (
+                tid
+                for ts, tid in sorted(candidates)
+                if tid not in used and c["t0"] - PROBE_SLACK <= ts <= c["t1"] + PROBE_SLACK
+            ),
+            None,
+        )
+        if hit is None:
+            lost.append(i)
+        else:
+            used.add(hit)
+            slot["found"] += 1
+    return {"sent": len(calls), "found": len(calls) - len(lost), "lost": lost, "by_kind": by_kind}
+
+
+class CloudLogging:
+    """Cloud Logging `entries:list` for one engine's log lines (the deployer has logging.viewer).
+    A read failure is reported by `fetch_or_error`, never fatal to the proof."""
+
+    def __init__(self, project: str, *, session: Any = None, max_pages: int = 5) -> None:
+        if session is None:
+            import google.auth
+            from google.auth.transport.requests import AuthorizedSession
+
+            creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/logging.read"])
+            session = AuthorizedSession(creds)
+        self._session, self.project, self._max_pages = session, project, max_pages
+
+    def fetch(self, engine: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        engine_id = engine.rstrip("/").rsplit("/", 1)[-1]
+        stamp = lambda d: d.astimezone(UTC).isoformat().replace("+00:00", "Z")  # noqa: E731
+        body: dict[str, Any] = {
+            "resourceNames": [f"projects/{self.project}"],
+            "filter": (
+                'resource.type="aiplatform.googleapis.com/ReasoningEngine" '
+                f'AND resource.labels.reasoning_engine_id="{engine_id}" '
+                f'AND timestamp>="{stamp(start)}" AND timestamp<="{stamp(end)}"'
+            ),
+            "orderBy": "timestamp asc",
+            "pageSize": 1000,
+        }
+        out: list[dict[str, Any]] = []
+        for _ in range(self._max_pages):
+            resp = self._session.post(
+                "https://logging.googleapis.com/v2/entries:list", json=body, timeout=60
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            for e in data.get("entries", []):
+                text = e.get("textPayload") or json.dumps(e.get("jsonPayload", {}), sort_keys=True)
+                out.append({"ts": e.get("timestamp", ""), "severity": e.get("severity", ""),
+                            "text": text})  # fmt: skip
+            if not data.get("nextPageToken"):
+                break
+            body["pageToken"] = data["nextPageToken"]
+        return out
+
+    def fetch_or_error(self, engine: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        try:
+            return self.fetch(engine, start, end)
+        except Exception as exc:  # noqa: BLE001 - diagnostics must not fail the proof
+            return [{"ts": "", "severity": "ERROR", "text": f"log read failed: {exc}"}]
+
+
+def write_engine_logs(path: str, by_engine: dict[str, list[dict[str, Any]]], pii: set[str]) -> None:
+    """JSON lines `{engine, ts, severity, text}`; any line containing fixture PII is redacted."""
+    from pathlib import Path
+
+    lines = [
+        json.dumps({"engine": name, **{**e, "text": scrub(e["text"], pii)}}, sort_keys=True)
+        for name, entries in by_engine.items()
+        for e in entries
+    ]
+    Path(path).write_text("\n".join(lines) + ("\n" if lines else ""))

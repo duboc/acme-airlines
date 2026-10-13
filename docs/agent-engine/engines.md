@@ -256,3 +256,27 @@ process's buffer. Fixes:
   by `acme.journey_id` and `acme.skill` (no PII in either).
 
 `REQUIRED_SPANS` in the live proof is unchanged.
+
+## Diagnosing missing traces (#221)
+
+The dump-enabled live proof showed whole Customer-engine unary-call traces (step 0, some polls, the
+`propose_offer` handler) that never reach Cloud Trace, including the platform's own server spans.
+Evidence first, then the fix. What is in place to find the cause:
+
+- **One structured line per engine operation**, `ACME_DIAG {json}` on stderr (Cloud Logging), for every
+  Customer operation and the Sales tick: `op`, `trace_id`, `span_id`, `is_recording`, `sampled`, the
+  incoming context (`parent.valid` / `parent.sampled`: an unsampled platform root makes our spans
+  non-recording), `flush_ok` / `flush_ms` / `flush_error`, `pid`, `instance`, `provider`. Ids, flags
+  and counters only, no free text. Every Customer operation now runs in an owned `acme.engine.op` span
+  (`acme.op` = the operation name).
+- **Every span export is a line too** (`event: export`, `ok`, `n`, `ms`, `error`): the Cloud Trace
+  exporter is wrapped so a failed or raising export (429, auth, network) is surfaced instead of being
+  swallowed by the batch processor.
+- **Live proof workflow**: input `probe_calls` (N) runs a unary probe, N back-to-back and N/2 spaced
+  read-only `journeys_list` calls, then counts the `acme.engine.op` traces (sent vs found, lost call
+  indices, per kind) into the job summary; and both engines' log lines for the run window are
+  uploaded as the `engine-logs` artifact (`{engine, ts, severity, text}` JSON lines, fixture-PII lines
+  redacted; needs `logging.viewer`, a read failure is written into the file, not fatal).
+- Reading it: a missing trace whose op line shows `is_recording: false` / `parent.sampled: false` is
+  platform sampling; `flush_ok: false` or an `export` line with `ok: false` is our exporter; different
+  `pid` / `instance` values per call point to the multi-process or multi-instance hypotheses.
