@@ -129,7 +129,7 @@ async def test_lock_timeout_is_an_error_not_a_hang(tmp_path):
 
 
 def test_two_real_processes_never_overlap_in_the_critical_section(tmp_path):
-    """flock across processes: 2 x 25 read-modify-write cycles on a counter file lose no update."""
+    """flock across processes: 4 x 25 read-modify-write cycles on a counter file lose no update."""
     counter = tmp_path / "counter"
     counter.write_text("0")
     script = textwrap.dedent(
@@ -144,9 +144,11 @@ def test_two_real_processes_never_overlap_in_the_critical_section(tmp_path):
                 open({str(counter)!r}, "w").write(str(n + 1))
         """
     )
-    procs = [subprocess.Popen([sys.executable, "-W", "ignore", "-c", script]) for _ in range(2)]
-    assert [p.wait(timeout=60) for p in procs] == [0, 0]
-    assert counter.read_text() == "50"
+    # Four processes opening the same fresh file at once also exercises the start-up race
+    # ("database is locked" while switching to WAL) that SharedState.__init__ guards.
+    procs = [subprocess.Popen([sys.executable, "-W", "ignore", "-c", script]) for _ in range(4)]
+    assert [p.wait(timeout=90) for p in procs] == [0, 0, 0, 0]
+    assert counter.read_text() == "100"
 
 
 def test_sync_context_is_reentrant_and_blocks_other_holders(tmp_path):

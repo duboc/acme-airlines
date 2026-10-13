@@ -54,14 +54,17 @@ class SharedState:
         self._key = f"{id(self)}"  # reentrancy is per SharedState object, not per file
         self._lock_timeout = lock_timeout
         self._db = sqlite3.connect(path, check_same_thread=False, timeout=10)
-        self._db.execute("PRAGMA journal_mode=WAL")
-        self._db.execute(
-            "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-        )
-        self._db.commit()
-        self._journeys = SqliteJourneyStore(path)  # the #16 adapter, same file
         self._loaded_version: int | None = None
         self._last_json: str | None = None
+        # Opening the file switches it to WAL and creates tables, which fails with "database is
+        # locked" when two processes start at once: do it under the cross-process lock.
+        with self.exclusive_sync():
+            self._db.execute("PRAGMA journal_mode=WAL")
+            self._db.execute(
+                "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            self._db.commit()
+            self._journeys = SqliteJourneyStore(path)  # the #16 adapter, same file
 
     # --- lock -------------------------------------------------------------------------------
     def _try_lock(self) -> int | None:
