@@ -20,6 +20,7 @@ from typing import Any, Protocol
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from acme import metrics
 from acme.api.app import (
     ActionResult,
     JourneyDetail,
@@ -183,6 +184,7 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     backend = backend or EngineBackend.from_env()
     app = FastAPI(title="ACME Airlines runtime API (agent-engine mode)", version="0.1.0")
     app.state.engine_backend = backend
+    metrics.add_http_metrics(app)
 
     @app.exception_handler(EngineConfigError)
     async def config_error(_: Request, e: EngineConfigError) -> JSONResponse:

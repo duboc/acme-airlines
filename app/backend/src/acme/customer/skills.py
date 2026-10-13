@@ -20,6 +20,7 @@ from a2a.types import DataPart, Message, MessageSendParams, Role, TextPart
 from opentelemetry.trace import SpanKind
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from acme import metrics
 from acme.customer.runtime import CustomerRuntime, JourneyRecord
 from acme.domain.journey import DisruptionStatus, OfferRecord
 from acme.domain.models import CabinInventory, Offer
@@ -261,6 +262,7 @@ class CustomerSkills:
                 raise ValueError("missing offer fact")
         except Exception:  # noqa: BLE001 (any LLM failure falls back to the template)
             text = fallback
+            metrics.template_fallback("offer")
         return text, context
 
     # --- A2A transport -------------------------------------------------------------------------

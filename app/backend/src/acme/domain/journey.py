@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from acme import metrics
 from acme.domain.clock import Clock, SystemClock
 from acme.domain.models import Offer, Tier
 
@@ -106,6 +107,14 @@ class JourneyState:
         return tuple(self._timeline)
 
     def append_event(self, actor: str, type: str, payload: dict[str, Any] | None = None) -> None:
+        if type == "needs_human":
+            metrics.needs_human(payload or {})
+        elif type == "offer_proposed":
+            metrics.offer("proposed")
+        elif type == "accept_offer":
+            metrics.offer("accepted")
+        elif type == "decline_offer":
+            metrics.offer("declined")
         self._timeline.append(
             JourneyEvent(actor=actor, type=type, payload=payload or {}, timestamp=self._clock.now())
         )

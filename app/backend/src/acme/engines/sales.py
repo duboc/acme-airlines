@@ -73,6 +73,7 @@ class SalesEngineApp:
         from google.adk.sessions import InMemorySessionService
 
         from acme.logging_setup import configure_logging
+        from acme.metrics import configure_cloud_monitoring
         from acme.sales.agent import build_sales_agent
         from acme.sales.radar import SalesRadar
         from acme.sim.client import SimClient, inprocess_connector
@@ -81,6 +82,7 @@ class SalesEngineApp:
 
         configure_logging()  # no passenger PII in Cloud Logging (#170)
         configure_cloud_trace(DISPLAY_NAME)
+        configure_cloud_monitoring(DISPLAY_NAME)
         env = {"ENGINE_MODE": "agent-engine", **self._env()}
         customer = build_customer_client(env, engine=self._customer_engine)
         sim = SimWorld.seeded()
