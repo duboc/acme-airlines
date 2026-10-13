@@ -36,6 +36,7 @@ ENGINE_LATENCY = "aiplatform.googleapis.com/reasoning_engine/request_latencies" 
 ENGINE_LABEL = "resource.labels.reasoning_engine_id"
 NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 ID_RE = re.compile(r"^[0-9]+$")
+IRROPS_PREFIX = "workload.googleapis.com/acme."  # #235, docs/observatory/product-metrics.md
 TABLE_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
@@ -252,6 +253,96 @@ class GcpDataSource:
             for e in entries
             if isinstance(e.payload, str)
         ]
+
+    @guarded("IRROPS metrics")
+    def irrops_metrics(self, hours: int) -> dict:
+        """The #235 metrics from Cloud Monitoring. A metric with no series stays None (pending)."""
+        from google.cloud import monitoring_v3
+
+        end = self.now()
+        interval = monitoring_v3.TimeInterval(end_time=end, start_time=end - timedelta(hours=hours))
+        agg_mod = monitoring_v3.Aggregation
+
+        def series(name, reducer, group=()):
+            agg = agg_mod(
+                alignment_period={"seconds": hours * 3600},
+                per_series_aligner=agg_mod.Aligner.ALIGN_DELTA,
+                cross_series_reducer=reducer,
+                group_by_fields=list(group),
+            )
+            request = {
+                "name": f"projects/{self._project}",
+                "filter": f'metric.type="{IRROPS_PREFIX}{name}"',
+                "interval": interval,
+                "aggregation": agg,
+            }
+            return list(self._mon.list_time_series(request=request))
+
+        def total(name):
+            found = series(name, agg_mod.Reducer.REDUCE_SUM)
+            return sum(p.value.int64_value for ts in found for p in ts.points) if found else None
+
+        guardrail = [
+            {
+                "rule": ts.metric.labels.get("rule", "unknown"),
+                "outcome": ts.metric.labels.get("outcome", "unknown"),
+                "count": sum(p.value.int64_value for p in ts.points),
+            }
+            for ts in series(
+                "guardrail.decisions",
+                agg_mod.Reducer.REDUCE_SUM,
+                ["metric.label.rule", "metric.label.outcome"],
+            )
+        ]
+        offers = {
+            ts.metric.labels.get("status"): sum(p.value.int64_value for p in ts.points)
+            for ts in series("offers", agg_mod.Reducer.REDUCE_SUM, ["metric.label.status"])
+        }
+        notification = None
+        # delta distribution: count from the sum reducer, percentiles from the percentile reducers
+        counts = series("notification.latency", agg_mod.Reducer.REDUCE_SUM)
+        if counts:
+            notification = {
+                "count": sum(p.value.distribution_value.count for ts in counts for p in ts.points)
+            }
+            for key, red in (("p50_s", "REDUCE_PERCENTILE_50"), ("p95_s", "REDUCE_PERCENTILE_95")):
+                vals = [
+                    p.value.double_value
+                    for ts in series("notification.latency", getattr(agg_mod.Reducer, red))
+                    for p in ts.points
+                ]
+                notification[key] = max(vals) if vals else None
+        raw = {
+            "guardrail": guardrail,
+            "offers": offers or None,
+            "template_fallbacks": total("llm.template_fallbacks"),
+            "needs_human": total("needs_human"),
+            "notification": notification,
+            "errors_5xx": total("http.server.errors"),
+        }
+        if not (guardrail or offers or notification) and all(
+            raw[k] is None for k in ("template_fallbacks", "needs_human", "errors_5xx")
+        ):
+            raise SourceEmpty(
+                "No IRROPS metrics yet: the runtime has not exported to Cloud Monitoring."
+            )
+        # Freshness: the newest point of any acme.* series in the last 15 minutes (counters are
+        # cumulative, so a live runtime keeps writing points even when nothing happened).
+        recent = monitoring_v3.TimeInterval(end_time=end, start_time=end - timedelta(minutes=15))
+        request = {
+            "name": f"projects/{self._project}",
+            "filter": f'metric.type=starts_with("{IRROPS_PREFIX}")',
+            "interval": recent,
+            "view": monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.FULL,
+        }
+        ends = [
+            p.interval.end_time
+            for ts in self._mon.list_time_series(request=request)
+            for p in ts.points
+        ]
+        raw["last_point_at"] = max(ends).isoformat() if ends else None
+        raw["alive"] = bool(ends)
+        return raw
 
     def agent_engines(self) -> Rows:
         return [{"name": n, "engine_id": i} for n, i in self._engines.items()]

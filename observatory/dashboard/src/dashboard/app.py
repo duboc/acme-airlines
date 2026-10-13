@@ -14,6 +14,7 @@ from .models import (
     BudgetResponse,
     CollectorHealthResponse,
     GithubResponse,
+    IrropsResponse,
     ModelsResponse,
     SpendResponse,
 )
@@ -70,6 +71,10 @@ def create_app(
     @app.get("/api/agent-engine")
     def agent_engine(hours: int = Query(1, ge=1, le=168)) -> AgentEngineResponse:
         return service.agent_engine(source, hours, os.environ.get("PROJECT_ID", PROJECT_DEFAULT))
+
+    @app.get("/api/irrops")
+    def irrops(hours: int = Query(24, ge=1, le=168)) -> IrropsResponse:
+        return service.irrops(source, hours)
 
     static = (
         static_dir

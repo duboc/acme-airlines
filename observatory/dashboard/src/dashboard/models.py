@@ -156,3 +156,31 @@ class CollectorHealthResponse(Envelope):
     healthy: bool = False
     snapshot_age_seconds: int | None = None
     last_execution: CollectorRun | None = None
+
+
+class RuleOutcome(BaseModel):
+    rule: str  # guardrail reason code, or "all" for an approval
+    outcome: str  # "approve" | "reject"
+    count: int
+
+
+class IrropsResponse(Envelope):
+    """IRROPS product metrics (#235). Null means no series yet: never shown as zero."""
+
+    hours: int
+    guardrail: list[RuleOutcome] = []
+    offers_proposed: int | None = None
+    offers_accepted: int | None = None
+    offers_declined: int | None = None
+    template_fallbacks: int | None = None
+    template_fallback_rate: float | None = (
+        None  # fallbacks / notifications, null if no notifications
+    )
+    needs_human: int | None = None
+    notification_count: int | None = None
+    notification_p50_s: float | None = None
+    notification_p95_s: float | None = None
+    errors_5xx: int | None = None
+    errors_5xx_per_hour: float | None = None
+    demo_health: str = "unknown"  # "healthy" | "degraded" | "down" | "unknown"
+    last_metric_at: str | None = None

@@ -17,11 +17,13 @@ from .models import (
     GithubResponse,
     GithubSnapshot,
     GuardAction,
+    IrropsResponse,
     Marker,
     MergesDay,
     ModelsResponse,
     ModelUsage,
     OpenPR,
+    RuleOutcome,
     SpendDay,
     SpendResponse,
 )
@@ -317,4 +319,57 @@ def collector_health(src: DataSource) -> CollectorHealthResponse:
         if stale
         else None,
         last_execution=last,
+    )
+
+
+def irrops(src: DataSource, hours: int) -> IrropsResponse:
+    """Raw: ``{last_point_at, guardrail:[{rule,outcome,count}], offers:{proposed,accepted,declined},
+    template_fallbacks, needs_human, notification:{count,p50_s,p95_s}, errors_5xx, alive?}``.
+    A missing key or null means the metric has no series yet (shown as pending, not zero)."""
+    try:
+        raw = src.irrops_metrics(hours)
+    except SourceEmpty as e:
+        return IrropsResponse(state="empty", message=str(e), hours=hours)
+    except SourceUnavailable as e:
+        return IrropsResponse(state="unavailable", message=str(e), hours=hours)
+    if not raw:
+        return IrropsResponse(
+            state="empty",
+            hours=hours,
+            message="No IRROPS metrics yet: the runtime has not reported.",
+        )
+    offers, notif = raw.get("offers") or {}, raw.get("notification") or {}
+    fallbacks, errors, count = (
+        raw.get("template_fallbacks"),
+        raw.get("errors_5xx"),
+        notif.get("count"),
+    )
+    last = _iso_str(raw.get("last_point_at"))
+    age = src.now() - parse_ts(last) if last else None
+    dead = raw.get("alive") is False  # data in the window, but nothing in the last 15 minutes
+    stale = dead or (age is not None and age > SNAPSHOT_LAG)
+    health = "down" if stale else "unknown" if age is None else "degraded" if errors else "healthy"
+    return IrropsResponse(
+        state="lagging" if stale else "ok",
+        as_of=last,
+        message="No metrics in the last 15 minutes: the hosted demo may be down."
+        if stale
+        else None,
+        hours=hours,
+        guardrail=[RuleOutcome(**g) for g in raw.get("guardrail") or []],
+        offers_proposed=offers.get("proposed"),
+        offers_accepted=offers.get("accepted"),
+        offers_declined=offers.get("declined"),
+        template_fallbacks=fallbacks,
+        template_fallback_rate=round(fallbacks / count, 4)
+        if fallbacks is not None and count
+        else None,
+        needs_human=raw.get("needs_human"),
+        notification_count=count,
+        notification_p50_s=notif.get("p50_s"),
+        notification_p95_s=notif.get("p95_s"),
+        errors_5xx=errors,
+        errors_5xx_per_hour=round(errors / hours, 4) if errors is not None else None,
+        demo_health=health,
+        last_metric_at=last,
     )

@@ -37,6 +37,7 @@ class DataSource(Protocol):
     def merges_per_day(self, days: int) -> Rows: ...
     def guard_logs(self, limit: int) -> Rows: ...
     def collector_runs(self, limit: int) -> Rows: ...  # newest first: {ts, status, detail}
+    def irrops_metrics(self, hours: int) -> dict: ...  # raw shape: see service.irrops
     def agent_engines(self) -> Rows: ...  # [{name, engine_id}]
     def agent_engine_metrics(self, engine_id: str, hours: int) -> dict: ...
     def agent_engine_traces(
@@ -94,6 +95,15 @@ class FakeDataSource:
 
     def collector_runs(self, limit: int) -> Rows:
         return self._read("collector_runs")[:limit]
+
+    def irrops_metrics(self, hours: int) -> dict:
+        return self._read_obj("irrops")
+
+    def _read_obj(self, name: str) -> dict:
+        if self.scenario in ("empty", "unavailable"):
+            self._read(name)  # raises for unavailable
+            return {}
+        return json.loads((self._dir / f"{name}.json").read_text())
 
     def _engine_data(self) -> dict:
         data = self._read("agent_engine")
