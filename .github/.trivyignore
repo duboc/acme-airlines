@@ -1,4 +1,3 @@
 # Time-boxed exceptions for the container vulnerability gate (#234). Each entry needs an issue and
 # an expiry; the SARIF report to code scanning is NOT filtered, so the finding stays visible.
-# google-adk 1.10.0 is pinned by the lock and the engines; the upgrade is tracked in #241.
-CVE-2026-4810 exp:2026-11-13
+# (No active exceptions: CVE-2026-4810 was fixed by the google-adk upgrade, #241.)

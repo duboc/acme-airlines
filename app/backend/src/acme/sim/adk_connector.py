@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 
 from google.adk.tools.mcp_tool import MCPToolset, StreamableHTTPConnectionParams
@@ -28,8 +29,19 @@ class _AdkSession:
         tool = next((t for t in tools if t.name == name), None)
         if tool is None:
             raise KeyError(f"unknown MCP tool: {name}")
-        # `MCPTool` returns the raw MCP `CallToolResult` (isError, structuredContent).
-        return await tool.run_async(args=arguments, tool_context=None)  # type: ignore[arg-type]
+        # ADK >= 1.3x returns the `CallToolResult` as a JSON dict (isError, structuredContent,
+        # content) and maps
+        # transport failures to `{"error": ...}`; older ADK returned the object.
+        raw = await tool.run_async(args=arguments, tool_context=None)  # type: ignore[arg-type]
+        if isinstance(raw, Mapping):
+            if "error" in raw and "isError" not in raw:
+                return SimpleNamespace(isError=True, content=raw["error"], structuredContent=None)
+            return SimpleNamespace(
+                isError=bool(raw.get("isError")),
+                content=raw.get("content"),
+                structuredContent=raw.get("structuredContent"),
+            )
+        return raw
 
 
 def adk_connector(base_url: str, caller: str, tokens: Mapping[str, str]) -> Connector:
