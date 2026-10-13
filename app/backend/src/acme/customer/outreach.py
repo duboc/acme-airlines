@@ -8,6 +8,7 @@ and a deterministic template is sent instead if the LLM fails or omits a fact.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import time
 from typing import TYPE_CHECKING, Any
 
@@ -15,7 +16,7 @@ from acme import metrics
 from acme.customer.quiet_hours import can_send_proactive
 from acme.domain.fixtures import GRU
 from acme.domain.journey import DisruptionStatus, PassengerRequest
-from acme.llm.port import Acknowledge, DepartureAfter
+from acme.llm.port import Acknowledge, DepartureAfter, Other, StructuredRequest
 from acme.telemetry import specialist_span
 
 if TYPE_CHECKING:
@@ -64,10 +65,21 @@ def template_text(name: str, f: dict[str, Any]) -> str:
     )
 
 
-async def notify_resolution(rt: CustomerRuntime, rec: JourneyRecord) -> None:
+@dataclass(frozen=True)
+class PreparedNotification:
+    facts: dict[str, Any]
+    name: str
+    text: str
+    source: str
+
+
+async def prepare_notification(
+    rt: CustomerRuntime, rec: JourneyRecord
+) -> PreparedNotification | None:
+    """Gather facts and compose the text. Takes NO lock: the model call may be slow (#231)."""
     facts = collect_facts(rec)
     if facts is None:
-        return
+        return None
     profile = await rt.client.call("crm", "profile.get", passenger_id=rec.passenger_id)
     name = profile["name"].split()[0]
     fallback = template_text(name, facts)
@@ -80,6 +92,29 @@ async def notify_resolution(rt: CustomerRuntime, rec: JourneyRecord) -> None:
     except Exception:  # noqa: BLE001 (any LLM failure falls back to the template)
         text, source = fallback, "template"
         metrics.template_fallback("resolution")
+    return PreparedNotification(facts, name, text, source)
+
+
+async def notify_resolution(rt: CustomerRuntime, rec: JourneyRecord) -> None:
+    """Prepare then send (callers that need the lock-free model call use the two halves)."""
+    if prepared := await prepare_notification(rt, rec):
+        await send_notification(rt, rec, prepared)
+
+
+async def send_notification(
+    rt: CustomerRuntime, rec: JourneyRecord, prepared: PreparedNotification
+) -> None:
+    """Commit under the journey lock: re-validate, because the state may have moved while the
+    model call was in flight. No longer due: send nothing. Facts changed: the text was composed
+    against stale facts, so send the deterministic template of the current ones instead."""
+    if not notification_due(rt, rec):
+        return
+    facts = collect_facts(rec)
+    if facts is None:
+        return
+    text, source = prepared.text, prepared.source
+    if facts != prepared.facts:
+        text, source = template_text(prepared.name, facts), "template"
     msg = await rt.send(rec.passenger_id, text, attachments=["hotel_voucher", "meal_voucher"])
     resolved_at = max(
         (
@@ -110,15 +145,23 @@ def notification_due(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
     return now >= resolved_at + rt.notify_delay and can_send_proactive(state, now.astimezone(GRU))
 
 
-async def handle_inbound(rt: CustomerRuntime, rec: JourneyRecord, text: str) -> None:
+async def classify(rt: CustomerRuntime, text: str) -> StructuredRequest:
+    """The passenger's intent. Depends only on the text, so callers run it outside any lock."""
+    try:
+        return await rt.llm.parse_passenger_request(text)
+    except Exception:  # noqa: BLE001 (fail closed: never an acknowledgement)
+        return Other(text=text)
+
+
+async def handle_inbound(
+    rt: CustomerRuntime, rec: JourneyRecord, text: str, intent: StructuredRequest | None = None
+) -> None:
+    """Apply a passenger message. The caller holds the journey lock; pass `intent` (from
+    `classify`, computed before taking it) so the model call is not made under the lock."""
     state = rec.state
     state.append_event("passenger", "passenger_message", {"text": text})
-    try:
-        intent = await rt.llm.parse_passenger_request(text)
-    except Exception:  # noqa: BLE001
-        from acme.llm.port import Other  # noqa: PLC0415
-
-        intent = Other(text=text)
+    if intent is None:
+        intent = await classify(rt, text)
     if isinstance(intent, DepartureAfter):
         await _departure_after(rt, rec, intent.time)
     elif isinstance(intent, Acknowledge):
