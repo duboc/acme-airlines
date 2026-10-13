@@ -562,6 +562,8 @@ class CloudLogging:
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,59}$")
 _HOST = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _HEX32, _HEX16 = re.compile(r"^[0-9a-f]{32}$"), re.compile(r"^[0-9a-f]{16}$")
+_HEX8, _HEX8_OR_NA = re.compile(r"^[0-9a-f]{8}$"), re.compile(r"^([0-9a-f]{8}|na)$")
+_PRESET = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")  # scenario preset ids
 _LOG_TS = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+(Z|[+-]\d\d:\d\d)$")
 _SEVERITIES = frozenset({"DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL", "ALERT",
                          "EMERGENCY", "DEFAULT"})  # fmt: skip
@@ -590,6 +592,9 @@ DIAG_FIELDS: dict[str, dict[str, Callable[[Any], bool]]] = {
         "is_recording": _is_bool, "sampled": _is_bool, "flush_ok": _is_bool, "flush_ms": _is_num,
         "flush_error": _matches(_NAME), "pid": _is_int, "instance": _matches(_HOST),
         "provider": _matches(_NAME),
+        "proc": _matches(_HEX8), "container": _matches(_HEX8_OR_NA), "scenario": _matches(_PRESET),
+        "step": _is_int, "shared_version": _is_int, "loaded_version": _is_int,
+        "db_inode": _is_int,
     },
     "export": {"ok": _is_bool, "n": _is_int, "ms": _is_num, "error": _matches(_NAME)},
 }  # fmt: skip

@@ -347,3 +347,20 @@ Presets still drive time explicitly (the `notify` step calls `tick()`), and the 
 Agent Engine: there is no background loop (processes are throttled between requests), so the engine's
 `journey_detail` operation still ticks, as before; that is the one read that writes, by design, and the
 demo's polling keeps notifications and closure moving in that mode.
+
+## Process identity for "no scenario is started" (#266)
+
+The live proof fails with `no scenario is started` at a turn that moves between runs, which points to
+the call landing where `scenario_start` did not run (another process, replica or a restarted
+container). To confirm it, every engine operation now carries a **non-PII process identity**:
+`process_identity()` = `proc` (random id per PID, so forked workers differ), `pid` and `container`
+(hash of the kernel boot id and PID 1's start time: the hostname is `localhost` on Agent Engine and
+cannot tell replicas or restarts apart). It is in (a) the `ACME_DIAG` op line together with the
+scenario this process believes is active (`scenario`, `step`) and the shared-state facts
+(`shared_version`, `loaded_version`, `db_inode`), (b) the readable `no scenario is started (...)` error
+(ids and counters only), and (c) the `diagnostics` operation (`identity`). The `engine-logs` artifact
+allowlist includes the new fields. Reading it: if the failing `scenario_step` line shows a different
+`proc`/`container` than the `scenario_start` line and `scenario=None` / `loaded_version` behind
+`shared_version`, the state did not reach that process; the same `proc` would disprove the
+process-local hypothesis. (Identity is on the log line, the error and `diagnostics`, not on every
+response body: several operations return lists or strictly typed models.)
