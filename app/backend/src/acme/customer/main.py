@@ -5,6 +5,7 @@ A2A-only listener (`ACME_A2A_PORT`, 8802) that Sales is pointed at (#230).
 """
 
 import asyncio
+import logging
 import os
 
 import uvicorn
@@ -24,6 +25,10 @@ async def _serve(app, host: str, a2a_host: str, port: int, a2a_port: int) -> Non
 
 def main() -> None:
     configure_logging()
+    if not os.environ.get("ACME_SALES_TOKEN"):
+        logging.getLogger("acme.security").warning(
+            "ACME_SALES_TOKEN is not set; SalesRouteGuard is inactive on the Customer listeners"
+        )
     host = os.environ.get("ACME_CUSTOMER_HOST", "127.0.0.1")
     port = int(os.environ.get("ACME_CUSTOMER_PORT", "8800"))
     a2a_port = int(os.environ.get("ACME_A2A_PORT", "8802"))

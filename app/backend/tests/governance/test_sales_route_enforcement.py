@@ -76,3 +76,40 @@ async def test_given_the_customer_to_sales_a2a_path_when_sales_calls_then_it_sti
 async def test_callers_without_the_sales_identity_keep_the_passenger_routes(token):
     async with client(create_local_app(sales_token=SALES), token) as http:
         assert (await http.get("/journeys")).status_code == 200
+
+
+BYPASS_HEADERS = {
+    "double space": [(b"authorization", f"Bearer  {SALES}".encode())],
+    "tab": [(b"authorization", f"Bearer\t{SALES}".encode())],
+    "trailing space": [(b"authorization", f"Bearer {SALES} ".encode())],
+    "duplicate, junk first": [
+        (b"authorization", b"dummy"),
+        (b"authorization", f"Bearer {SALES}".encode()),
+    ],
+    "duplicate, sales first": [
+        (b"authorization", f"Bearer {SALES}".encode()),
+        (b"authorization", b"dummy"),
+    ],
+    "lowercase scheme": [(b"authorization", f"bearer {SALES}".encode())],
+    "unknown scheme": [(b"authorization", f"Token {SALES}".encode())],
+}
+
+
+@pytest.mark.parametrize("name", BYPASS_HEADERS)
+async def test_given_a_malformed_or_duplicated_sales_header_then_still_403(name):
+    main = create_local_app(sales_token=SALES)
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http", "method": "POST", "path": "/scenario/reset", "query_string": b"",
+        "headers": BYPASS_HEADERS[name], "scheme": "http", "server": ("t", 80),
+        "client": ("c", 1), "http_version": "1.1", "root_path": "",
+    }  # fmt: skip
+    await main(scope, receive, send)
+    assert sent[0]["status"] == 403

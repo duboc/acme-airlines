@@ -27,11 +27,15 @@ def sales_token_from_env(env: Mapping[str, str]) -> str | None:
 
 
 def _is_sales(scope: Scope, token: str) -> bool:
-    value = next((v for k, v in scope["headers"] if k.lower() == b"authorization"), b"").decode(
-        "latin-1"
-    )
-    scheme, _, presented = value.partition(" ")
-    return scheme.lower() == "bearer" and hmac.compare_digest(presented.encode(), token.encode())
+    """Fail closed: the Sales credential in ANY `Authorization` header, in ANY position or
+    spacing (extra spaces/tabs, duplicate headers, odd schemes), marks the caller as Sales."""
+    wanted = token.encode()
+    found = False
+    for key, value in scope["headers"]:  # no early exit: constant-time over every part
+        if key.lower() == b"authorization":
+            for part in value.split():
+                found |= hmac.compare_digest(part, wanted)
+    return found
 
 
 class SalesRouteGuard:
