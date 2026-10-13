@@ -15,7 +15,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-BUDGET_NAME="acme-airlines-factory-monthly"
+BUDGET_NAME="${BUDGET_NAME:-${PROJECT_ID}-monthly}"
 TOPIC="acme-budget-alerts"
 TOKEN_SECRET="acme-guard-hub-token"
 SUB="acme-budget-guard-push"

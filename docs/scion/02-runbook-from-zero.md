@@ -23,10 +23,13 @@ default config is never changed.
 | 4 | 🖐 Custom IAP OAuth client (needed for any domain outside the org) | console steps, then `infra/55-iap-oauth-client.sh` | `verify.sh iap-oauth` | 5 min |
 | 5 | Domain web access (IAP + hub sign-in policy; new users are viewers) | `infra/50-web-access.sh` | `verify.sh webaccess`, browser login | 1 min |
 | 6 | Hub project + GitHub secret | `30-hub-admin-access.sh enable`, `hub_cli hub projects create <repo-url>`, 🖐 PAT → `31-set-project-secret.sh`, `30… disable` | `verify.sh hubproject` | 3 min |
+| 6b | Least-privilege agent SA + telemetry export | `infra/25-agent-identity.sh` | `verify.sh identity telemetry` | 2 min |
+| 6c | GitHub repo labels, status issue, branch protection | `infra/35-github-repo.sh` | — | 1 min |
 | 7 | Agent team templates | `infra/40-build-team-templates.sh`, then `infra/45-push-templates.sh` | `verify.sh team cost skills` | 3 min |
 | 8 | Lead + standing roster | `hub_cli start acme-lead --type acme-lead --role full …` (kickoff below). The lead forms the roster itself | `verify.sh lead topology` | 5 min |
-| 9 | Loop schedule | `infra/60-factory.sh tick-install` | `verify.sh loop` | 1 min |
-| 10 | Budget guard | `infra/70-budget-guard.sh`, then the wiring test | `verify.sh budget` | 5 min |
+| 9 | Loop schedule (6h fallback) | `infra/60-factory.sh tick-install` | `verify.sh loop` | 1 min |
+| 10 | Budget guard ($2,000/month) | `infra/70-budget-guard.sh`, then the wiring test | `verify.sh budget` | 5 min |
+| 10b | Watchdog (5-min wake-on-change, stalled recovery, daily reincarnation, PO email alert) | `infra/76-watchdog.sh` | `verify.sh watchdog` | 3 min |
 | 11 | Observatory platform (optional) | `infra/80-observatory-platform.sh`, then 🖐 billing export and a GitHub read token | `verify.sh observatory` | 5 min |
 | 12 | Daily boot-disk snapshots | `infra/75-backups.sh` | `verify.sh backups` | 1 min |
 | 13 | App platforms (optional, product-specific) | `infra/90-irrops-demo-platform.sh`, `infra/95-agent-engine-platform.sh` | `verify.sh irrops-demo agent-engine` | 5 min |

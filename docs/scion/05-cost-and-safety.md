@@ -5,8 +5,13 @@
 1. **Model tiers.** Opus only for the lead, eng-managers and the architect.
    Sonnet for coding. Gemini Flash for review, audit, research, docs and
    exploratory QA.
-2. **Event-driven loop.** Workers wake the lead. The 30-minute `TICK` is a
-   safety net, and an unchanged-state tick is a one-line no-op.
+2. **Wake-on-change watchdog + daily reincarnation.** `acme-factory-watchdog`
+   (`infra/76-watchdog.sh`) polls GitHub and Hub state every 5 minutes and wakes
+   `acme-lead` only when something changed (avoiding 48 daily blind Opus wakes
+   after Anthropic's 5-minute prompt-cache TTL expires). At `04:00 UTC` daily,
+   `acme-lead-reincarnate` reincarnates `acme-lead` with a handoff built from
+   `"🏭 Factory status"` so context never grows unbounded across days. The
+   6-hour `TICK` (`0 */6 * * *`) is the safety net.
 3. **Idle mode.** With an empty backlog, everything is suspended and only
    approved work runs.
 4. **Caps.** Per-role `max_duration`, `max_turns` and `max_model_calls`
@@ -54,19 +59,29 @@ flowchart LR
 |---|---|---|---|
 | `GITHUB_TOKEN` (fine-grained PAT) | hub project secret | agents in the project | product owner |
 | Guard hub UAT | Secret Manager `acme-guard-hub-token` | guard SA | `ROTATE_TOKEN=1 infra/70-budget-guard.sh` (90d) |
+| Watchdog hub UAT | Secret Manager `acme-watchdog-hub-token` | watchdog SA | `ROTATE_TOKEN=1 infra/76-watchdog.sh` (90d) |
 | Collector hub UAT | Secret Manager `acme-observatory-hub-token` | collector SA | `ROTATE_TOKEN=1 infra/80-observatory-platform.sh` (90d) |
-| Collector GitHub token | Secret Manager `acme-observatory-github-token` | collector SA | manual |
+| Collector GitHub token | Secret Manager `acme-observatory-github-token` | collector + watchdog SAs | manual |
 | IAP OAuth client ID/secret | Secret Manager `acme-iap-oauth-client-*` | operator | console + `55-iap-oauth-client.sh` |
 | CD | GitHub Actions → WIF | `GITHUB_REPO@refs/heads/main` only | none needed (keyless) |
 
-- **No service-account keys exist.** Agents use the VM SA through the metadata
-  server.
+- **No service-account keys exist.** Agents run in `assign` mode as a dedicated
+  low-privilege service account `acme-agent@<project>.iam.gserviceaccount.com`
+  (`roles/aiplatform.user`, `logging.logWriter`, `monitoring.metricWriter`,
+  `cloudtrace.agent`), minted on demand by the Hub metadata sidecar
+  (`infra/25-agent-identity.sh`). The Hub default is `block` and the VM SA does
+  not hold `roles/iam.serviceAccountAdmin` (`"hub_sa_minting": false`).
+- **Deployer blast radius is resource-scoped.** `acme-observatory-deployer`
+  holds `roles/run.viewer` at project level (for LRO polling) and
+  `roles/run.developer` only on `acme-observatory`, `acme-irrops-demo`, and job
+  `acme-observatory-collector`, so it cannot modify `scion-hub-acme-iap-proxy`,
+  `acme-budget-guard`, or `acme-factory-watchdog`.
 - **Secrets never pass through argv, files or logs.** Scripts read them from
   stdin and PUT them to APIs from memory. Values are never echoed. Validation
   prints status codes only.
 - **Operator admin access is temporary.** Federation is enabled for the
   duration of an admin action. Every script that enables it disables it in a
-  `trap` and verifies `status` reads `disabled` afterwards.
+  subshell `EXIT` trap and verifies `status` reads `disabled` afterwards.
 - **Agents never change IAM or infra.** They file `needs operator` issues. The
   operator checks the diagnosis, grants the minimal role, codifies it in
   `infra/` plus a `verify.sh` assertion, and closes the issue with evidence.
@@ -95,8 +110,12 @@ gcloud compute disks create scion-hub-restore --project=$PROJECT_ID --zone=$ZONE
 
 ## Known residual risks (accepted for an experiment)
 
-- **No GitHub-side protection.** All agents share one GitHub identity and
-  there is no branch protection on a private repo without Pro. Merges to
-  `main` are protected by team rules plus the reviewer verdict and CI only.
+- **Shared GitHub identity.** All agents share one GitHub PAT (`GITHUB_TOKEN`),
+  so GitHub's native "cannot approve your own PR" check cannot distinguish
+  coder from reviewer. Mitigated by branch protection on `main`
+  (`enforce_admins=true`, required status checks `backend`, `engine-smoke`,
+  `frontend`, `pr-size`; `infra/35-github-repo.sh`), `collaborators_only`
+  interaction limit, trusted-author rule #9, and `acme-reviewer`'s mandatory
+  8-item verification checklist.
 - **Broad web access** (resolved 2026-10-12): new users now default to `viewer`.
 - **The PAT is broader than read-only** where it's reused for the Observatory.

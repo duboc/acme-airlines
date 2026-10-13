@@ -129,11 +129,12 @@ engines_ok() {
   echo "engines: $(jq -r '[.reasoningEngines[]? | .displayName] | join(", ")' <<<"${j}")"
 }
 
-# agent_traces_ok <cloudtrace-v1-list-json>: at least one trace containing an ADK agent span
-# (invoke_agent / call_llm / execute_tool), as opposed to plain Cloud Run request spans.
+# agent_traces_ok <cloudtrace-v1-list-json>: at least one trace containing an ADK or ACME
+# engine span (invoke_agent / call_llm / execute_tool / agent_run / acme.*), as opposed to
+# plain Cloud Run request spans.
 agent_traces_ok() {
   local n
-  n="$(jq '[.traces[]? | select([.spans[]?.name] | any(test("^(invoke_agent|call_llm|execute_tool|agent_run)")))] | length' <<<"$1")"
+  n="$(jq '[.traces[]? | select([.spans[]?.name] | any(test("^(invoke_agent|call_llm|execute_tool|agent_run|acme\\.)")))] | length' <<<"$1")"
   (( n > 0 )) || { echo "no ADK agent spans"; return 1; }
   echo "${n} traces with agent spans"
 }
@@ -283,8 +284,8 @@ check_budget() {
   # Budget exists with a 100% threshold wired to the guard topic, and the guard service is deployed.
   local b
   b="$(gcloud billing budgets list --billing-account="${BILLING_ACCOUNT}" \
-        --filter='displayName=acme-airlines-factory-monthly' --format=json 2>/dev/null)"
-  [[ "$(jq 'length' <<<"${b:-[]}")" -ge 1 ]] || { fail budget "budget acme-airlines-factory-monthly not found"; return 1; }
+        --filter="displayName=${BUDGET_NAME}" --format=json 2>/dev/null)"
+  [[ "$(jq 'length' <<<"${b:-[]}")" -ge 1 ]] || { fail budget "budget ${BUDGET_NAME} not found"; return 1; }
   jq -e '.[0].thresholdRules | map(.thresholdPercent) | index(1)' <<<"${b}" >/dev/null \
     || { fail budget "no 100% threshold"; return 1; }
   jq -e '.[0].notificationsRule.pubsubTopic | endswith("/topics/acme-budget-alerts")' <<<"${b}" >/dev/null \
@@ -442,6 +443,73 @@ check_backups() {
   [[ "${pol}" == *"${VM_NAME}-daily-snapshots"* ]] || { fail backups "no snapshot schedule on disk ${VM_NAME}"; return 1; }
   pass backups
 }
+check_watchdog() {
+  # Wake-on-change watchdog + daily lead reincarnation + PO log-based alert policy (infra/76-watchdog.sh).
+  local p="${PROJECT_ID}" r="${REGION}" svc="acme-factory-watchdog" missing=""
+  gcloud iam service-accounts describe "${svc}@${p}.iam.gserviceaccount.com" --project="${p}" >/dev/null 2>&1 || missing+=" sa:${svc}"
+  gcloud secrets versions list acme-watchdog-hub-token --project="${p}" --filter=state=ENABLED --format='value(name)' 2>/dev/null | grep -q . \
+    || missing+=" secret:acme-watchdog-hub-token"
+  gcloud run services describe "${svc}" --region="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" run:${svc}"
+  for j in acme-factory-watchdog acme-lead-reincarnate; do
+    local st
+    st="$(gcloud scheduler jobs describe "${j}" --location="${r}" --project="${p}" --format='value(state)' 2>/dev/null || true)"
+    [[ "${st}" == "ENABLED" ]] || missing+=" scheduler:${j}(${st:-missing})"
+  done
+  gcloud alpha monitoring policies list --project="${p}" --filter='displayName="acme-factory-watchdog-po-alert" AND enabled=true' \
+    --format='value(name)' 2>/dev/null | grep -q . || missing+=" alert:acme-factory-watchdog-po-alert"
+  [[ -z "${missing}" ]] || { fail watchdog "missing:${missing}"; return 1; }
+  if gcloud run services get-iam-policy "${svc}" --region="${r}" --project="${p}" --format=json 2>/dev/null \
+       | jq -e '[.bindings[]?.members[]?] | any(. == "allUsers" or . == "allAuthenticatedUsers")' >/dev/null; then
+    fail watchdog "${svc} is publicly invokable"; return 1
+  fi
+  pass "watchdog (5m wake-on-change, 04:00Z daily reincarnate, PO alert policy)"
+}
+check_identity() {
+  # Dedicated low-privilege agent SA (assign mode), hub default block, least-privilege IAM (infra/25-agent-identity.sh).
+  local p="${PROJECT_ID}" agent_sa="acme-agent@${PROJECT_ID}.iam.gserviceaccount.com"
+  local vm_sa="${VM_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+  local dep_sa="acme-observatory-deployer@${PROJECT_ID}.iam.gserviceaccount.com"
+  local missing="" pol
+  gcloud iam service-accounts describe "${agent_sa}" --project="${p}" >/dev/null 2>&1 || missing+=" sa:acme-agent"
+  pol="$(gcloud projects get-iam-policy "${p}" --format=json 2>/dev/null)"
+  _has() { jq -e --arg r "$1" --arg m "$2" '.bindings[] | select(.role==$r) | .members | index($m)' <<<"${pol}" >/dev/null; }
+  local role
+  for role in roles/aiplatform.user roles/logging.logWriter roles/monitoring.metricWriter roles/cloudtrace.agent; do
+    _has "${role}" "serviceAccount:${agent_sa}" || missing+=" ${role}->acme-agent"
+  done
+  if _has "roles/iam.serviceAccountAdmin" "serviceAccount:${vm_sa}"; then
+    missing+=" forbidden:serviceAccountAdmin-on-${VM_NAME}"
+  fi
+  if _has "roles/run.developer" "serviceAccount:${dep_sa}"; then
+    missing+=" forbidden:project-run.developer-on-deployer"
+  fi
+  if _has "roles/iap.httpsResourceAccessor" "user:${ADMIN_EMAIL}"; then
+    missing+=" forbidden:project-iap-on-${ADMIN_EMAIL}"
+  fi
+  gcloud iam service-accounts get-iam-policy "${agent_sa}" --project="${p}" --format=json 2>/dev/null \
+    | jq -e --arg m "serviceAccount:${vm_sa}" '.bindings[]? | select(.role=="roles/iam.serviceAccountTokenCreator") | .members | index($m)' >/dev/null \
+    || missing+=" tokenCreator(${VM_NAME})->acme-agent"
+  local hub_state
+  hub_state="$(vm_ssh "sudo grep -E '^default_gcp_identity_mode:' /home/scion/.scion/settings.yaml | awk '{print \$2}' | tail -1; \
+    sudo -u scion sqlite3 /home/scion/.scion/hub.db \"SELECT json_extract(annotations, '\\\$.\\\"scion.io/default-gcp-identity-mode\\\"') FROM projects WHERE slug='${HUB_PROJECT_SLUG}';\"; \
+    sudo -u scion sqlite3 /home/scion/.scion/hub.db \"SELECT COUNT(*) FROM agents WHERE deleted_at IS NULL AND COALESCE(json_extract(applied_config, '\\\$.gcpIdentity.metadataMode'),'') != 'assign';\"" 2>/dev/null)"
+  local hub_mode proj_mode non_assign
+  hub_mode="$(sed -n '1p' <<<"${hub_state}")"
+  proj_mode="$(sed -n '2p' <<<"${hub_state}")"
+  non_assign="$(sed -n '3p' <<<"${hub_state}")"
+  [[ "${hub_mode}" == "block" ]] || missing+=" hub-mode:${hub_mode:-unset}(want:block)"
+  [[ "${proj_mode}" == "assign" ]] || missing+=" project-mode:${proj_mode:-unset}(want:assign)"
+  [[ "${non_assign}" == "0" ]] || missing+=" non-assign-agents:${non_assign}"
+  [[ -z "${missing}" ]] || { fail identity "${missing}"; return 1; }
+  pass "identity (acme-agent@ assign mode, hub default block, least-privilege IAM)"
+}
+check_telemetry() {
+  # Scion agent telemetry export enabled in hub settings (infra/25-agent-identity.sh).
+  local tel
+  tel="$(vm_ssh "sudo -u scion sqlite3 /home/scion/.scion/hub.db \"SELECT json_extract(value, '\\\$.enabled'), json_extract(value, '\\\$.cloud.enabled') FROM hub_settings WHERE section='telemetry';\"" 2>/dev/null)"
+  [[ "${tel}" == "1|1" ]] || { fail telemetry "hub telemetry not enabled (${tel:-unset})"; return 1; }
+  pass "telemetry (Cloud Monitoring OTLP export enabled)"
+}
 check_lead() {
   # The lead agent's container is running on the VM.
   vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
@@ -469,19 +537,22 @@ run() {
     iap-oauth)    check_iap_oauth ;;
     webaccess)    check_webaccess ;;
     backups)      check_backups ;;
+    watchdog)     check_watchdog ;;
+    identity)     check_identity ;;
+    telemetry)    check_telemetry ;;
     agent-engine) check_agent_engine ;;
     engines)      check_engines ;;
     traces)       check_traces ;;
     demo-engine)  check_demo_engine ;;
     all)
       local rc=0
-      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth agent-engine webaccess backups; do run "$c" || rc=1; done
+      for c in project hub vertex claude-image hubproject smoke team lead topology cost skills loop budget observatory iap-oauth agent-engine webaccess backups watchdog identity telemetry; do run "$c" || rc=1; done
       return "$rc" ;;
     e2e)
       local rc=0
       for c in lead loop engines traces demo-engine; do run "$c" || rc=1; done
       return "$rc" ;;
-    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|all>" >&2; return 2 ;;
+    *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|webaccess|backups|watchdog|identity|telemetry|agent-engine|engines|traces|demo-engine|e2e|all>" >&2; return 2 ;;
   esac
 }
 

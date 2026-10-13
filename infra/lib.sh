@@ -29,12 +29,14 @@ BILLING_ACCOUNT="${BILLING_ACCOUNT:-01820C-6329B4-8A7409}"
 ORG_DOMAIN="${ORG_DOMAIN:-duboc.altostrat.com}"
 WEB_DOMAINS="${WEB_DOMAINS:-google.com duboc.altostrat.com}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@duboc.altostrat.com}"
+DEFAULT_USER_ROLE="${DEFAULT_USER_ROLE:-viewer}"
 GITHUB_REPO="${GITHUB_REPO:-duboc/acme-airlines}"
 HUB_PROJECT_SLUG="${HUB_PROJECT_SLUG:-duboc-acme-airlines}"
 AGENT_TEAM_SHA="${AGENT_TEAM_SHA:-3650f1b03411116fcbf37852bfec6911db64b569}"
 IMPECCABLE_SHA="${IMPECCABLE_SHA:-d631a8827f99414d2b6daba4ef08b7f8701751d7}"
-BUDGET_USD="${BUDGET_USD:-1000}"
-TICK_CRON="${TICK_CRON:-*/30 * * * *}"
+BUDGET_USD="${BUDGET_USD:-2000}"
+TICK_CRON="${TICK_CRON:-0 */6 * * *}"
+DEPLOY_ZONE="${DEPLOY_ZONE:-us-central1-a}"
 GCLOUD_CLIENT_ID="${GCLOUD_CLIENT_ID:-32555940559.apps.googleusercontent.com}"
 
 cfg() { jq -r "$1" "${CONFIG_FILE}"; }
@@ -42,9 +44,32 @@ cfg() { jq -r "$1" "${CONFIG_FILE}"; }
 PROJECT_ID="$(cfg '.project_id')"
 REGION="$(cfg '.region')"
 HUB_NAME="$(cfg '.hub_name')"
+BUDGET_NAME="${BUDGET_NAME:-${PROJECT_ID}-monthly}"
 VM_NAME="scion-hub-${HUB_NAME}"
 VM_SA="scion-hub-${HUB_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 PROXY_SVC="scion-hub-${HUB_NAME}-iap-proxy"
+
+: "${PROJECT_ID:?PROJECT_ID missing in deploy-config.json}"
+: "${REGION:?REGION missing in deploy-config.json}"
+: "${HUB_NAME:?HUB_NAME missing in deploy-config.json}"
+: "${FOLDER_ID:?FOLDER_ID missing in factory.env}"
+: "${BILLING_ACCOUNT:?BILLING_ACCOUNT missing in factory.env}"
+: "${ORG_DOMAIN:?ORG_DOMAIN missing in factory.env}"
+: "${ADMIN_EMAIL:?ADMIN_EMAIL missing in factory.env}"
+: "${GITHUB_REPO:?GITHUB_REPO missing in factory.env}"
+: "${HUB_PROJECT_SLUG:?HUB_PROJECT_SLUG missing in factory.env}"
+
+# Retry a command with linear backoff: retry <attempts> <delay_seconds> <cmd...>
+retry() {
+  local attempts="$1" delay="$2"; shift 2
+  local i=1
+  while true; do
+    "$@" && return 0
+    (( i >= attempts )) && return 1
+    sleep "$(( delay * i ))"
+    (( i++ ))
+  done
+}
 
 # Models probed by `verify.sh vertex` on the Vertex AI global endpoint.
 # Claude defaults mirror the scion claude harness (opus → claude-opus-5-5,
@@ -83,6 +108,6 @@ hub_cli() {
         mkdir -p ~/acme-cli && cd ~/acme-cli && scion ${args}"
 }
 
-export PROJECT_ID REGION HUB_NAME VM_NAME VM_SA PROXY_SVC
+export PROJECT_ID REGION HUB_NAME BUDGET_NAME VM_NAME VM_SA PROXY_SVC
 export REPO_ROOT FOLDER_ID BILLING_ACCOUNT SCION_SRC SCION_VERSION CONFIG_FILE
-export ORG_DOMAIN WEB_DOMAINS ADMIN_EMAIL GITHUB_REPO HUB_PROJECT_SLUG AGENT_TEAM_SHA IMPECCABLE_SHA BUDGET_USD TICK_CRON GCLOUD_CLIENT_ID
+export ORG_DOMAIN WEB_DOMAINS ADMIN_EMAIL DEFAULT_USER_ROLE GITHUB_REPO HUB_PROJECT_SLUG AGENT_TEAM_SHA IMPECCABLE_SHA BUDGET_USD TICK_CRON DEPLOY_ZONE GCLOUD_CLIENT_ID

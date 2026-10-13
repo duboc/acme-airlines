@@ -16,9 +16,13 @@ all of it: every scenario step and governance rule maps to an issue with
 Given/When/Then acceptance criteria and a test.
 
 ### The factory loop
-You are woken by worker messages (done, blocked, PR ready), by `TICK` messages
-from the hub schedule `acme-factory-tick` (every 30 minutes), and by
-product-owner messages. On **every** wake-up, run one loop pass:
+You are woken by worker messages (done, blocked, PR ready), by `WATCHDOG:`
+messages from `acme-factory-watchdog` (which polls GitHub issues/PRs/workflows
+and agent states every 5 minutes and wakes you only when something changed), by
+`TICK` safety-net messages from the hub schedule `acme-factory-tick` (every
+6 hours), and by product-owner messages. You are also reincarnated once per day
+(`04:00 UTC`) with a handoff built from `"🏭 Factory status"` so your prompt
+context stays compact. On **every** wake-up, run one loop pass:
 1. **Sweep:** `scion list`. Unstick stalled agents with a message. Recover
    `LIMITS_EXCEEDED` agents by messaging "continue" once; if that fails,
    recreate under the same name.

@@ -26,8 +26,13 @@ unit-tested in `infra/tests/test_verify.sh`. Every check was seen failing
 | `iap-oauth` | Custom OAuth client on the IAP services |
 | `agent-engine` | Runtime SA roles, staging bucket, deployer roles (incl. `legacyBucketReader`), demo query role, service-agent token creator |
 | `irrops-demo` | Demo service behind IAP; its SA holds only `aiplatform.user` |
+| `webaccess` | Hub `default_user_role` is `viewer` (new web users cannot create agents) |
+| `backups` | Daily snapshot policy (`7d` retention) attached to the hub VM boot disk |
+| `watchdog` | `acme-factory-watchdog` service ready (not public), UAT secret enabled, `*/5` and `0 4 * * *` scheduler jobs active, PO alert policy enabled |
+| `identity` | Dedicated `acme-agent@` SA with 4 least-privilege roles, VM SA has `tokenCreator` on `acme-agent@` and no `serviceAccountAdmin`, deployer `run.developer` resource-scoped, Hub default `block`, project default `assign`, all live agents in `assign` mode |
+| `telemetry` | Scion Cloud Monitoring telemetry export enabled in Hub settings |
 | `engines` *(e2e)* | Exactly one `acme-customer-agent` and one `acme-sales-agent`, running as `acme-agent-engine`, with no reserved env |
-| `traces` *(e2e)* | Cloud Trace has ADK agent spans (`invoke_agent`/`call_llm`/`execute_tool`) in the last 24h |
+| `traces` *(e2e)* | Cloud Trace has ADK/`acme.*` agent spans (`invoke_agent`/`call_llm`/`execute_tool`/`agent_run`/`acme.*`) in the last 24h |
 | `demo-engine` *(e2e)* | The demo runs with `ENGINE_MODE=agent-engine` |
 
 ## Where to look
@@ -43,20 +48,26 @@ unit-tested in `infra/tests/test_verify.sh`. Every check was seen failing
 | Hub/broker logs | `gcloud compute ssh <vm> --tunnel-through-iap --command='sudo journalctl -u scion-hub -f'` |
 | Did the budget guard act? | Cloud Logging: `resource.labels.service_name="acme-budget-guard"`, with lines `cost=… budget=… -> …` |
 
-## Optional: export the Scion agents' own telemetry
+## Scion agent telemetry export (`infra/25-agent-identity.sh`)
 
-Scion's `sciontool` forwards OTel (traces, metrics, redacted logs) per agent.
-On this VM the agents already have ADC through the metadata server, and the VM
-SA has `cloudtrace.agent`, `logging.logWriter` and `monitoring.metricWriter`.
-Enabling it is a hub `settings.yaml` change:
+Scion's `sciontool` forwards OTel metrics (`gen_ai.api.calls`, `scion.usage.tokens`)
+and traces per agent, labelled with `scion_agent_id`, `scion_agent_slug`,
+`scion_project_id`, `harness`, `model`, and `token_type`. Each agent runs in
+`assign` mode as `acme-agent@<project>.iam.gserviceaccount.com` (which holds
+`cloudtrace.agent`, `logging.logWriter` and `monitoring.metricWriter`), and
+`infra/25-agent-identity.sh` configures Hub `settings.yaml`:
 
 ```yaml
 telemetry:
   enabled: true
-  cloud: { enabled: true, gcp_project_id: "<project>", endpoint: "monitoring.googleapis.com:443", protocol: grpc }
-  filter: { events: { exclude: ["agent.user.prompt"] } }
+  cloud:
+    enabled: true
+    gcp_project_id: "<project>"
+    endpoint: "monitoring.googleapis.com:443"
+    protocol: "grpc"
+  hub:
+    enabled: true
+    report_interval: "30s"
 ```
 
-This was **not** enabled in this factory; the product owner chose Agent
-Engine tracing for the app agents instead. See Scion's
-`hosted/single-node/observability` docs.
+Verified by `infra/verify.sh telemetry`.

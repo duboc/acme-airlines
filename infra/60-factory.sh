@@ -30,6 +30,12 @@ tick_id() {  # prints the schedule id for TICK_NAME, or nothing
       --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null | head -1
 }
 
+tick_cron() {  # prints the cron_expr for TICK_NAME, or nothing
+  printf '%s\n' "SELECT cron_expr FROM schedules WHERE name='${TICK_NAME}';" | \
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
+      --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null | head -1
+}
+
 case "${1:-status}" in
   status)
     echo "VM: $(vm_status)"
@@ -38,23 +44,41 @@ case "${1:-status}" in
       "SELECT 'schedule', name, cron_expr, status FROM schedules WHERE name='${TICK_NAME}';" \
       "SELECT 'agents', phase, count(*) FROM agents WHERE deleted_at IS NULL GROUP BY phase;" | \
       gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
-        --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null ;;
+        --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null
+    for j in acme-factory-watchdog acme-lead-reincarnate; do
+      st="$(gcloud scheduler jobs describe "${j}" --location="${REGION}" --project="${PROJECT_ID}" --format='value(state)' 2>/dev/null || echo 'absent')"
+      echo "scheduler | ${j} | ${st}"
+    done ;;
   tick-install)
     admin_on
-    if [[ -n "$(tick_id)" ]]; then echo "schedule ${TICK_NAME} already exists"; else
+    id="$(tick_id)"
+    cur_cron="$(tick_cron)"
+    if [[ -n "${id}" && "${cur_cron}" == "${TICK_CRON}" ]]; then
+      echo "schedule ${TICK_NAME} already exists (${cur_cron})"
+    else
+      if [[ -n "${id}" ]]; then
+        echo "updating schedule ${TICK_NAME} from '${cur_cron}' to '${TICK_CRON}'..."
+        hub schedule delete "${id}"
+      fi
       hub schedule create-recurring --name "${TICK_NAME}" --cron "${TICK_CRON}" \
         --type message --agent acme-lead --message "${TICK_MSG}"
     fi ;;
   pause)
     admin_on
     id="$(tick_id)"; [[ -z "${id}" ]] || hub schedule pause "${id}" || true
+    for j in acme-factory-watchdog acme-lead-reincarnate; do
+      gcloud scheduler jobs pause "${j}" --location="${REGION}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
+    done
     hub suspend --all || true
-    echo "paused: tick schedule paused, agents suspended (roster and graph intact)" ;;
+    echo "paused: tick + watchdog schedules paused, agents suspended (roster and graph intact)" ;;
   resume)
     admin_on
     id="$(tick_id)"; [[ -z "${id}" ]] || hub schedule resume "${id}" || true
+    for j in acme-factory-watchdog acme-lead-reincarnate; do
+      gcloud scheduler jobs resume "${j}" --location="${REGION}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
+    done
     hub resume acme-lead "Factory resumed by the operator. Run a full factory loop pass now." 2>/dev/null \
       || hub message acme-lead "Factory resumed by the operator. Run a full factory loop pass now."
-    echo "resumed: tick schedule active, acme-lead woken" ;;
+    echo "resumed: tick + watchdog schedules active, acme-lead woken" ;;
   *) sed -n '2,13p' "$0"; exit 2 ;;
 esac

@@ -111,10 +111,12 @@ WIF_PROVIDER="projects/${PNUM}/locations/global/workloadIdentityPools/github/pro
 gcloud iam service-accounts add-iam-policy-binding "${SA_DEPL}" --project="${P}" --role=roles/iam.workloadIdentityUser \
   --member="principalSet://iam.googleapis.com/projects/${PNUM}/locations/global/workloadIdentityPools/github/attribute.repository/${REPO}" --format=none
 
-log "IAM: deployer (only what deploys need)"
+log "IAM: deployer (only what deploys need: project run.viewer for operation polling; resource-scoped run.developer)"
 gcloud artifacts repositories add-iam-policy-binding observatory --location="${R}" --project="${P}" \
   --member="serviceAccount:${SA_DEPL}" --role=roles/artifactregistry.writer --format=none
-proj_role "${SA_DEPL}" roles/run.developer
+proj_role "${SA_DEPL}" roles/run.viewer
+gcloud projects remove-iam-policy-binding "${P}" \
+  --member="serviceAccount:${SA_DEPL}" --role=roles/run.developer --all --quiet >/dev/null 2>&1 || true
 for sa in "${SA_DASH}" "${SA_COLL}"; do
   gcloud iam service-accounts add-iam-policy-binding "${sa}" --project="${P}" \
     --member="serviceAccount:${SA_DEPL}" --role=roles/iam.serviceAccountUser --format=none
@@ -126,6 +128,8 @@ if ! gcloud run services describe acme-observatory --region="${R}" --project="${
     --service-account="${SA_DASH}" --no-allow-unauthenticated --iap --max-instances=2 --quiet \
     --set-env-vars="PROJECT_ID=${P},BUDGET_USD=${BUDGET_USD},BILLING_DATASET=billing_export,OPS_DATASET=factory_ops"
 fi
+gcloud run services add-iam-policy-binding acme-observatory --region="${R}" --project="${P}" \
+  --member="serviceAccount:${SA_DEPL}" --role=roles/run.developer --format=none
 gcloud run services add-iam-policy-binding acme-observatory --region="${R}" --project="${P}" \
   --member="serviceAccount:service-${PNUM}@gcp-sa-iap.iam.gserviceaccount.com" --role=roles/run.invoker --format=none
 read -ra DOMS <<<"${WEB_DOMAINS}"
@@ -143,6 +147,8 @@ if ! gcloud run jobs describe acme-observatory-collector --region="${R}" --proje
     --update-secrets="SCION_HUB_TOKEN=${HUB_SECRET}:latest" \
     --max-retries=1 --task-timeout=300s --quiet
 fi
+gcloud run jobs add-iam-policy-binding acme-observatory-collector --region="${R}" --project="${P}" \
+  --member="serviceAccount:${SA_DEPL}" --role=roles/run.developer --format=none
 gcloud run jobs add-iam-policy-binding acme-observatory-collector --region="${R}" --project="${P}" \
   --member="serviceAccount:${SA_COLL}" --role=roles/run.invoker --format=none
 

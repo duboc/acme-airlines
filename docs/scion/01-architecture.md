@@ -40,9 +40,9 @@ flowchart LR
 |---|---|---|---|
 | Scion Hub + Runtime Broker | One GCE VM, systemd `scion-hub` | VM SA `scion-hub-<hub>` | SQLite, local secrets, Docker for agents. Deployed by Scion's `scripts/single-node-vm/deploy.sh` |
 | Web/CLI access | Cloud Run IAP proxy | IAP | `auth.mode: proxy`. External domains need a **custom OAuth client** |
-| Agents | Docker containers on the VM | VM SA through metadata (`default_gcp_identity_mode: passthrough`) | Vertex `global` via ADC. No API keys |
+| Agents | Docker containers on the VM | Dedicated `acme-agent` SA via metadata sidecar (`assign` mode; Hub default `block`) | Vertex `global` via ADC + Cloud Monitoring/Trace/Logging write only. No API keys |
 | GitHub access | Inside agents | Project secret `GITHUB_TOKEN` (fine-grained PAT) | All agents share one GitHub identity (consequences in [04](04-operating-model.md)) |
-| Lead loop | Hub schedule `acme-factory-tick` | Admin user | Sends `TICK` to `acme-lead` (`TICK_CRON`) |
+| Lead loop & watchdog | Cloud Run `acme-factory-watchdog` (`*/5`) + Hub schedule `acme-factory-tick` (`0 */6 * * *`) | `acme-factory-watchdog` SA (project UAT) / Admin user | Wakes `acme-lead` only on GitHub/agent changes, self-heals stalls, reincarnates `acme-lead` daily at `04:00 UTC`, and alerts `ADMIN_EMAIL` |
 | Budget guard | Cloud Run `acme-budget-guard` | `acme-budget-guard` SA (no Compute roles) | Budget → Pub/Sub (OIDC push) → `scion suspend --all` over the VPC with a project UAT |
 | Observatory | Cloud Run service (IAP) + job (Scheduler) | Read-only SAs | BigQuery + Monitoring + Trace + Logging |
 | App agents (optional) | Vertex AI Agent Engine | `acme-agent-engine` SA | `enable_tracing=True`, so traces go to Cloud Trace |
