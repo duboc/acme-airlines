@@ -276,3 +276,20 @@ Evidence first, then the fix. What is in place to find the cause:
 - Reading it: a missing trace whose op line shows `is_recording: false` / `parent.sampled: false` is
   platform sampling; `flush_ok: false` or an `export` line with `ok: false` is our exporter; different
   `pid` / `instance` values per call point to the multi-process or multi-instance hypotheses.
+
+## Live-proof engine diagnostics (#221)
+
+The live proof workflow uploads an engine diagnostics artifact for the missing-trace investigation
+(engine-side instrumentation is a separate PR: per-operation `ACME_DIAG` lines and the
+`acme.engine.op` span):
+
+- **Engine diagnostics artifact** (`engine-logs`, **retention 1 day**): both engines' log lines for the
+  run window are read with the deployer's `logging.viewer` and reduced to an **allowlist**: only
+  well-formed `ACME_DIAG` lines are kept, and only these fields (each type- and pattern-checked, so
+  no free text can pass through a permitted key): `op`, `trace_id`, `span_id`, `is_recording`,
+  `sampled`, `parent_valid`, `parent_sampled`, `flush_ok`, `flush_ms`, `flush_error` (a type name),
+  `pid`, `instance`, `provider`, and for exports `ok`, `n`, `ms`, `error` (a type name), plus the entry
+  timestamp and severity. Every other line (tracebacks, container stderr, request payloads) is dropped
+  and only counted (`{"event": "dropped", "lines": n, "errors": m}`); a failed log read is a
+  `log_read_failed` marker with the exception type name. The repository is public, so artifacts are
+  world-downloadable: that is why it is not a denylist.

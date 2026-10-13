@@ -6,11 +6,18 @@ a file (stdout otherwise). Uses ADC. Design: docs/agent-engine/engines.md#proof
 """
 
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from tests.live.agent_engine_proof import CloudTraceV1, run_proof, write_inventory
+from tests.live.agent_engine_proof import (
+    CloudLogging,
+    CloudTraceV1,
+    run_proof,
+    write_engine_logs,
+    write_inventory,
+)
 
 pytestmark = [
     pytest.mark.live,
@@ -38,6 +45,7 @@ async def test_deployed_engines_emit_the_expected_traces_without_pii(capsys):
     )
 
     kwargs = {"presets": presets} if presets else {}
+    started = datetime.now(UTC)
     report = await run_proof(
         backend,
         local_engine_backend(),
@@ -56,4 +64,22 @@ async def test_deployed_engines_emit_the_expected_traces_without_pii(capsys):
     inventory_path = os.environ.get("ACME_PROOF_INVENTORY")
     if inventory_path and report.inventory is not None:
         write_inventory(report, inventory_path)  # on failure or ACME_PROOF_DUMP=1
+    attach_engine_logs(project, started)  # even when the proof failed: that is when it matters
     assert not report.failures, "\n".join(report.failures)
+
+
+def attach_engine_logs(project: str, started: datetime) -> None:
+    """Engine diagnostics for the run window (#221): allowlisted ACME_DIAG fields only, see
+    `write_engine_logs`. A log read failure is written to the file as a marker, never fatal."""
+    path = os.environ.get("ACME_PROOF_LOGS")
+    if not path:
+        return
+    logs = CloudLogging(project)
+    start, end = started - timedelta(minutes=1), datetime.now(UTC) + timedelta(minutes=2)
+    write_engine_logs(
+        path,
+        {
+            "customer": logs.fetch_or_error(os.environ["AGENT_ENGINE_CUSTOMER"], start, end),
+            "sales": logs.fetch_or_error(os.environ["AGENT_ENGINE_SALES"], start, end),
+        },
+    )

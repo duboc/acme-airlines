@@ -44,10 +44,12 @@ jobs:
           ACME_PROOF_TABLE: ${{ runner.temp }}/trace-table.md
           ACME_PROOF_INVENTORY: ${{ runner.temp }}/trace-inventory.json
           ACME_PROOF_DUMP: ${{ inputs.dump_inventory && '1' || '0' }}
+          ACME_PROOF_LOGS: ${{ runner.temp }}/engine-logs.jsonl
         run: uv run pytest tests/live/test_agent_engine_traces.py -m live -q
       - name: Publish the trace table
         if: always()
-        run: cat "${{ runner.temp }}/trace-table.md" >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          cat "${{ runner.temp }}/trace-table.md" >> "$GITHUB_STEP_SUMMARY" || true
       - name: "Upload the trace inventory (no PII, acme.* values scrubbed)"
         if: always()
         uses: actions/upload-artifact@v4
@@ -56,3 +58,11 @@ jobs:
           path: ${{ runner.temp }}/trace-inventory.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: "Upload the engine diagnostics (allowlisted ACME_DIAG fields only, 1 day)"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-logs
+          path: ${{ runner.temp }}/engine-logs.jsonl
+          if-no-files-found: ignore
+          retention-days: 1
