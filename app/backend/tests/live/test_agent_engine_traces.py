@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.live.agent_engine_proof import CloudTraceV1, run_proof
+from tests.live.agent_engine_proof import CloudTraceV1, run_proof, write_inventory
 
 pytestmark = [
     pytest.mark.live,
@@ -39,7 +39,12 @@ async def test_deployed_engines_emit_the_expected_traces_without_pii(capsys):
 
     kwargs = {"presets": presets} if presets else {}
     report = await run_proof(
-        backend, local_engine_backend(), CloudTraceV1(project), project=project, **kwargs
+        backend,
+        local_engine_backend(),
+        CloudTraceV1(project),
+        project=project,
+        dump=os.environ.get("ACME_PROOF_DUMP") == "1",
+        **kwargs,
     )
 
     table = report.markdown()
@@ -48,4 +53,7 @@ async def test_deployed_engines_emit_the_expected_traces_without_pii(capsys):
         Path(target).write_text(table)
     else:
         print(table)
+    inventory_path = os.environ.get("ACME_PROOF_INVENTORY")
+    if inventory_path and report.inventory is not None:
+        write_inventory(report, inventory_path)  # on failure or ACME_PROOF_DUMP=1
     assert not report.failures, "\n".join(report.failures)
