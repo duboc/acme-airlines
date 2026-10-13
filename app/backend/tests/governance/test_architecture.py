@@ -174,3 +174,21 @@ def test_sales_is_pointed_at_the_a2a_listener_and_presents_its_credential():
     assert "8802" in text and 'headers={"Authorization": f"Bearer {token}"}' in text
     compose = (SRC.parents[2] / "compose.yaml").read_text()
     assert "ACME_CUSTOMER_URL: http://customer-runtime:8802" in compose
+
+
+def test_compose_binds_each_customer_listener_to_its_own_network_only():
+    """#265: 8800 only on web-net's address, 8802 only on a2a-net's, so Sales cannot reach 8800."""
+    import ipaddress
+
+    import yaml
+
+    compose = yaml.safe_load((SRC.parents[2] / "compose.yaml").read_text())
+    svc = compose["services"]["customer-runtime"]
+    env, nets = svc["environment"], svc["networks"]
+    web, a2a = (ipaddress.ip_address(nets[n]["ipv4_address"]) for n in ("web-net", "a2a-net"))
+    assert str(web) == env["ACME_CUSTOMER_HOST"] and str(a2a) == env["ACME_A2A_HOST"]
+    for net, ip in (("web-net", web), ("a2a-net", a2a)):
+        subnet = compose["networks"][net]["ipam"]["config"][0]["subnet"]
+        assert ip in ipaddress.ip_network(subnet)
+    assert "web-net" not in compose["services"]["sales-agent"]["networks"]
+    assert "8800" not in compose["services"]["sales-agent"]["environment"]["ACME_CUSTOMER_URL"]

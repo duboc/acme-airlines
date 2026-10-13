@@ -18,16 +18,21 @@ services:
     <<: *backend
     command: ["acme-customer"]
     environment:
-      ACME_CUSTOMER_HOST: 0.0.0.0
-      ACME_A2A_PORT: "8802"  # A2A-only listener; Sales is pointed here, never at 8800
+      # Each listener binds ONE network's address (fixed below): 8800 (passenger API) only on
+      # web-net, 8802 (A2A only) only on a2a-net. Sales is on a2a-net, so 8800 is unreachable (#265).
+      ACME_CUSTOMER_HOST: 10.89.1.2
+      ACME_A2A_HOST: 10.89.2.2
+      ACME_A2A_PORT: "8802"
       # Recognises Sales by its credential and refuses it everywhere except POST /a2a (#230).
       ACME_SALES_TOKEN: ${ACME_SALES_TOKEN:?set ACME_SALES_TOKEN (the sales token)}
       LLM_MODE: ${LLM_MODE:-fake}
       GOOGLE_CLOUD_PROJECT: acme-airlines-factory
       ACME_GENAI_LOCATION: global
-    networks: [web-net, a2a-net]
+    networks:
+      web-net: {ipv4_address: 10.89.1.2}
+      a2a-net: {ipv4_address: 10.89.2.2}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8800/openapi.json')"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://10.89.1.2:8800/openapi.json')"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -69,6 +74,9 @@ services:
 # acme-sim is only on sim-net (shared with the sales agent). The browser-facing network never
 # reaches it, and the customer runtime keeps its own in-process simulators for the demo world.
 networks:
-  web-net: {}
-  a2a-net: {internal: true}
+  web-net:
+    ipam: {config: [{subnet: 10.89.1.0/24}]}
+  a2a-net:
+    internal: true
+    ipam: {config: [{subnet: 10.89.2.0/24}]}
   sim-net: {internal: true}
