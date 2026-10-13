@@ -171,6 +171,33 @@ class SharedState:
         self._loaded_version, self._last_json = version, text
         self._secure_files()  # -wal/-shm are created lazily by the first write
 
+    def get_blob(self, key: str) -> str | None:
+        """A named JSON text next to the snapshot (callers hold the lock), e.g. Sales' sent-set."""
+        return self._get(f"blob:{key}")
+
+    def set_blob(self, key: str, value: str) -> None:
+        with self._db:
+            self._db.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (f"blob:{key}", value),
+            )
+        self._secure_files()
+
+    @contextlib.asynccontextmanager
+    async def exclusive(self) -> AsyncIterator[None]:
+        """The bare cross-process lock for async code (no runtime snapshot), reentrant."""
+        if self._key in _HELD.get():
+            yield
+            return
+        fd = await self._acquire_async()
+        token = _HELD.set(_HELD.get() | {self._key})
+        try:
+            yield
+        finally:
+            _HELD.reset(token)
+            self._release(fd)
+
     # --- one engine operation ---------------------------------------------------------------
     @contextlib.asynccontextmanager
     async def operation(

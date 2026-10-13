@@ -16,6 +16,9 @@ unchanged (`acme.customer.outreach`).
 
 from __future__ import annotations
 
+import contextlib
+import functools
+import inspect
 import logging
 import os
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Mapping
@@ -110,6 +113,44 @@ class ScenarioStepAgent(BaseAgent):
         )
 
 
+STATE_DB_ENV = "ACME_STATE_DB"
+
+
+def shared(fn):
+    """Run an engine operation under the cross-process shared state (#200), if configured.
+
+    Agent Engine runs several processes per container, so a turn may land in a process that did
+    not handle the previous one: each operation loads the newest snapshot, runs while holding the
+    cross-process lock (this is also what keeps the per-journey guarantees of #88 and #97 true
+    across processes) and writes a new snapshot if anything changed. Without `ACME_STATE_DB`
+    (local runs, unit tests) operations are unchanged.
+    """
+    if inspect.isasyncgenfunction(fn):
+
+        @functools.wraps(fn)
+        async def wrapped_gen(self, *args, **kwargs):
+            async with self._shared_operation():
+                async for item in fn(self, *args, **kwargs):
+                    yield item
+
+        return wrapped_gen
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def wrapped_async(self, *args, **kwargs):
+            async with self._shared_operation():
+                return await fn(self, *args, **kwargs)
+
+        return wrapped_async
+
+    @functools.wraps(fn)
+    def wrapped(self, *args, **kwargs):
+        with self._shared_operation_sync():
+            return fn(self, *args, **kwargs)
+
+    return wrapped
+
+
 class CustomerEngineApp:
     _STARTED = ("runtime", "skills", "scenarios", "_sessions", "_runner", "_step_runner")
 
@@ -117,6 +158,17 @@ class CustomerEngineApp:
         self.llm_mode = validate_env()
         self.startup_error: str | None = None
         self.started = False
+        self.shared: Any = None  # SharedState when ACME_STATE_DB is set (built in set_up)
+
+    def _shared_operation(self):
+        if self.shared is None:
+            return contextlib.nullcontext()
+        return self.shared.operation(self.runtime, self.scenarios)
+
+    def _shared_operation_sync(self):
+        if self.shared is None:
+            return contextlib.nullcontext()
+        return self.shared.operation_sync(self.runtime, self.scenarios)
 
     def __getattr__(self, name: str) -> Any:
         # Only reached when normal lookup fails: an operation touched state that set_up() never
@@ -171,12 +223,17 @@ class CustomerEngineApp:
             session_service=self._sessions,
         )  # fmt: skip
         self.scenarios = ScenarioRunner(self.runtime)
+        if state_db := os.environ.get(STATE_DB_ENV):
+            from acme.state.shared import SharedState
+
+            self.shared = SharedState(state_db)
         self._step_runner = Runner(
             app_name=f"{APP_NAME}-scenario",
             agent=ScenarioStepAgent(name="scenario_step", scenarios=self.scenarios),
             session_service=self._sessions,
         )
 
+    @shared
     async def async_stream_query(
         self, *, message: str, user_id: str, session_id: str | None = None
     ) -> AsyncIterator[dict[str, Any]]:
@@ -217,6 +274,7 @@ class CustomerEngineApp:
 
         yield from asyncio.run(collect())
 
+    @shared
     async def a2a_skill(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
         """Same dispatch as HTTP `/a2a`: the skill's data, or its JSON-RPC error body as is."""
         request = {
@@ -249,14 +307,17 @@ class CustomerEngineApp:
 
         return [preset_view(p).model_dump(mode="json") for p in PRESETS]
 
+    @shared
     def scenario_start(self, scenario_id: str) -> dict[str, Any]:
         return self.scenarios.start(self._preset(scenario_id)).model_dump(mode="json")
 
+    @shared
     def scenario_state(self) -> dict[str, Any]:
         if self.scenarios.active is None:
             raise EngineOperationError("no scenario is started")
         return self.scenarios.state().model_dump(mode="json")
 
+    @shared
     async def scenario_step(self) -> dict[str, Any]:
         """Customer half of a step as an ADK turn. The Sales tick is driven by the demo."""
         runner = self.scenarios
@@ -281,11 +342,13 @@ class CustomerEngineApp:
             pass
         return runner.state().model_dump(mode="json")
 
+    @shared
     def journeys_list(self) -> list[dict[str, Any]]:
         from acme.api.app import journey_summary
 
         return [journey_summary(r).model_dump(mode="json") for r in self.runtime.journeys.values()]
 
+    @shared
     async def journey_detail(self, journey_id: str) -> dict[str, Any]:
         from acme.api.app import journey_detail_view
 
@@ -293,6 +356,7 @@ class CustomerEngineApp:
         rec = self._journey(journey_id)
         return journey_detail_view(self.runtime, rec).model_dump(mode="json")
 
+    @shared
     def journey_events(self, journey_id: str, since: int = 0) -> list[dict[str, Any]]:
         """Timeline events from index ``since`` (a poll-friendly form of the SSE stream)."""
         timeline = self._journey(journey_id).state.timeline
@@ -312,25 +376,30 @@ class CustomerEngineApp:
             else (out.model_dump(mode="json"))
         )
 
+    @shared
     def reset(self) -> dict[str, str]:
         self.runtime.reset()
         return {"status": "reset"}
 
+    @shared
     async def trigger_cancellation(self, flight: str, reason: str) -> dict[str, Any]:
         from acme.api.app import do_trigger
 
         return await self._api(do_trigger, flight, reason)
 
+    @shared
     async def whatsapp_messages(self, passenger_id: str):
         from acme.api.app import do_messages
 
         return await self._api(do_messages, passenger_id)
 
+    @shared
     async def whatsapp_reply(self, passenger_id: str, text: str) -> dict[str, Any]:
         from acme.api.app import do_reply
 
         return await self._api(do_reply, passenger_id, text)
 
+    @shared
     async def whatsapp_action(self, passenger_id: str, action: str) -> dict[str, Any]:
         from acme.api.app import do_action
 

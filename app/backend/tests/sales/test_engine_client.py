@@ -125,3 +125,31 @@ def test_sales_engine_set_up_configures_pii_safe_logging(monkeypatch):
     monkeypatch.setattr(logging_setup, "configure_logging", lambda: calls.append(1))
     build_sales_engine_app(customer).set_up()
     assert calls == [1]
+
+
+async def test_sales_workers_share_the_sent_set_so_only_one_proposal_is_made(tmp_path, monkeypatch):
+    """#200: Agent Engine runs several Sales processes; the radar's sent-set must be shared."""
+    f = Flow("engine")
+    await f.acknowledged_replan()  # the flow's own radar already proposed once
+    handle = engine_over(f.rt)  # the Customer side has no shared state: another container
+    monkeypatch.setenv("ACME_STATE_DB", str(tmp_path / "state" / "sales.db"))  # Sales' own
+    w1, w2 = build_sales_engine_app(handle), build_sales_engine_app(handle)
+    w1.set_up()
+    w2.set_up()
+    texts = []
+    for w in (w1, w2, w1):
+        events = [e async for e in w.async_stream_query(message="tick", user_id="u")]
+        texts.append(events[-1]["content"]["parts"][0]["text"])
+    assert texts == ["proposed 1 offer(s)", "no offers proposed", "no offers proposed"]
+    assert [o.status for o in f.state.offers] == ["sent", "rejected"]  # not "rejected" x3
+    await f.http.aclose()
+
+
+def test_radar_sent_set_round_trips_as_json_rows():
+    from acme.sales.radar import SalesRadar
+
+    r = SalesRadar(None, None)  # type: ignore[arg-type]
+    r.import_sent([["J-1", "run1", "AC1252"]])
+    assert r.export_sent() == [["J-1", "run1", "AC1252"]]
+    r.import_sent([])
+    assert r.export_sent() == []

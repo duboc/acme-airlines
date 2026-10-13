@@ -22,6 +22,10 @@ from acme.llm import config as llm_config
 TRACING_ENV = "ACME_ENABLE_TRACING"
 GENAI_LOCATION_ENV = "ACME_GENAI_LOCATION"
 GENAI_PROJECT_ENV = "ACME_GENAI_PROJECT"
+# SQLite file shared by the processes of one container (#200). /tmp is container-local, so the
+# engines must run as ONE container: verify_started fails unless max_instances == 1.
+STATE_DB_ENV = "ACME_STATE_DB"
+STATE_DB_PATH = "/tmp/acme-state/state.db"
 
 
 def package_root() -> Path:
@@ -66,6 +70,7 @@ def _settings(env: Mapping[str, str], name: str, extra_env: dict[str, str]) -> d
             GENAI_LOCATION_ENV: "global",  # model calls stay on the global endpoint
             GENAI_PROJECT_ENV: llm_config.PROJECT,  # the injected GOOGLE_CLOUD_PROJECT is a number
             TRACING_ENV: "true",  # Cloud Trace export, installed by acme.telemetry
+            STATE_DB_ENV: STATE_DB_PATH,
             **extra_env,
         },
     }
@@ -86,11 +91,18 @@ def deploy(sdk: AgentEngineSdk, env: Mapping[str, str]) -> dict[str, str]:
         min_instances=1, max_instances=1, **_settings(env, customer.DISPLAY_NAME, {}),
     )  # fmt: skip
     sales_env = {"ENGINE_MODE": "agent-engine", "ACME_CUSTOMER_ENGINE": cust}
-    sal = _deploy_one(
+    sal = _deploy_one(  # the radar's sent-set is container-local state too: one container
         sdk, sales_existing, sales.build_sales_engine_app(),
-        **_settings(env, sales.DISPLAY_NAME, sales_env),
+        min_instances=1, max_instances=1, **_settings(env, sales.DISPLAY_NAME, sales_env),
     )  # fmt: skip
     return {customer.DISPLAY_NAME: cust, sales.DISPLAY_NAME: sal}
+
+
+def _max_instances(engine: Any) -> Any:
+    try:
+        return engine.gca_resource.spec.deployment_spec.max_instances
+    except AttributeError:
+        return None
 
 
 def verify_started(sdk: AgentEngineSdk, names: Mapping[str, str]) -> None:
@@ -98,9 +110,16 @@ def verify_started(sdk: AgentEngineSdk, names: Mapping[str, str]) -> None:
     prints the (scrubbed) error, so a broken engine never counts as green (#185)."""
     for display, resource in names.items():
         try:
-            diag = sdk.get(resource).diagnostics()
+            engine = sdk.get(resource)
+            diag = engine.diagnostics()
         except Exception as exc:  # noqa: BLE001
             raise DeployError(f"{display}: diagnostics call failed: {exc}") from exc
+        max_instances = _max_instances(engine)
+        if max_instances != 1:  # state is container-local (#200); unreadable also fails
+            raise DeployError(
+                f"{display}: max_instances is {max_instances!r} but must be 1: the demo state "
+                "lives on one container's disk and a second container would not share it"
+            )
         if diag.get("startup_error") or diag.get("status") != "ready":
             status, error = diag.get("status"), diag.get("startup_error")
             raise DeployError(f"{display} did not start (status {status}):\n{error}")

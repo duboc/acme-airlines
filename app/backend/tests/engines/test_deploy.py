@@ -51,12 +51,14 @@ def test_updates_existing_in_place_with_the_exact_settings():
         "ACME_GENAI_LOCATION": "global",  # model location: not derived from GOOGLE_CLOUD_LOCATION
         "ACME_GENAI_PROJECT": "acme-airlines-factory",  # the injected value is the project NUMBER
         "ACME_ENABLE_TRACING": "true",
+        "ACME_STATE_DB": "/tmp/acme-state/state.db",  # shared by the container's processes (#200)
     }
     assert any(r.startswith("google-cloud-aiplatform") for r in cust["requirements"])
     assert cust["extra_packages"] == ["acme"]
     assert sales["env_vars"]["ENGINE_MODE"] == "agent-engine"
     assert sales["env_vars"]["ACME_CUSTOMER_ENGINE"] == PREFIX + "111"
-    assert "min_instances" not in sales
+    assert (sales["min_instances"], sales["max_instances"]) == (1, 1)  # container-local state
+    assert sales["env_vars"]["ACME_STATE_DB"] == cust["env_vars"]["ACME_STATE_DB"]
 
 
 def test_creates_both_when_none_exist_customer_first_and_wires_sales_to_it():
@@ -135,17 +137,20 @@ def test_deploy_does_not_need_google_cloud_project_in_the_environment():
 
 
 class DiagSdk(FakeSdk):
-    """FakeSdk whose engines answer `diagnostics()`."""
+    """FakeSdk whose engines answer `diagnostics()` and expose their deployment spec."""
 
-    def __init__(self, diag_by_resource, **kw):
+    def __init__(self, diag_by_resource, max_instances=1, **kw):
         super().__init__(**kw)
         self.diag_by_resource = diag_by_resource
+        self.max_instances = max_instances
 
     def get(self, resource_name):
         d = self.diag_by_resource[resource_name]
+        spec = SimpleNamespace(deployment_spec=SimpleNamespace(max_instances=self.max_instances))
+        gca = SimpleNamespace(spec=spec)
         if isinstance(d, Exception):
-            return SimpleNamespace(diagnostics=lambda: (_ for _ in ()).throw(d))
-        return SimpleNamespace(diagnostics=lambda: d)
+            return SimpleNamespace(diagnostics=lambda: (_ for _ in ()).throw(d), gca_resource=gca)
+        return SimpleNamespace(diagnostics=lambda: d, gca_resource=gca)
 
 
 READY = {"status": "ready", "startup_error": None}
@@ -210,3 +215,32 @@ def test_main_exits_nonzero_and_prints_the_startup_error(monkeypatch, capsys):
         monkeypatch.setenv(k, v)
     assert mod.main() == 1
     assert "ModuleNotFoundError: x" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("bad", [0, 2, 100, None])
+def test_deploy_fails_unless_max_instances_is_one(bad):
+    """The shared demo state is container-local: a second container would not share it (#200)."""
+    from acme.engines.deploy import verify_started
+
+    sdk = DiagSdk({PREFIX + "1": READY}, max_instances=bad)
+    with pytest.raises(DeployError, match="max_instances.*must be 1"):
+        verify_started(sdk, {"acme-customer-agent": PREFIX + "1"})
+
+
+def test_max_instances_one_passes():
+    from acme.engines.deploy import verify_started
+
+    verify_started(
+        DiagSdk({PREFIX + "1": READY}, max_instances=1), {"acme-customer-agent": PREFIX + "1"}
+    )
+
+
+def test_a_deployment_spec_that_cannot_be_read_fails_closed():
+    from acme.engines.deploy import verify_started
+
+    class Blind(DiagSdk):
+        def get(self, resource_name):
+            return SimpleNamespace(diagnostics=lambda: READY)  # no gca_resource
+
+    with pytest.raises(DeployError, match="max_instances"):
+        verify_started(Blind({PREFIX + "1": READY}), {"acme-customer-agent": PREFIX + "1"})

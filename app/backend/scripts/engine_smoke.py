@@ -41,7 +41,54 @@ async def main() -> None:
     assert "a2a_skill" in ops["async"], ops
     sales = load("sales")  # set_up needs the live Customer engine, so only load + validate here
     assert hasattr(sales, "set_up") and hasattr(sales, "register_operations")
-    print("engine smoke ok: customer set_up + query, sales loads; acme from", acme.__file__)
+    await multi_worker()
+    print("engine smoke ok: customer set_up + query, sales loads, 2 workers share state;",
+          "acme from", acme.__file__)  # fmt: skip
+
+
+def offer(jid: str) -> dict:
+    from uuid import uuid4
+
+    return dict(
+        offer_id=str(uuid4()), journey_id=jid, flight="AC1252", cabin="premium_business",
+        price="135.00", standard_price="290.00", net_margin="80.00", currency="USD",
+        origin="sales", optional=True,
+    )  # fmt: skip
+
+
+async def multi_worker() -> None:
+    """Agent Engine runs several processes per container (#200): simulate two of them over one
+    shared state file and run scenarios 1-5 as sequential requests, alternating workers."""
+    import tempfile
+
+    os.environ["ACME_STATE_DB"] = str(Path(tempfile.mkdtemp()) / "state" / "state.db")
+    a, b = load("customer"), load("customer")
+    a.set_up()
+    b.set_up()
+    for w in (a, b):
+        assert w.diagnostics()["status"] == "ready", w.diagnostics()
+    a.scenario_start("happy-path")
+    assert b.scenario_state()["scenario_id"] == "happy-path", "state not shared"
+    for worker in (b, a, b, a):  # cancel, notify, reply 10am, reply thanks
+        await worker.scenario_step()
+    jid = b.scenario_state()["journey_id"]
+    proposed = await a.a2a_skill("propose_offer", {"offer": offer(jid)})  # what Sales does
+    assert proposed["status"] == "approved", proposed
+    await b.whatsapp_action("P-MARIANA", "accept_offer")
+    for w in (a, b):
+        state = w.scenario_state()
+        assert state["step_index"] == 4 and state["charged"] == "135.00", state
+        detail = await w.journey_detail(jid)
+        assert detail["status"] == "CLOSED" and detail["seat"]["seat"] == "2A", detail
+    # a second scenario on the other worker starts clean and sequential turns keep working
+    b.scenario_start("declines-upgrade")
+    assert a.scenario_state()["scenario_id"] == "declines-upgrade"
+    for worker in (a, b, a, b):
+        await worker.scenario_step()
+    jid2 = a.scenario_state()["journey_id"]
+    await b.a2a_skill("propose_offer", {"offer": offer(jid2)})
+    await a.scenario_step()
+    assert b.scenario_state()["done"], b.scenario_state()
 
 
 asyncio.run(main())
