@@ -1,0 +1,14 @@
+{
+  "last_point_at": "2026-10-10T12:00:00Z",
+  "guardrail": [
+    {"rule": "all", "outcome": "approve", "count": 6},
+    {"rule": "not_acknowledged", "outcome": "reject", "count": 4},
+    {"rule": "margin_negative", "outcome": "reject", "count": 1},
+    {"rule": "disruption_not_resolved", "outcome": "reject", "count": 3}
+  ],
+  "offers": {"proposed": 7, "accepted": 4, "declined": 2},
+  "template_fallbacks": 3,
+  "needs_human": 1,
+  "notification": {"count": 12, "p50_s": 8.0, "p95_s": 41.5},
+  "errors_5xx": 0
+}
