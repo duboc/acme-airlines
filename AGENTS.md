@@ -33,14 +33,14 @@ npm ci && npm run lint && npm test && npm run build
 - **LLM & Vertex AI:**
   - `LLM_MODE=fake` (default, $0) for all unit, governance, and CI tests.
   - `LLM_MODE=vertex` uses project `acme-airlines-factory` and `ACME_GENAI_LOCATION=global` (never regional endpoints or API keys; ADC only).
-- **Scope boundary:** Application code lives in `app/` and `observatory/`. Do not modify `infra/` or `factory/` unless the issue explicitly requests it.
+- **Scope boundary:** Application code lives in `app/` and `observatory/`. Do not modify `infra/` or `docs/scion/` unless the issue explicitly requests it.
 
 ## 3. Git, PR & Review Conventions (`scion-frontiers/agent-team`)
 
 - **Shared scratchpad:** `/scion-volumes/scratchpad/` is mounted in every agent container (`projects/duboc-acme-airlines/`). Store state files (`<agent-name>-state.md`) and briefs there, never inside the git working tree.
 - **One issue, one branch, one PR:**
   - Branch: `feat/<issue>-<slug>` (or `fix/…`, `test/…`, `docs/…`).
-  - Keep diffs **≤ 400 changed lines** (enforced by CI check `PR size/pr-size`; lockfiles and `factory/templates/` excluded).
+  - Keep diffs **≤ 400 changed lines** (enforced by CI check `PR size/pr-size`; lockfiles and `docs/scion/templates/` excluded).
   - Never push directly to `main` (`enforce_admins=true`; required checks: `backend`, `engine-smoke`, `frontend`, `pr-size`).
 - **Independent review (`code-reviewer`):**
   - Because all agents share one `GITHUB_TOKEN`, submit reviews with `gh pr review <n> --comment --body-file <file>` starting with `VERDICT: APPROVE` or `VERDICT: REQUEST CHANGES` on line 1, followed by the 8-item checklist (Acceptance criteria, Tests, Size ≤400, Security, Guardrail, Vertex global, Scope, Docs).

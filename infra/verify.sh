@@ -256,8 +256,8 @@ check_topology() {
 check_cost() {
   # Committed templates follow the model mapping and carry caps.
   local m c
-  m="$(models_ok "${REPO_ROOT}/factory/templates")" || { fail cost "${m}"; return 1; }
-  c="$(caps_ok "${REPO_ROOT}/factory/templates")" || { fail cost "${c}"; return 1; }
+  m="$(models_ok "${REPO_ROOT}/docs/scion/templates")" || { fail cost "${m}"; return 1; }
+  c="$(caps_ok "${REPO_ROOT}/docs/scion/templates")" || { fail cost "${c}"; return 1; }
   pass "cost (${m}; ${c})"
 }
 check_skills() {

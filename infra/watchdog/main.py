@@ -186,9 +186,8 @@ Latest `🏭 Factory status` snapshot:
 
 ## Canonical files and artifacts
 
-- `AGENTS.md` and your system instructions (`factory/team/team-rules.md`, `factory/team/roles/lead.md`)
-- Product brief: `docs/product/irrops-use-case.md`
-- Platform contracts: `docs/agent-engine/platform-contract.md`, `docs/observatory/platform-contract.md`, `docs/demo/platform-contract.md`
+- `AGENTS.md` and your system instructions (`docs/scion/templates/coordinator/agents.md`)
+- Product brief & docs: `docs/product/irrops-use-case.md`, `docs/product/engines.md`, `docs/product/deploy.md`
 - Pinned status issue: `🏭 Factory status` on `duboc/acme-airlines`
 
 ## Authority and ownership (who to ask, who can approve)
