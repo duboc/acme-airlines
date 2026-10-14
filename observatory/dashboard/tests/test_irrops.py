@@ -27,6 +27,8 @@ def test_fake_data_shows_every_metric_group():
     assert d["needs_human"] == 1
     assert (d["notification_p50_s"], d["notification_p95_s"]) == (8.0, 41.5)
     assert d["errors_5xx"] == 0 and d["errors_5xx_per_hour"] == 0
+    assert d["engine_rebuilds"] == 2
+    assert (d["engine_latency_p50_ms"], d["engine_latency_p95_ms"]) == (150.0, 400.0)
     assert d["demo_health"] == "healthy"
 
 

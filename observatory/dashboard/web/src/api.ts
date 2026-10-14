@@ -131,6 +131,9 @@ export interface IrropsResponse extends Envelope {
   notification_p95_s: number | null;
   errors_5xx: number | null;
   errors_5xx_per_hour: number | null;
+  engine_rebuilds: number | null;
+  engine_latency_p50_ms: number | null;
+  engine_latency_p95_ms: number | null;
   demo_health: 'healthy' | 'degraded' | 'down' | 'unknown';
   last_metric_at: string | null;
 }
