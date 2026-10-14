@@ -2,7 +2,7 @@
 
 # Project Context (`duboc/acme-airlines` on Scion)
 
-You run as a [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team) agent on the `duboc-acme-airlines` Scion Hub project (repository `duboc/acme-airlines`, product owner `admin@duboc.altostrat.com`).
+You run as a [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team) agent on the `duboc-acme-airlines` Scion Hub project (repository `duboc/acme-airlines`, product owner `@duboc`).
 
 1. **Read [`AGENTS.md`](AGENTS.md) (`CLAUDE.md`) first** for build/test commands, "Two Goals, One Guardrail" invariants, and PR rules (`≤ 400` lines, no secrets, `LLM_MODE=fake` in tests, Vertex `global` only).
 2. **Shared scratchpad (`/scion-volumes/scratchpad/`):** Mounted in every container (`scratchpad` shared-dir). Follow `agent-state-continuity` and `artifact-durability`: store `<agent-name>-state.md` and briefs under `/scion-volumes/scratchpad/projects/duboc-acme-airlines/`.

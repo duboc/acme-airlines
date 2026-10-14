@@ -10,7 +10,7 @@
     "registry": "",
     "force_rebuild": false
   },
-  "admin_email": "admin@duboc.altostrat.com",
+  "admin_email": "",
   "hub_sa_minting": false,
   "update_policy": "notify",
   "release_channel": "nightly"

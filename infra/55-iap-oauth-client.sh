@@ -2,8 +2,8 @@
 # Configure a CUSTOM OAuth client on IAP for the hub proxy and the Observatory.
 #
 # Why: IAP's Google-managed OAuth client (what `gcloud run deploy --iap` uses)
-# only admits users inside the project's organization (duboc.altostrat.com).
-# External domains such as google.com need a custom OAuth client with an
+# only admits users inside the project's organization (${ORG_DOMAIN}).
+# External domains in ${WEB_DOMAINS} need a custom OAuth client with an
 # External consent screen (Cloud IAP docs: "Customize OAuth configuration").
 #
 # Prereq (console, cannot be scripted): Google Auth Platform -> Branding/Audience

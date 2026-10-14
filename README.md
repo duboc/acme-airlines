@@ -20,7 +20,7 @@ changes as pull requests.
 
 > **Product Owner & Testers:** Follow the **[Try-It Guide](docs/product/try-it.md)** to test the hosted demo behind IAP or run the guided scenario presets locally.
 >
-> 🚀 **Live Hosted Demo (IAP):** **[https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app](https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app)** (Console: `/console`, WhatsApp: `/whatsapp`). Sign in with `@duboc.altostrat.com`, `@google.com`, or `@zup.com.br`.
+> 🚀 **Live Hosted Demo (IAP):** **[https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app](https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app)** (Console: `/console`, WhatsApp: `/whatsapp`). Sign in with an account from an authorized Google Workspace domain (`WEB_DOMAINS` in `infra/factory.local.env`).
 
 Run the full multi-agent application locally with Docker Compose:
 
@@ -63,8 +63,8 @@ npm run build
 
 Everything needed to configure or reproduce the factory is in **[`docs/scion/`](docs/scion/README.md)**:
 
-1. **[`docs/scion/README.md`](docs/scion/README.md)** — The 3 files you configure (`infra/factory.env`, `infra/deploy-config.json`, `AGENTS.md`) and 3-command quickstart.
-2. **[`docs/scion/01-scion-and-gcp-setup.md`](docs/scion/01-scion-and-gcp-setup.md)** — Provisioning scripts (`infra/00..95`), the 6 Scion configuration planes, and the 4-step IAP domain checklist (`zup.com.br`, `google.com`).
+1. **[`docs/scion/README.md`](docs/scion/README.md)** — The files you configure (`infra/factory.env` + gitignored `infra/factory.local.env`, `infra/deploy-config.json`, `AGENTS.md`) and 3-command quickstart.
+2. **[`docs/scion/01-scion-and-gcp-setup.md`](docs/scion/01-scion-and-gcp-setup.md)** — Provisioning scripts (`infra/00..95`), declarative `scion` CLI Hub setup (`infra/setup-scion.sh`), and the 4-step IAP domain checklist (`WEB_DOMAINS`).
 3. **[`docs/scion/02-agents-and-heartbeat.md`](docs/scion/02-agents-and-heartbeat.md)** — Agent templates built from [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team), 3-tier hierarchy, and 4-layer heartbeat (hourly `0 * * * *` watchdog, daily `04:00 UTC` reincarnation, 6h fallback tick, `$2,000` budget guard).
 4. **[`docs/scion/03-verification-and-eval.md`](docs/scion/03-verification-and-eval.md)** — Infrastructure checks (`infra/verify.sh all` / `e2e`) and the 5-layer product evaluation methodology.
 

@@ -46,9 +46,7 @@ gcloud run services describe acme-irrops-demo \
   - Select any scenario in the **Guided scenario** control panel and click **Start scenario** to re-seed the simulation cleanly from scratch.
 
 #### Who Can Sign In
-Access is protected by Google Identity-Aware Proxy (IAP). Any Google account belonging to authorized domains can sign in:
-- `duboc.altostrat.com` (including product owner `admin@duboc.altostrat.com`)
-- `google.com`
+Access is protected by Google Identity-Aware Proxy (IAP). Any Google account belonging to the authorized domains configured in `WEB_DOMAINS` (`infra/factory.local.env`) can sign in.
 
 #### What to Expect
 1. Open the hosted URL in your web browser.

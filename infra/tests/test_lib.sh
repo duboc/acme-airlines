@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Regression test: hub_cli must return the remote command's status under `set -euo pipefail`
-# (bug: an empty HUB_CLI_STDIN made the stdin brace-group return 1, failing every call).
+# (bug: an empty HUB_CLI_STDIN made the stdin brace-group return 1, failing every call),
+# and lib.sh must require sensitive variables when infra/factory.local.env is absent.
 set -euo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 STUB="$(mktemp -d)"; trap 'rm -rf "${STUB}"' EXIT
@@ -11,11 +12,17 @@ case "$*" in
   *print-identity-token*) echo "fake-token" ;;
   *"compute ssh"*) cat >/dev/null; exit "${STUB_RC:-0}" ;;
   *"compute instances list"*) echo "us-central1-a" ;;
+  *"secrets versions access"*) exit 1 ;;
   *) exit 0 ;;
 esac
 EOF
 chmod +x "${STUB}/gcloud"
 export PATH="${STUB}:${PATH}"
+export FOLDER_ID="${FOLDER_ID:-000000000000}"
+export BILLING_ACCOUNT="${BILLING_ACCOUNT:-000000-000000-000000}"
+export ORG_DOMAIN="${ORG_DOMAIN:-corp.example.com}"
+export WEB_DOMAINS="${WEB_DOMAINS:-corp.example.com}"
+export ADMIN_EMAIL="${ADMIN_EMAIL:-admin@corp.example.com}"
 # shellcheck source=infra/lib.sh
 source infra/lib.sh
 

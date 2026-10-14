@@ -1,22 +1,22 @@
 # 01 — Scion CLI Configuration, GCP Provisioning & IAP Setup
 
-How to provision the GCP project, recreate the entire Scion Hub & agent configuration using the native `scion` CLI ([`infra/setup-scion.sh`](../../infra/setup-scion.sh)), and grant IAP web access to organization domains (`zup.com.br`, `google.com`).
+How to provision the GCP project, manage sensitive organization/domain parameters via `infra/factory.local.env` (and Secret Manager), recreate the entire Scion Hub & agent configuration using the native `scion` CLI ([`infra/setup-scion.sh`](../../infra/setup-scion.sh)), and grant IAP web access to organization domains (`WEB_DOMAINS`).
 
 ---
 
 ## 1. Provisioning & Operations Runbook (`infra/*.sh`)
 
-All scripts source [`infra/factory.env`](../../infra/factory.env) via [`infra/lib.sh`](../../infra/lib.sh) and are idempotent:
+All scripts source public defaults from [`infra/factory.env`](../../infra/factory.env) and sensitive organization/domain parameters (`FOLDER_ID`, `BILLING_ACCOUNT`, `ORG_DOMAIN`, `WEB_DOMAINS`, `ADMIN_EMAIL`) from gitignored `infra/factory.local.env` via [`infra/lib.sh`](../../infra/lib.sh). If `infra/factory.local.env` is absent on a fresh workstation, [`infra/lib.sh`](../../infra/lib.sh) automatically fetches it from GCP Secret Manager (`acme-factory-local-env`).
 
 | Script | What It Configures |
 |---|---|
 | [`infra/00-bootstrap-project.sh`](../../infra/00-bootstrap-project.sh) | Creates GCP project (`acme-airlines-factory`), links billing, enables APIs (`compute`, `run`, `iap`, `aiplatform`, `secretmanager`, `monitoring`, `cloudscheduler`), ensures Cloud NAT on `default` VPC. |
-| [`infra/10-deploy-hub.sh`](../../infra/10-deploy-hub.sh) | Runs upstream `single-node-vm/deploy.sh --config infra/deploy-config.json` (provisions `scion-hub-acme` VM + `scion-hub-proxy-acme` Cloud Run IAP proxy). |
+| [`infra/10-deploy-hub.sh`](../../infra/10-deploy-hub.sh) | Runs upstream `single-node-vm/deploy.sh --config <runtime-config.json>` (injects `$ADMIN_EMAIL` at deploy time and provisions `scion-hub-acme` VM + `scion-hub-proxy-acme` Cloud Run IAP proxy). |
 | **[`infra/setup-scion.sh`](../../infra/setup-scion.sh)** | **Single `scion` CLI setup script:** upgrades `scion-antigravity:latest` (`agy 1.3.4`), syncs `model_aliases` (`scion harness-config sync`), imports & syncs [`docs/scion/templates/`](./templates/) (`scion templates import` + `sync`), sets Hub env vars & project secrets (`scion hub env set` / `scion hub secret set`), verifies `acme-agent@` SA (`scion service-accounts`), and ensures `acme-lead` (`--type coordinator`) + `acme-factory-tick` are running. |
 | [`infra/25-agent-identity.sh`](../../infra/25-agent-identity.sh) | Creates low-privilege `acme-agent@` SA, switches Hub to `default_gcp_identity_mode: assign`, and drops `roles/iam.serviceAccountAdmin` from the Hub VM SA. |
 | [`infra/30-hub-admin-access.sh`](../../infra/30-hub-admin-access.sh) | `enable` / `disable` / `run`: temporarily opens operator-SA OAuth federation on `localhost:8080` over IAP-tunneled SSH for non-interactive CLI mutations. |
 | [`infra/35-github-repo.sh`](../../infra/35-github-repo.sh) | Creates GitHub workflow labels, pinned `🏭 Factory status` issue, and `main` branch protection (`backend`, `engine-smoke`, `frontend`, `pr-size`). |
-| [`infra/50-web-access.sh`](../../infra/50-web-access.sh) / [`55-iap-oauth-client.sh`](../../infra/55-iap-oauth-client.sh) | Configures IAP OAuth client + Hub domain access for all `WEB_DOMAINS` (`google.com`, `duboc.altostrat.com`, `zup.com.br`). |
+| [`infra/50-web-access.sh`](../../infra/50-web-access.sh) / [`55-iap-oauth-client.sh`](../../infra/55-iap-oauth-client.sh) | Configures IAP OAuth client + Hub domain access for all `WEB_DOMAINS` in `infra/factory.local.env`. |
 | [`infra/60-factory.sh`](../../infra/60-factory.sh) | `status` / `tick-install` / `pause` / `resume`: controls the `acme-factory-tick` schedule and `acme-lead` coordinator. |
 | [`infra/70-budget-guard.sh`](../../infra/70-budget-guard.sh) | Deploys the `$2,000` billing budget + Pub/Sub + `acme-budget-guard` Cloud Run auto-suspend function. |
 | [`infra/75-backups.sh`](../../infra/75-backups.sh) / [`76-watchdog.sh`](../../infra/76-watchdog.sh) | Attaches daily persistent-disk snapshot schedule and deploys `acme-factory-watchdog` (Cloud Run + **hourly** `0 * * * *` Cloud Scheduler + `04:00 UTC` daily reincarnation + Cloud Monitoring email alert). |
@@ -83,18 +83,21 @@ scion --hub http://localhost:8080 --project duboc-acme-airlines schedule create-
 
 ---
 
-## 3. Adding or Updating an IAP Domain (e.g., `zup.com.br`)
+## 3. Adding or Updating an IAP Domain (`WEB_DOMAINS`)
 
-Granting browser sign-in to an organization domain requires **4 coordinated layers**:
+Granting browser sign-in to an organization domain (e.g., `partner.example.com`) requires **4 coordinated layers**:
 
 | Step | Layer | Why It Is Required |
 |---|---|---|
-| **1** | **Google Workspace Primary/Verified Domain** | Every user's Google account email must belong to the Google Workspace domain (`hd` claim in the IAP JWT matches `zup.com.br`). |
-| **2** | **GCP IAP IAM (`roles/iap.httpsResourceAccessor`)** | Must be bound on **all 3 Cloud Run services**: `scion-hub-proxy-acme`, `acme-observatory-web`, and `acme-observatory-api` for `domain:<domain>`. |
+| **1** | **Google Workspace Primary/Verified Domain** | Every user's Google account email must belong to the Google Workspace domain (`hd` claim in the IAP JWT matches `<domain>`). |
+| **2** | **GCP IAP IAM (`roles/iap.httpsResourceAccessor`)** | Must be bound on **all 3 Cloud Run services**: `scion-hub-acme-iap-proxy`, `acme-observatory`, and `acme-irrops-demo` for `domain:<domain>`. |
 | **3** | **Scion Hub `authorized_domains` + `hub.db` (`origin='seeded'`)** | Scion persists `hub_settings` key `access` in `/home/scion/.scion/hub.db` and only refreshes rows from `settings.yaml` when `origin = 'seeded'`. [`infra/50-web-access.sh`](../../infra/50-web-access.sh) updates both `settings.yaml` and `hub.db` (`origin='seeded'`) and restarts `scion-hub`. |
-| **4** | **OAuth Brand Audience (`Internal` vs `External`)** | If the OAuth consent screen in `acme-airlines-factory` (`duboc.altostrat.com`) is set to **Internal**, Google OAuth rejects users from external Google Workspace orgs (`org_internal`) before IAP runs. Switch **APIs & Services → OAuth consent screen → User Type** to **External (In production)**; IAP IAM + Hub `authorized_domains` still block all public Gmail users. |
+| **4** | **OAuth Brand Audience (`Internal` vs `External`)** | If the OAuth consent screen in `acme-airlines-factory` (`ORG_DOMAIN`) is set to **Internal**, Google OAuth rejects users from external Google Workspace orgs (`org_internal`) before IAP runs. Switch **APIs & Services → OAuth consent screen → User Type** to **External (In production)**; IAP IAM + Hub `authorized_domains` still block all public Gmail users. |
 
 ```bash
-# Add domain to WEB_DOMAINS in infra/factory.env, then apply and verify:
+# 1. Update WEB_DOMAINS in infra/factory.local.env and sync to Secret Manager:
+gcloud secrets versions add acme-factory-local-env --project=acme-airlines-factory --data-file=infra/factory.local.env
+
+# 2. Apply and verify:
 bash infra/50-web-access.sh && bash infra/verify.sh webaccess
 ```
