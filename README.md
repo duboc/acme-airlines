@@ -12,12 +12,9 @@ changes as pull requests.
 |------|------|
 | [`app/`](app/) | The acme-airlines multi-agent application (see [`app/README.md`](app/README.md)). |
 | [`docs/scion/`](docs/scion/README.md) | Concise Scion, GCP/IAP, `scion-frontiers/agent-team`, heartbeat, and eval configuration guides. |
+| [`docs/product/`](docs/product/) | Product brief ([IRROPS use case](docs/product/irrops-use-case.md)), [policy rules](docs/product/policy-rules.md), [engines](docs/product/engines.md), [test strategy](docs/product/test-strategy.md), and [try-it guide](docs/product/try-it.md). |
 | [`infra/`](infra/) | Scripts and config that create and operate the factory. |
-| [`docs/decisions/`](docs/decisions/) | Architecture decision records (app stack: [ADR 0100](docs/decisions/0100-app-stack.md)). |
-| [`docs/product/`](docs/product/) | Product brief (IRROPS use case), [MVP plan](docs/product/mvp-plan.md), [try-it guide](docs/product/try-it.md), and [demo script](docs/product/demo-script.md). |
-| [`factory/team/`](factory/team/) | Compact ACME factory header (`team-rules.md` + `roles/lead.md`) layered onto [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team). |
-| [`factory/templates/`](factory/templates/) | Generated Scion role templates (`acme-*`). |
-| [`docs/superpowers/`](docs/superpowers/) | Design spec and implementation plan for the factory. |
+| [`factory/templates/`](factory/templates/) | Scion role templates built from [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team). |
 
 ## Application quickstart
 
@@ -38,7 +35,7 @@ Then open:
 - **Operator Console:** `http://localhost:8080/console`
 - **WhatsApp Passenger Chat:** `http://localhost:8080/whatsapp`
 
-For the step-by-step narrative demo walkthrough, follow the [Demo Script](docs/product/demo-script.md). For guided testing of scenario variants and edge cases, see the [Try-It Guide](docs/product/try-it.md).
+For guided testing of scenario variants and edge cases, see the [Try-It Guide](docs/product/try-it.md) and [Test Strategy](docs/product/test-strategy.md).
 
 ### LLM Mode (`LLM_MODE`)
 
