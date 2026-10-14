@@ -5,7 +5,7 @@
 # the scion CLI to act as the admin user. While enabled, this adds a
 # federation trusted issuer to settings.yaml. The issuer accepts Google ID
 # tokens minted by the gcloud CLI (aud = gcloud client ID) for users in
-# duboc.altostrat.com. The tokens map to the existing admin user via the
+# ${ORG_DOMAIN}. The tokens map to the existing admin user via the
 # normal sign-in policy. IAP still guards the public URL; the CLI talks to
 # http://localhost:8080 on the VM over IAP SSH.
 #

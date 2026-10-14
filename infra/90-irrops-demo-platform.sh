@@ -11,7 +11,7 @@
 #   Cloud Run service   acme-irrops-demo: placeholder image, --no-allow-unauthenticated --iap,
 #                       --max-instances=1 (the demo state is in memory), LLM_MODE=fake
 #   IAM                 IAP service agent -> run.invoker on the service
-#                       domains in WEB_DOMAINS (default google.com duboc.altostrat.com)
+#                       domains in WEB_DOMAINS (from infra/factory.local.env)
 #                         -> iap.httpsResourceAccessor on the service
 #                       acme-observatory-deployer -> artifactregistry.writer on repo "irrops"
 #                       acme-observatory-deployer -> iam.serviceAccountUser on acme-irrops-demo

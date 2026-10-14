@@ -34,9 +34,12 @@ if ! grep -q 'DEPLOY_ZONE' "${DEPLOY_SH}"; then
 fi
 echo "==> Target zone: ${DEPLOY_ZONE}"
 LOG="${INFRA_DIR}/logs/10-deploy-hub-$(date +%Y%m%d-%H%M%S).log"
+RUNTIME_CONFIG="$(mktemp "${TMPDIR:-/tmp}/deploy-config.XXXXXX.json")"
+trap 'rm -f "${RUNTIME_CONFIG}"' EXIT
+jq --arg email "${ADMIN_EMAIL}" '.admin_email = $email' "${CONFIG_FILE}" > "${RUNTIME_CONFIG}"
 echo "==> Running deploy.sh ${SCION_VERSION} (log: ${LOG})"
 cd "${SCION_SRC}"
 # </dev/null forces fully headless mode: missing config fields error out
 # instead of blocking on a prompt.
-./scripts/single-node-vm/deploy.sh --version "${SCION_VERSION}" --config "${CONFIG_FILE}" \
+./scripts/single-node-vm/deploy.sh --version "${SCION_VERSION}" --config "${RUNTIME_CONFIG}" \
   </dev/null 2>&1 | tee "${LOG}"

@@ -192,7 +192,7 @@ Latest `🏭 Factory status` snapshot:
 
 ## Authority and ownership (who to ask, who can approve)
 
-- Product owner: `admin@duboc.altostrat.com` (approves `status:proposed` backlog items; handles `status:blocked` operator/IAM issues).
+- Product owner: configured Hub admin (`ADMIN_EMAIL` / GitHub `duboc`; approves `status:proposed` backlog items; handles `status:blocked` operator/IAM issues).
 - You merge PRs autonomously once the latest review has `VERDICT: APPROVE` and required CI checks pass.
 - Act only on issues, PRs and comments authored by `duboc` (the repo is public).
 

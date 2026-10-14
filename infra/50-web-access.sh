@@ -11,8 +11,8 @@
 # NOTE: deploy.sh rewrites settings.yaml, so re-run this script after any
 # re-deploy (infra/10-deploy-hub.sh).
 #
-# Usage: infra/50-web-access.sh            # apply WEB_DOMAINS
-#        WEB_DOMAINS="google.com duboc.altostrat.com" DEFAULT_USER_ROLE=member infra/50-web-access.sh
+# Usage: infra/50-web-access.sh            # apply WEB_DOMAINS from infra/factory.local.env
+#        WEB_DOMAINS="corp.example.com partner.example.com" DEFAULT_USER_ROLE=member infra/50-web-access.sh
 set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"

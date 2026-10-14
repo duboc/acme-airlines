@@ -1,5 +1,7 @@
 .env
 .env.*
+*.local.env
+infra/factory.local.env
 .envrc
 *.key
 *.pem

@@ -2,42 +2,18 @@
 # Shared variables and helpers for the acme-airlines factory infra scripts.
 # Source this file; do not execute it.
 #
-# All values derive from infra/deploy-config.json (the same file passed to
-# Scion's scripts/single-node-vm/deploy.sh), so the project ID is never
-# hard-coded anywhere else.
+# Public defaults live in infra/factory.env (tracked).
+# Sensitive org/billing/domain values live in infra/factory.local.env (gitignored,
+# backed up in GCP Secret Manager as `<hub_name>-factory-local-env`).
 
 INFRA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${INFRA_DIR}/.." && pwd)"
 CONFIG_FILE="${INFRA_DIR}/deploy-config.json"
+LOCAL_ENV_FILE="${INFRA_DIR}/factory.local.env"
 
-# Factory parameters (no secrets). Values below are fallbacks if factory.env lacks them.
+# Public factory parameters (no org/billing/domain identifiers).
 # shellcheck source=infra/factory.env
 [[ -f "${INFRA_DIR}/factory.env" ]] && source "${INFRA_DIR}/factory.env"
-
-# Clean Scion source checkout at the pinned release tag, used to run deploy.sh.
-# 10-deploy-hub.sh clones it here if missing (override with SCION_SRC).
-SCION_VERSION="${SCION_VERSION:-nightly-20261009}"
-SCION_SRC="${SCION_SRC:-${REPO_ROOT}/.cache/scion-${SCION_VERSION}}"
-
-# Dedicated gcloud configuration so the operator's default config is untouched.
-export CLOUDSDK_ACTIVE_CONFIG_NAME="${CLOUDSDK_ACTIVE_CONFIG_NAME:-acme-factory}"
-# Never block on interactive gcloud prompts (e.g. "enable API and retry? (y/N)").
-export CLOUDSDK_CORE_DISABLE_PROMPTS=1
-
-FOLDER_ID="${FOLDER_ID:-543080121395}"
-BILLING_ACCOUNT="${BILLING_ACCOUNT:-01820C-6329B4-8A7409}"
-ORG_DOMAIN="${ORG_DOMAIN:-duboc.altostrat.com}"
-WEB_DOMAINS="${WEB_DOMAINS:-google.com duboc.altostrat.com}"
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@duboc.altostrat.com}"
-DEFAULT_USER_ROLE="${DEFAULT_USER_ROLE:-viewer}"
-GITHUB_REPO="${GITHUB_REPO:-duboc/acme-airlines}"
-HUB_PROJECT_SLUG="${HUB_PROJECT_SLUG:-duboc-acme-airlines}"
-AGENT_TEAM_SHA="${AGENT_TEAM_SHA:-3650f1b03411116fcbf37852bfec6911db64b569}"
-IMPECCABLE_SHA="${IMPECCABLE_SHA:-d631a8827f99414d2b6daba4ef08b7f8701751d7}"
-BUDGET_USD="${BUDGET_USD:-2000}"
-TICK_CRON="${TICK_CRON:-0 */6 * * *}"
-DEPLOY_ZONE="${DEPLOY_ZONE:-us-central1-a}"
-GCLOUD_CLIENT_ID="${GCLOUD_CLIENT_ID:-32555940559.apps.googleusercontent.com}"
 
 cfg() { jq -r "$1" "${CONFIG_FILE}"; }
 
@@ -50,15 +26,54 @@ VM_NAME="scion-hub-${HUB_NAME}"
 VM_SA="scion-hub-${HUB_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 PROXY_SVC="scion-hub-${HUB_NAME}-iap-proxy"
 
+# Dedicated gcloud configuration so the operator's default config is untouched.
+export CLOUDSDK_ACTIVE_CONFIG_NAME="${CLOUDSDK_ACTIVE_CONFIG_NAME:-acme-factory}"
+# Never block on interactive gcloud prompts (e.g. "enable API and retry? (y/N)").
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+
+# Load gitignored local overrides; if missing on a fresh workstation, hydrate from Secret Manager.
+if [[ -f "${LOCAL_ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${LOCAL_ENV_FILE}"
+elif [[ -z "${VERIFY_LIB_ONLY:-}" && -z "${ADMIN_EMAIL:-}" ]] && command -v gcloud >/dev/null 2>&1; then
+  if secret_payload="$(gcloud secrets versions access latest \
+       --secret="${FACTORY_PREFIX}-factory-local-env" \
+       --project="${PROJECT_ID}" 2>/dev/null)" && [[ -n "${secret_payload}" ]]; then
+    umask 077
+    printf '%s\n' "${secret_payload}" > "${LOCAL_ENV_FILE}"
+    # shellcheck disable=SC1090
+    source "${LOCAL_ENV_FILE}"
+  fi
+fi
+
+# Clean Scion source checkout at the pinned release tag, used to run deploy.sh.
+SCION_VERSION="${SCION_VERSION:-nightly-20261009}"
+SCION_SRC="${SCION_SRC:-${REPO_ROOT}/.cache/scion-${SCION_VERSION}}"
+
+DEFAULT_USER_ROLE="${DEFAULT_USER_ROLE:-viewer}"
+GITHUB_REPO="${GITHUB_REPO:-duboc/acme-airlines}"
+HUB_PROJECT_SLUG="${HUB_PROJECT_SLUG:-duboc-acme-airlines}"
+AGENT_TEAM_SHA="${AGENT_TEAM_SHA:-3650f1b03411116fcbf37852bfec6911db64b569}"
+IMPECCABLE_SHA="${IMPECCABLE_SHA:-d631a8827f99414d2b6daba4ef08b7f8701751d7}"
+BUDGET_USD="${BUDGET_USD:-2000}"
+WATCHDOG_CRON="${WATCHDOG_CRON:-0 * * * *}"
+TICK_CRON="${TICK_CRON:-0 */6 * * *}"
+DEPLOY_ZONE="${DEPLOY_ZONE:-us-central1-a}"
+GCLOUD_CLIENT_ID="${GCLOUD_CLIENT_ID:-32555940559.apps.googleusercontent.com}"
+
 : "${PROJECT_ID:?PROJECT_ID missing in deploy-config.json}"
 : "${REGION:?REGION missing in deploy-config.json}"
 : "${HUB_NAME:?HUB_NAME missing in deploy-config.json}"
-: "${FOLDER_ID:?FOLDER_ID missing in factory.env}"
-: "${BILLING_ACCOUNT:?BILLING_ACCOUNT missing in factory.env}"
-: "${ORG_DOMAIN:?ORG_DOMAIN missing in factory.env}"
-: "${ADMIN_EMAIL:?ADMIN_EMAIL missing in factory.env}"
 : "${GITHUB_REPO:?GITHUB_REPO missing in factory.env}"
 : "${HUB_PROJECT_SLUG:?HUB_PROJECT_SLUG missing in factory.env}"
+
+if [[ -z "${VERIFY_LIB_ONLY:-}" ]]; then
+  : "${FOLDER_ID:?FOLDER_ID missing — set in infra/factory.local.env (or Secret Manager ${FACTORY_PREFIX}-factory-local-env)}"
+  : "${BILLING_ACCOUNT:?BILLING_ACCOUNT missing — set in infra/factory.local.env (or Secret Manager ${FACTORY_PREFIX}-factory-local-env)}"
+  : "${ORG_DOMAIN:?ORG_DOMAIN missing — set in infra/factory.local.env (or Secret Manager ${FACTORY_PREFIX}-factory-local-env)}"
+  : "${WEB_DOMAINS:?WEB_DOMAINS missing — set in infra/factory.local.env (or Secret Manager ${FACTORY_PREFIX}-factory-local-env)}"
+  : "${ADMIN_EMAIL:?ADMIN_EMAIL missing — set in infra/factory.local.env (or Secret Manager ${FACTORY_PREFIX}-factory-local-env)}"
+fi
 
 # Retry a command with linear backoff: retry <attempts> <delay_seconds> <cmd...>
 retry() {
@@ -108,5 +123,5 @@ hub_cli() {
 }
 
 export PROJECT_ID REGION HUB_NAME FACTORY_PREFIX BUDGET_NAME VM_NAME VM_SA PROXY_SVC
-export REPO_ROOT FOLDER_ID BILLING_ACCOUNT SCION_SRC SCION_VERSION CONFIG_FILE
-export ORG_DOMAIN WEB_DOMAINS ADMIN_EMAIL DEFAULT_USER_ROLE GITHUB_REPO HUB_PROJECT_SLUG AGENT_TEAM_SHA IMPECCABLE_SHA BUDGET_USD TICK_CRON DEPLOY_ZONE GCLOUD_CLIENT_ID
+export REPO_ROOT FOLDER_ID BILLING_ACCOUNT SCION_SRC SCION_VERSION CONFIG_FILE LOCAL_ENV_FILE
+export ORG_DOMAIN WEB_DOMAINS ADMIN_EMAIL DEFAULT_USER_ROLE GITHUB_REPO HUB_PROJECT_SLUG AGENT_TEAM_SHA IMPECCABLE_SHA BUDGET_USD WATCHDOG_CRON TICK_CRON DEPLOY_ZONE GCLOUD_CLIENT_ID
