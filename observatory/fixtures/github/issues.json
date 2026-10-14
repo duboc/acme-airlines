@@ -1,0 +1,63 @@
+[
+ {
+  "number": 201,
+  "labels": [
+   {
+    "name": "status:ready"
+   },
+   {
+    "name": "role:backend"
+   },
+   {
+    "name": "priority:p1"
+   }
+  ]
+ },
+ {
+  "number": 202,
+  "labels": [
+   {
+    "name": "status:in-progress"
+   },
+   {
+    "name": "role:backend"
+   },
+   {
+    "name": "area:observatory"
+   }
+  ]
+ },
+ {
+  "number": 203,
+  "labels": [
+   {
+    "name": "status:in-review"
+   },
+   {
+    "name": "role:frontend"
+   }
+  ]
+ },
+ {
+  "number": 204,
+  "labels": [
+   {
+    "name": "status:ready"
+   }
+  ]
+ },
+ {
+  "number": 301,
+  "labels": [
+   {
+    "name": "status:in-review"
+   }
+  ],
+  "pull_request": {}
+ },
+ {
+  "number": 302,
+  "labels": [],
+  "pull_request": {}
+ }
+]

@@ -1,0 +1,35 @@
+[
+ {
+  "number": 301,
+  "title": "feat: hub snapshot",
+  "user": {
+   "login": "duboc"
+  },
+  "created_at": "2026-10-10T11:00:00Z",
+  "head": {
+   "sha": "aaa"
+  }
+ },
+ {
+  "number": 302,
+  "title": "feat: github snapshot",
+  "user": {
+   "login": "duboc"
+  },
+  "created_at": "2026-10-10T11:30:00Z",
+  "head": {
+   "sha": "bbb"
+  }
+ },
+ {
+  "number": 303,
+  "title": "docs: readme",
+  "user": {
+   "login": "duboc"
+  },
+  "created_at": "2026-10-10T11:45:00Z",
+  "head": {
+   "sha": "ccc"
+  }
+ }
+]

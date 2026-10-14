@@ -1,0 +1,22 @@
+{
+  "engines": [
+    {"name": "acme-customer-agent", "engine_id": "1111111111"},
+    {"name": "acme-sales-agent", "engine_id": "2222222222"}
+  ],
+  "metrics": {
+    "1111111111": {"requests": 200, "errors": 10, "p50_ms": 850.0, "p95_ms": 2400.0},
+    "2222222222": {"requests": 40, "errors": 0, "p50_ms": 600.0, "p95_ms": 1500.0}
+  },
+  "traces": {
+    "acme-customer-agent": [
+      {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "name": "invoke_agent",
+       "start_time": "2026-10-10T11:58:00Z", "duration_ms": 1830.5, "status": "ok"},
+      {"trace_id": "00f067aa0ba902b7a3ce929d0e0e4737", "name": "invoke_agent",
+       "start_time": "2026-10-10T11:50:00Z", "duration_ms": 3120.0, "status": "error"}
+    ],
+    "acme-sales-agent": [
+      {"trace_id": "5cf92f3577b34da6a3ce929d0e0e4738", "name": "invoke_agent",
+       "start_time": "2026-10-10T11:40:00Z", "duration_ms": 910.0, "status": "ok"}
+    ]
+  }
+}
