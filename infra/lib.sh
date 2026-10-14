@@ -73,11 +73,9 @@ retry() {
 }
 
 # Models probed by `verify.sh vertex` on the Vertex AI global endpoint.
-# Claude defaults mirror the scion claude harness (opus → claude-opus-5-5,
-# background haiku overridden to claude-haiku-5-5).
-GEMINI_TEST_MODEL="${GEMINI_TEST_MODEL:-gemini-2.5-flash}"
+GEMINI_TEST_MODELS="${GEMINI_TEST_MODELS:-gemini-4-argon gemini-3.8-flash}"
 CLAUDE_TEST_MODELS="${CLAUDE_TEST_MODELS:-claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5}"
-export GEMINI_TEST_MODEL CLAUDE_TEST_MODELS
+export GEMINI_TEST_MODELS CLAUDE_TEST_MODELS
 
 # Zone of the existing VM; falls back to <region>-b like deploy.sh does.
 resolve_zone() {

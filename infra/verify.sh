@@ -21,62 +21,62 @@ vertex_all_ok() {
   ! grep -vE ' 200$' <<<"${lines}" | grep -q .
 }
 
-# topology_ok <rows> <min-children>
+# topology_ok <rows> [min-children]
 # rows: one "name|id|ancestry-json" line per live agent. Passes when acme-lead
-# exists, every other acme-* agent's ancestry chain contains the lead's id
-# (child or deeper, e.g. via an eng-manager), and at least <min-children> such
-# descendants exist. Non-acme agents are ignored.
+# exists, every other project agent's ancestry chain contains the lead's id
+# (child or deeper, e.g. via an eng-manager), and at least <min-children> (default 0)
+# such descendants exist. smoke-* test agents are ignored.
 topology_ok() {
   local rows="$1" min="${2:-0}" lead_id name anc n=0 bad=""
   lead_id="$(awk -F'|' '$1=="acme-lead"{print $2}' <<<"${rows}")"
   [[ -n "${lead_id}" ]] || { echo "no live acme-lead"; return 1; }
   while IFS='|' read -r name _ anc; do
-    [[ "${name}" == acme-* && "${name}" != "acme-lead" ]] || continue
+    [[ -n "${name}" && "${name}" != "acme-lead" && "${name}" != smoke-* ]] || continue
     if [[ "${anc}" == *"\"${lead_id}\""* ]]; then n=$((n+1)); else bad+=" ${name}"; fi
   done <<<"${rows}"
   [[ -z "${bad}" ]] || { echo "not under acme-lead:${bad}"; return 1; }
   (( n >= min )) || { echo "only ${n} agents under acme-lead (want >= ${min})"; return 1; }
-  echo "${n} agents under acme-lead"
+  echo "acme-lead + ${n} active workers under lead"
 }
 
-# Addendum-B model mapping: role -> "harness model".
+# 6-template scion-frontiers/agent-team model mapping: role -> "harness model".
 declare -A ACME_MODEL=(
-  [acme-lead]="claude large" [acme-eng-manager]="claude large" [acme-architect]="claude large"
-  [acme-backend]="claude medium" [acme-frontend]="claude medium" [acme-qa]="claude medium"
-  [acme-reviewer]="antigravity medium" [acme-security-auditor]="antigravity medium"
-  [acme-investigator]="antigravity medium" [acme-researcher]="antigravity medium"
-  [acme-qa-tester]="antigravity medium" [acme-doc-writer]="antigravity medium"
-  [acme-release-notes]="antigravity medium"
+  [coordinator]="claude large"
+  [eng-manager]="claude large"
+  [architect]="antigravity large"
+  [developer]="claude medium"
+  [code-reviewer]="antigravity large"
+  [test-engineer]="antigravity medium"
 )
 _yaml_val() { awk -F': *' -v k="$1" '$1==k{gsub(/"/,"",$2); print $2; exit}' "$2"; }
 
-# models_ok <templates-dir>: each acme-* template's harness/model matches ACME_MODEL.
+# models_ok <templates-dir>: each template's harness/model matches ACME_MODEL.
 models_ok() {
   local dir="$1" f t want got n=0 bad=""
-  for f in "${dir}"/acme-*/scion-agent.yaml; do
+  for f in "${dir}"/*/scion-agent.yaml; do
     [[ -f "${f}" ]] || continue
     t="$(basename "$(dirname "${f}")")"; want="${ACME_MODEL[${t}]:-}"
     got="$(_yaml_val default_harness_config "${f}") $(_yaml_val model "${f}")"
-    n=$((n+1)); [[ -z "${want}" || "${got}" == "${want}" ]] || bad+=" ${t}(${got}≠${want})"
+    n=$((n+1)); [[ -n "${want}" && "${got}" == "${want}" ]] || bad+=" ${t}(${got}≠${want:-unknown})"
   done
   (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
   [[ -z "${bad}" ]] || { echo "model mismatch:${bad}"; return 1; }
   echo "${n} templates match the model mapping"
 }
 
-# caps_ok <templates-dir>: every acme-* template except acme-lead sets max_duration, max_turns and max_model_calls.
+# caps_ok <templates-dir>: every template except coordinator sets max_duration, max_turns and max_model_calls.
 caps_ok() {
   local dir="$1" f t n=0 bad=""
-  for f in "${dir}"/acme-*/scion-agent.yaml; do
+  for f in "${dir}"/*/scion-agent.yaml; do
     [[ -f "${f}" ]] || continue
     t="$(basename "$(dirname "${f}")")"; n=$((n+1))
-    [[ "${t}" == "acme-lead" ]] && continue
+    [[ "${t}" == "coordinator" ]] && continue
     [[ -n "$(_yaml_val max_duration "${f}")" && -n "$(_yaml_val max_turns "${f}")" \
        && -n "$(_yaml_val max_model_calls "${f}")" ]] || bad+=" ${t}"
   done
   (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
   [[ -z "${bad}" ]] || { echo "missing caps:${bad}"; return 1; }
-  echo "caps present on all non-lead templates"
+  echo "caps present on all non-coordinator templates"
 }
 
 # cron_interval_ok <cron> <min-minutes>: the minute field fires at most every
@@ -183,11 +183,13 @@ check_vertex() {
     T=\$(curl -s -H 'Metadata-Flavor: Google' \
       http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
       | python3 -c 'import sys,json;print(json.load(sys.stdin)[\"access_token\"])')
-    code=\$(curl -s -o /tmp/vx.json -w '%{http_code}' -X POST -H \"Authorization: Bearer \$T\" \
-      -H 'Content-Type: application/json' \
-      '${base}/google/models/${GEMINI_TEST_MODEL}:generateContent' \
-      -d '{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Say ok\"}]}]}')
-    echo \"gemini ${GEMINI_TEST_MODEL} \$code\"; [ \"\$code\" = 200 ] || { head -c 300 /tmp/vx.json; echo; }
+    for gm in ${GEMINI_TEST_MODELS}; do
+      code=\$(curl -s -o /tmp/vx.json -w '%{http_code}' -X POST -H \"Authorization: Bearer \$T\" \
+        -H 'Content-Type: application/json' \
+        '${base}/google/models/'\$gm':generateContent' \
+        -d '{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Say ok\"}]}]}')
+      echo \"gemini \$gm \$code\"; [ \"\$code\" = 200 ] || { head -c 300 /tmp/vx.json; echo; }
+    done
     for m in ${CLAUDE_TEST_MODELS}; do
       code=\$(curl -s -o /tmp/vx.json -w '%{http_code}' -X POST -H \"Authorization: Bearer \$T\" \
         -H 'Content-Type: application/json' \
@@ -230,24 +232,26 @@ check_smoke() {
   pass smoke
 }
 check_team() {
-  # Read-only: all 13 acme-* templates registered on the hub.
+  # Read-only: all 6 scion-frontiers/agent-team templates registered on the hub, and no legacy acme-* templates.
   local out t
-  out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"SELECT name FROM templates WHERE name LIKE 'acme-%';\"" 2>/dev/null)"
-  for t in acme-lead acme-backend acme-frontend acme-qa acme-reviewer acme-architect acme-eng-manager \
-           acme-security-auditor acme-investigator acme-researcher acme-qa-tester acme-doc-writer acme-release-notes; do
+  out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"SELECT slug FROM templates;\"" 2>/dev/null)"
+  for t in coordinator eng-manager architect developer code-reviewer test-engineer; do
     grep -qx "${t}" <<<"${out}" || { fail team "template ${t} not registered on hub"; return 1; }
   done
+  if grep -q '^acme-' <<<"${out}"; then
+    fail team "obsolete acme-* templates still registered on hub"
+    return 1
+  fi
   pass team
 }
 check_topology() {
-  # Standing roster: all live acme-* agents descend from acme-lead, and at least
-  # TOPOLOGY_MIN (default 11, one per non-lead role) exist.
+  # Zero-sprawl topology: acme-lead exists, and any active worker agents descend from acme-lead.
   local rows msg
   rows="$(printf '%s\n' ".separator '|'" \
     "SELECT name, id, ancestry FROM agents WHERE deleted_at IS NULL;" | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
       --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
-  if msg="$(topology_ok "${rows}" "${TOPOLOGY_MIN:-11}")"; then pass "topology (${msg})"; else fail topology "${msg}"; fi
+  if msg="$(topology_ok "${rows}" "${TOPOLOGY_MIN:-0}")"; then pass "topology (${msg})"; else fail topology "${msg}"; fi
 }
 check_cost() {
   # Committed templates follow the model mapping and carry caps.
@@ -257,15 +261,14 @@ check_cost() {
   pass "cost (${m}; ${c})"
 }
 check_skills() {
-  # The hub-stored acme-frontend template carries a template-mounted impeccable
+  # The hub-stored developer template carries a template-mounted impeccable
   # skill (skills/impeccable/SKILL.md with "name: impeccable"), and no
-  # unresolvable gh:// nested-path URI. (A URI string alone is not proof: the
-  # hub rejected gh://owner/repo/.claude/skills/impeccable at provision time.)
+  # unresolvable gh:// nested-path URI.
   local out
-  out="$(vm_ssh "sudo grep -rls '^name: impeccable' /home/scion/.scion --include=SKILL.md | grep '/acme-frontend/' | head -1; \
-                 sudo grep -rls 'gh://pbakaus/impeccable/' /home/scion/.scion --include=scion-agent.yaml | grep '/acme-frontend/' | head -1 | sed 's/^/BADURI:/'" 2>/dev/null)"
-  if grep -q '^BADURI:' <<<"${out}"; then fail skills "hub acme-frontend still references a nested gh:// impeccable URI"; return 1; fi
-  if grep -q 'SKILL.md' <<<"${out}"; then pass skills; else fail skills "impeccable SKILL.md not mounted in hub-stored acme-frontend template"; fi
+  out="$(vm_ssh "sudo grep -rls '^name: impeccable' /home/scion/.scion --include=SKILL.md | grep '/developer/' | head -1; \
+                 sudo grep -rls 'gh://pbakaus/impeccable/' /home/scion/.scion --include=scion-agent.yaml | grep '/developer/' | head -1 | sed 's/^/BADURI:/'" 2>/dev/null)"
+  if grep -q '^BADURI:' <<<"${out}"; then fail skills "hub developer still references a nested gh:// impeccable URI"; return 1; fi
+  if grep -q 'SKILL.md' <<<"${out}"; then pass skills; else fail skills "impeccable SKILL.md not mounted in hub-stored developer template"; fi
 }
 check_loop() {
   # The recurring TICK schedule exists, targets acme-lead, is active, and fires at most every 30 min.

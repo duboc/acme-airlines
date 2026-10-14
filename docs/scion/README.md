@@ -21,8 +21,9 @@ This directory documents **only what you need to configure** to run an autonomou
 gcloud auth login --configuration=acme-factory
 gh auth status
 
-# 2. Run the idempotent bootstrap orchestrator (runs infra/00..95 in order)
-bash docs/scion/scripts/bootstrap.sh
+# 2. Build and push the 6 scion-frontiers/agent-team templates + configure harness models
+bash infra/40-build-team-templates.sh
+bash infra/20-model-access.sh && bash infra/45-push-templates.sh
 
 # 3. Verify all 21 infrastructure + 5 end-to-end checks
 bash infra/verify.sh all && bash infra/verify.sh e2e
@@ -34,7 +35,6 @@ bash infra/verify.sh all && bash infra/verify.sh e2e
 
 | Guide | What It Covers |
 |---|---|
-| **[`01-scion-and-gcp-setup.md`](./01-scion-and-gcp-setup.md)** | The 6 Scion configuration mechanisms (`deploy-config.json`, `settings.yaml` + `hub.db` `origin='seeded'`, temporary `allow_all` CLI federation, REST API `/api/v1/…` for secrets & `acme-agent@` `assign` SA, UATs, `scratchpad` shared dir) and the **4-step IAP domain setup** (`zup.com.br`, `google.com`). |
-| **[`02-agents-and-heartbeat.md`](./02-agents-and-heartbeat.md)** | How agent templates are built from [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team) (`infra/40-build-team-templates.sh`), the 13-role model/cap table, 3-tier lineage hierarchy, and the **4-layer heartbeat** (worker messages, **hourly `0 * * * *`** watchdog, daily `04:00 UTC` reincarnation, 6h safety net, `$2,000` budget kill-switch). |
+| **[`01-scion-and-gcp-setup.md`](./01-scion-and-gcp-setup.md)** | The 6 Scion configuration mechanisms (`deploy-config.json`, `settings.yaml` + `hub.db` `origin='seeded'`, temporary `allow_all` CLI federation, REST API `/api/v1/…` for secrets & `acme-agent@` `assign` SA, UATs, `model_aliases`) and the **4-step IAP domain setup** (`zup.com.br`, `google.com`). |
+| **[`02-agents-and-heartbeat.md`](./02-agents-and-heartbeat.md)** | The **6-template core** from [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team) (`coordinator`, `eng-manager`, `architect`, `developer`, `code-reviewer`, `test-engineer`), model mapping (`claude-opus-5-5`, `claude-sonnet-5-5`, `gemini-4-argon`, `gemini-3.8-flash`), ephemeral worker lifecycle, and the **4-layer heartbeat** (**hourly `0 * * * *`** watchdog, daily `04:00 UTC` reincarnation, 6h safety net, `$2,000` budget kill-switch). |
 | **[`03-verification-and-eval.md`](./03-verification-and-eval.md)** | Infrastructure verification (`infra/verify.sh all` / `e2e`) and the **5-layer product evaluation methodology** (in-process deterministic evals, 11-field `STRUCTURAL` parity, and live Vertex AI Agent Engine + Cloud Trace proof). |
-| **[`scripts/README.md`](./scripts/README.md)** | Sanitized `factory.env.example`, `deploy-config.example.json`, and `bootstrap.sh` for spinning up a new factory. |

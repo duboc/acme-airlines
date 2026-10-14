@@ -52,15 +52,15 @@ cexpect() {
   if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
 }
 T=$(mktemp -d); mk() { mkdir -p "$T/$1/$2"; printf '%b' "$3" > "$T/$1/$2/scion-agent.yaml"; }
-mk good acme-lead 'default_harness_config: claude\nmodel: large\n'
-mk good acme-backend 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\nmax_turns: 400\nmax_model_calls: 1200\n'
-mk good acme-reviewer 'default_harness_config: antigravity\nmodel: medium\nmax_duration: "45m"\nmax_turns: 150\nmax_model_calls: 450\n'
+mk good coordinator 'default_harness_config: claude\nmodel: large\n'
+mk good developer 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\nmax_turns: 400\nmax_model_calls: 1200\n'
+mk good code-reviewer 'default_harness_config: antigravity\nmodel: large\nmax_duration: "45m"\nmax_turns: 150\nmax_model_calls: 450\n'
 mexpect 0 "models match mapping" "$T/good"
 cexpect 0 "caps present (lead exempt)" "$T/good"
-mk badmodel acme-reviewer 'default_harness_config: claude\nmodel: large\nmax_duration: "45m"\nmax_turns: 150\n'
+mk badmodel code-reviewer 'default_harness_config: claude\nmodel: large\nmax_duration: "45m"\nmax_turns: 150\n'
 mexpect 1 "reviewer on opus rejected" "$T/badmodel"
-mk nocap acme-backend 'default_harness_config: claude\nmodel: medium\n'
-mk nocalls acme-backend 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\nmax_turns: 400\n'
+mk nocap developer 'default_harness_config: claude\nmodel: medium\n'
+mk nocalls developer 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\nmax_turns: 400\n'
 cexpect 1 "missing max_model_calls rejected" "$T/nocalls"
 cexpect 1 "missing caps rejected" "$T/nocap"
 mexpect 1 "empty dir rejected" "$T/none"
