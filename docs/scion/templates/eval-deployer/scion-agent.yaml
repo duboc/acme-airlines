@@ -1,0 +1,13 @@
+schema_version: "1"
+description: "Dashboard release engineer of the ${EVAL_PROJECT} factory (Antigravity Gemini 4 Argon High). Deploys ${DASHBOARD_SERVICE} as ${DEPLOYER_SA}. Reports to eval-lead."
+default_harness_config: antigravity
+model: large
+max_duration: "1h"
+max_turns: 200
+max_model_calls: 600
+agent_instructions: agents.md
+system_prompt: system-prompt.md
+env:
+  FACTORY_ROLE: eval-deployer
+  CLOUDSDK_CORE_PROJECT: "${SANDBOX_PROJECT}"
+  CLOUDSDK_CORE_DISABLE_PROMPTS: "1"

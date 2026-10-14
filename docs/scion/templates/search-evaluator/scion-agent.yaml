@@ -1,0 +1,11 @@
+schema_version: "1"
+description: "Product quality and latency evaluator of the ${EVAL_PROJECT} factory (Antigravity Gemini 4 Argon High). Reports to eval-lead."
+default_harness_config: antigravity
+model: large
+max_duration: "1h"
+max_turns: 200
+max_model_calls: 600
+agent_instructions: agents.md
+system_prompt: system-prompt.md
+env:
+  FACTORY_ROLE: search-evaluator

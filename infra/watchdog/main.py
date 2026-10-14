@@ -70,7 +70,7 @@ def compute_fingerprint(issues: list[dict], prs: list[dict], runs: list[dict], a
     norm_agents = sorted(
         (str(a.get("slug") or a.get("name", "")), str(a.get("phase", "")).lower(), str(a.get("activity", "")).lower())
         for a in agents
-        if (a.get("slug") or a.get("name")) != "acme-lead"
+        if (a.get("slug") or a.get("name")) not in ("lead", "acme-lead")
     )
     payload = json.dumps(
         {"issues": norm_issues, "prs": norm_prs, "runs": norm_runs, "agents": norm_agents},
@@ -238,6 +238,7 @@ def execute_action(
     handoff_text: str = "",
     run=subprocess.run,
     tmp_dir: Path = Path("/tmp"),
+    lead_name: str = "acme-lead",
 ) -> str:
     if action == "noop":
         return "noop"
@@ -245,16 +246,16 @@ def execute_action(
     env = _scion_env()
     if action == "wake":
         msg = f"WAKE ({reason}): GitHub or worker state changed. Run one factory loop pass."
-        args = ["scion", "message", "acme-lead", "--project", proj, msg]
+        args = ["scion", "message", lead_name, "--project", proj, msg]
     elif action == "recover_message":
         msg = f"WATCHDOG ({reason}): you appear stalled. Resume your factory loop pass and update 🏭 Factory status."
-        args = ["scion", "message", "acme-lead", "--project", proj, msg]
+        args = ["scion", "message", lead_name, "--project", proj, msg]
     elif action == "recover_start":
-        args = ["scion", "resume", "acme-lead", "--project", proj, "WATCHDOG: recovered from stopped/error phase. Run one factory loop pass."]
+        args = ["scion", "resume", lead_name, "--project", proj, "WATCHDOG: recovered from stopped/error phase. Run one factory loop pass."]
     elif action == "reincarnate":
         hf = tmp_dir / "lead-handoff.md"
         hf.write_text(handoff_text or "# Reincarnation handoff\nRun one factory loop pass.\n")
-        args = ["scion", "reincarnate", "acme-lead", "--project", proj, "--handoff-file", str(hf)]
+        args = ["scion", "reincarnate", lead_name, "--project", proj, "--handoff-file", str(hf)]
     else:
         raise ValueError(f"unknown action: {action}")
 
@@ -351,7 +352,8 @@ def run_once(mode: str) -> tuple[int, dict]:
     repo = os.environ["GITHUB_REPO"]
     gh_token = os.environ["GITHUB_TOKEN"].strip()
     agents = fetch_hub_agents()
-    lead = next((a for a in agents if (a.get("slug") or a.get("name")) == "acme-lead"), None)
+    lead = next((a for a in agents if (a.get("slug") or a.get("name")) in ("lead", "acme-lead")), None)
+    lead_name = str((lead or {}).get("slug") or (lead or {}).get("name") or "lead")
     issues, prs, runs, status_body = fetch_github_state(repo, gh_token)
     now = time.time()
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -362,7 +364,7 @@ def run_once(mode: str) -> tuple[int, dict]:
             res = {"mode": mode, "action": "noop", "reason": "factory paused (lead suspended)", "alert_po": False}
             log_json("INFO", **res)
             return 200, res
-        out = execute_action("reincarnate", "daily scheduled reincarnation", handoff_text=handoff)
+        out = execute_action("reincarnate", "daily scheduled reincarnation", handoff_text=handoff, lead_name=lead_name)
         res = {"mode": mode, "action": "reincarnate", "reason": "daily scheduled reincarnation", "alert_po": False, "output": out}
         log_json("INFO", **res)
         return 200, res
@@ -377,7 +379,7 @@ def run_once(mode: str) -> tuple[int, dict]:
         min_wake_interval=int(os.environ.get("MIN_WAKE_INTERVAL_SEC", "3300")),
         stall_escalate_sec=int(os.environ.get("STALL_ESCALATE_SEC", "3300")),
     )
-    out = execute_action(decision["action"], decision["reason"], handoff_text=handoff)
+    out = execute_action(decision["action"], decision["reason"], handoff_text=handoff, lead_name=lead_name)
     save_state(decision["new_state"])
     sev = "ERROR" if decision["alert_po"] else "INFO"
     res = {

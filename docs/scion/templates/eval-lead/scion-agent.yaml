@@ -1,0 +1,8 @@
+schema_version: "1"
+description: "Evaluation and observability lead of the ${EVAL_PROJECT} factory (Antigravity Gemini 4 Argon High). Watches and measures the ${BUILD_PROJECT} factory."
+default_harness_config: antigravity
+model: large
+agent_instructions: agents.md
+system_prompt: system-prompt.md
+env:
+  FACTORY_ROLE: eval-lead

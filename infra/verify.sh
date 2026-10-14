@@ -39,14 +39,18 @@ topology_ok() {
   echo "acme-lead + ${n} active workers under lead"
 }
 
-# 6-template scion-frontiers/agent-team model mapping: role -> "harness model".
+# 10-template scion-experiment model mapping: role -> "harness model".
 declare -A ACME_MODEL=(
-  [coordinator]="claude large"
-  [eng-manager]="claude large"
-  [architect]="antigravity large"
-  [developer]="claude medium"
-  [code-reviewer]="antigravity large"
-  [test-engineer]="antigravity medium"
+  [lead]="claude large"
+  [backend]="claude medium"
+  [frontend]="antigravity large"
+  [reviewer]="antigravity large"
+  [deployer]="claude medium"
+  [eval-lead]="antigravity large"
+  [factory-analyst]="antigravity large"
+  [search-evaluator]="antigravity large"
+  [ui-craftsman]="antigravity large"
+  [eval-deployer]="antigravity large"
 )
 _yaml_val() { awk -F': *' -v k="$1" '$1==k{gsub(/"/,"",$2); print $2; exit}' "$2"; }
 
@@ -55,7 +59,9 @@ models_ok() {
   local dir="$1" f t want got n=0 bad=""
   for f in "${dir}"/*/scion-agent.yaml; do
     [[ -f "${f}" ]] || continue
-    t="$(basename "$(dirname "${f}")")"; want="${ACME_MODEL[${t}]:-}"
+    t="$(basename "$(dirname "${f}")")"
+    [[ "${t}" == _* ]] && continue
+    want="${ACME_MODEL[${t}]:-}"
     got="$(_yaml_val default_harness_config "${f}") $(_yaml_val model "${f}")"
     n=$((n+1)); [[ -n "${want}" && "${got}" == "${want}" ]] || bad+=" ${t}(${got}≠${want:-unknown})"
   done
@@ -64,19 +70,21 @@ models_ok() {
   echo "${n} templates match the model mapping"
 }
 
-# caps_ok <templates-dir>: every template except coordinator sets max_duration, max_turns and max_model_calls.
+# caps_ok <templates-dir>: every template except lead and eval-lead sets max_duration, max_turns and max_model_calls.
 caps_ok() {
   local dir="$1" f t n=0 bad=""
   for f in "${dir}"/*/scion-agent.yaml; do
     [[ -f "${f}" ]] || continue
-    t="$(basename "$(dirname "${f}")")"; n=$((n+1))
-    [[ "${t}" == "coordinator" ]] && continue
+    t="$(basename "$(dirname "${f}")")"
+    [[ "${t}" == _* ]] && continue
+    n=$((n+1))
+    [[ "${t}" == "lead" || "${t}" == "eval-lead" ]] && continue
     [[ -n "$(_yaml_val max_duration "${f}")" && -n "$(_yaml_val max_turns "${f}")" \
        && -n "$(_yaml_val max_model_calls "${f}")" ]] || bad+=" ${t}"
   done
   (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
   [[ -z "${bad}" ]] || { echo "missing caps:${bad}"; return 1; }
-  echo "caps present on all non-coordinator templates"
+  echo "caps present on all non-lead templates"
 }
 
 # cron_interval_ok <cron> <min-minutes>: the minute field fires at most every
@@ -213,15 +221,17 @@ check_claude_image() {
   fi
 }
 check_hubproject() {
-  # Read-only query of the hub DB on the VM. Reads the secret's *name* only.
-  local out
+  # Read-only query of the hub DB on the VM: both BUILD_PROJECT and EVAL_PROJECT exist with GITHUB_TOKEN secret.
+  local out p
   out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"
-    SELECT 'project', p.slug FROM projects p WHERE p.git_remote LIKE '%${GITHUB_REPO}%';
-    SELECT 'secret', s.key FROM secrets s JOIN projects p ON s.scope_id = p.id
-      WHERE s.scope = 'project' AND s.key = 'GITHUB_TOKEN' AND p.git_remote LIKE '%${GITHUB_REPO}%';\"" 2>/dev/null)"
-  grep -q '^project|' <<<"${out}" || { fail hubproject "no hub project with remote ${GITHUB_REPO}"; return 1; }
-  grep -q '^secret|GITHUB_TOKEN' <<<"${out}" || { fail hubproject "project secret GITHUB_TOKEN not set"; return 1; }
-  pass hubproject
+    SELECT 'project', p.slug FROM projects p WHERE p.slug IN ('${BUILD_PROJECT}','${EVAL_PROJECT}');
+    SELECT 'secret', p.slug FROM secrets s JOIN projects p ON s.scope_id = p.id
+      WHERE s.scope = 'project' AND s.key = 'GITHUB_TOKEN' AND p.slug IN ('${BUILD_PROJECT}','${EVAL_PROJECT}');\"" 2>/dev/null)"
+  for p in "${BUILD_PROJECT}" "${EVAL_PROJECT}"; do
+    grep -qx "project|${p}" <<<"${out}" || { fail hubproject "hub project ${p} not found"; return 1; }
+    grep -qx "secret|${p}" <<<"${out}" || { fail hubproject "project secret GITHUB_TOKEN not set on ${p}"; return 1; }
+  done
+  pass "hubproject (${BUILD_PROJECT} + ${EVAL_PROJECT})"
 }
 check_smoke() {
   local titles a
@@ -232,26 +242,29 @@ check_smoke() {
   pass smoke
 }
 check_team() {
-  # Read-only: all 6 scion-frontiers/agent-team templates registered on the hub, and no legacy acme-* templates.
+  # Read-only: all 10 scion-experiment templates registered on the hub.
   local out t
   out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"SELECT slug FROM templates;\"" 2>/dev/null)"
-  for t in coordinator eng-manager architect developer code-reviewer test-engineer; do
+  for t in lead backend frontend reviewer deployer eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer; do
     grep -qx "${t}" <<<"${out}" || { fail team "template ${t} not registered on hub"; return 1; }
   done
-  if grep -q '^acme-' <<<"${out}"; then
-    fail team "obsolete acme-* templates still registered on hub"
-    return 1
-  fi
-  pass team
+  pass "team (10 templates across ${BUILD_PROJECT} and ${EVAL_PROJECT})"
 }
 check_topology() {
-  # Zero-sprawl topology: acme-lead exists, and any active worker agents descend from acme-lead.
-  local rows msg
+  # 2-project, 10-agent topology (5 in BUILD_PROJECT + 5 in EVAL_PROJECT).
+  local rows r missing=""
   rows="$(printf '%s\n' ".separator '|'" \
-    "SELECT name, id, ancestry FROM agents WHERE deleted_at IS NULL;" | \
+    "SELECT p.slug, a.name FROM agents a JOIN projects p ON a.project_id = p.id WHERE a.deleted_at IS NULL;" | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
       --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
-  if msg="$(topology_ok "${rows}" "${TOPOLOGY_MIN:-0}")"; then pass "topology (${msg})"; else fail topology "${msg}"; fi
+  for r in lead backend frontend reviewer deployer; do
+    grep -qx "${BUILD_PROJECT}|${r}" <<<"${rows}" || missing+=" ${BUILD_PROJECT}/${r}"
+  done
+  for r in eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer; do
+    grep -qx "${EVAL_PROJECT}|${r}" <<<"${rows}" || missing+=" ${EVAL_PROJECT}/${r}"
+  done
+  [[ -z "${missing}" ]] || { fail topology "missing agents:${missing}"; return 1; }
+  pass "topology (5 build agents in ${BUILD_PROJECT} + 5 eval agents in ${EVAL_PROJECT})"
 }
 check_cost() {
   # Committed templates follow the model mapping and carry caps.
@@ -261,27 +274,28 @@ check_cost() {
   pass "cost (${m}; ${c})"
 }
 check_skills() {
-  # The hub-stored developer template carries a template-mounted impeccable
-  # skill (skills/impeccable/SKILL.md with "name: impeccable"), and no
-  # unresolvable gh:// nested-path URI.
+  # The hub-stored frontend and ui-craftsman templates carry a template-mounted impeccable skill.
   local out
-  out="$(vm_ssh "sudo grep -rls '^name: impeccable' /home/scion/.scion --include=SKILL.md | grep '/developer/' | head -1; \
-                 sudo grep -rls 'gh://pbakaus/impeccable/' /home/scion/.scion --include=scion-agent.yaml | grep '/developer/' | head -1 | sed 's/^/BADURI:/'" 2>/dev/null)"
-  if grep -q '^BADURI:' <<<"${out}"; then fail skills "hub developer still references a nested gh:// impeccable URI"; return 1; fi
-  if grep -q 'SKILL.md' <<<"${out}"; then pass skills; else fail skills "impeccable SKILL.md not mounted in hub-stored developer template"; fi
+  out="$(vm_ssh "sudo grep -rls '^name: impeccable' /home/scion/.scion --include=SKILL.md | grep -E '/(frontend|ui-craftsman)/' | head -2; \
+                 sudo grep -rls 'gh://pbakaus/impeccable/' /home/scion/.scion --include=scion-agent.yaml | grep -E '/(frontend|ui-craftsman)/' | head -1 | sed 's/^/BADURI:/'" 2>/dev/null)"
+  if grep -q '^BADURI:' <<<"${out}"; then fail skills "hub template still references a nested gh:// impeccable URI"; return 1; fi
+  if grep -q 'SKILL.md' <<<"${out}"; then pass skills; else fail skills "impeccable SKILL.md not mounted in hub-stored frontend/ui-craftsman templates"; fi
 }
 check_loop() {
-  # The recurring TICK schedule exists, targets acme-lead, is active, and fires at most every 30 min.
-  local row cron status payload
-  row="$(printf '%s\n' ".separator '|'" "SELECT cron_expr, status, payload FROM schedules WHERE name='acme-factory-tick';" | \
-    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
-      --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
-  [[ -n "${row}" ]] || { fail loop "schedule acme-factory-tick not found"; return 1; }
-  IFS='|' read -r cron status payload <<<"${row}"
-  [[ "${status}" == "active" ]] || { fail loop "schedule status=${status} (paused? run infra/60-factory.sh resume)"; return 1; }
-  [[ "${payload}" == *acme-lead* ]] || { fail loop "schedule does not target acme-lead"; return 1; }
-  cron_interval_ok "${cron}" 30 || { fail loop "cron '${cron}' fires more often than every 30 min"; return 1; }
-  pass "loop (${cron}, active)"
+  # Both 15-minute heartbeat schedules exist, are active, and target lead and eval-lead.
+  local s row cron status payload
+  for s in "${BUILD_PROJECT}-lead-heartbeat:lead" "${EVAL_PROJECT}-lead-heartbeat:eval-lead"; do
+    local sname="${s%%:*}" target="${s#*:}"
+    row="$(printf '%s\n' ".separator '|'" "SELECT cron_expr, status, payload FROM schedules WHERE name='${sname}';" | \
+      gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
+        --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
+    [[ -n "${row}" ]] || { fail loop "schedule ${sname} not found"; return 1; }
+    IFS='|' read -r cron status payload <<<"${row}"
+    [[ "${status}" == "active" ]] || { fail loop "schedule ${sname} status=${status}"; return 1; }
+    [[ "${payload}" == *"${target}"* ]] || { fail loop "schedule ${sname} does not target ${target}"; return 1; }
+    cron_interval_ok "${cron}" 15 || { fail loop "cron '${cron}' fires more often than every 15 min"; return 1; }
+  done
+  pass "loop (${BUILD_PROJECT}-lead-heartbeat & ${EVAL_PROJECT}-lead-heartbeat, ${HEARTBEAT_CRON}, active)"
 }
 check_budget() {
   # Budget exists with a 100% threshold wired to the guard topic, and the guard service is deployed.
@@ -535,10 +549,12 @@ check_telemetry() {
   pass "telemetry (Cloud Monitoring OTLP export enabled)"
 }
 check_lead() {
-  # The lead agent's container is running on the VM.
-  vm_ssh "sudo docker ps --format '{{.Names}}' | grep -q 'acme-lead'" >/dev/null 2>&1 \
-    || { fail lead "no running container for acme-lead"; return 1; }
-  pass lead
+  # Both lead (BUILD_PROJECT) and eval-lead (EVAL_PROJECT) containers are running on the VM.
+  local names
+  names="$(vm_ssh "sudo docker ps --format '{{.Names}}'" 2>/dev/null)"
+  grep -q 'lead' <<<"${names}" || { fail lead "no running container for lead"; return 1; }
+  grep -q 'eval-lead' <<<"${names}" || { fail lead "no running container for eval-lead"; return 1; }
+  pass "lead (lead & eval-lead running)"
 }
 
 run() {

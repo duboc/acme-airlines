@@ -1,39 +1,53 @@
 #!/usr/bin/env bash
-# Factory control: keep everything intact while turning cost on or off.
+# Factory control for both Scion projects (${BUILD_PROJECT} and ${EVAL_PROJECT}):
 #
-#   infra/60-factory.sh status          # VM state, tick schedule, agents by phase
-#   infra/60-factory.sh tick-install    # create the recurring TICK schedule (idempotent)
-#   infra/60-factory.sh pause           # pause TICK + suspend all agents (sessions/roster/graph kept)
-#   infra/60-factory.sh resume          # resume TICK + wake acme-lead
+#   infra/60-factory.sh status          # VM state, heartbeat schedules, agents by project & phase
+#   infra/60-factory.sh tick-install    # create/update the two 15-min heartbeat schedules (idempotent)
+#   infra/60-factory.sh pause           # pause heartbeats + suspend all agents across both projects
+#   infra/60-factory.sh resume          # resume heartbeats + wake lead and eval-lead
 #
 # Product-owner rule: the VM is never stopped by tooling; cost control = pausing agents.
-#
-# Hub operations temporarily enable operator admin access
-# (infra/30-hub-admin-access.sh) and always disable it again on exit.
 set -euo pipefail
 # shellcheck source=infra/lib.sh
 source "$(dirname "$0")/lib.sh"
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-PROJ_SLUG="${HUB_PROJECT_SLUG}"
-TICK_NAME="acme-factory-tick"
-TICK_MSG="TICK: run one factory loop pass (see the factory loop section of your instructions). If nothing changed since your last pass, only refresh the status issue timestamp."
+BUILD_HB_NAME="${BUILD_PROJECT}-lead-heartbeat"
+EVAL_HB_NAME="${EVAL_PROJECT}-lead-heartbeat"
+HB_TEMPLATE="$(python3 "${INFRA_DIR}/render-templates.py" --file "${INFRA_DIR}/heartbeat-message.txt")"
+BUILD_HB_MSG="${HB_TEMPLATE//<your project slug>/${BUILD_PROJECT}}"
+EVAL_HB_MSG="${HB_TEMPLATE//<your project slug>/${EVAL_PROJECT}}"
 
 admin_on()  { bash "${INFRA_DIR}/30-hub-admin-access.sh" enable >/dev/null; trap admin_off EXIT; }
 admin_off() { bash "${INFRA_DIR}/30-hub-admin-access.sh" disable >/dev/null || true; }
-hub()       { hub_cli --project "${PROJ_SLUG}" "$@"; }
 vm_status() { gcloud compute instances describe "${VM_NAME}" --zone="$(resolve_zone)" --project="${PROJECT_ID}" --format='value(status)'; }
 
-tick_id() {  # prints the schedule id for TICK_NAME, or nothing
-  printf '%s\n' "SELECT id FROM schedules WHERE name='${TICK_NAME}';" | \
+sched_id() {
+  printf '%s\n' "SELECT id FROM schedules WHERE name='$1';" | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
       --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null | head -1
 }
 
-tick_cron() {  # prints the cron_expr for TICK_NAME, or nothing
-  printf '%s\n' "SELECT cron_expr FROM schedules WHERE name='${TICK_NAME}';" | \
+sched_cron() {
+  printf '%s\n' "SELECT cron_expr FROM schedules WHERE name='$1';" | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
       --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null | head -1
+}
+
+ensure_schedule() {
+  local proj="$1" name="$2" agent="$3" msg="$4" id cur_cron
+  id="$(sched_id "${name}")"
+  cur_cron="$(sched_cron "${name}")"
+  if [[ -n "${id}" && "${cur_cron}" == "${HEARTBEAT_CRON}" ]]; then
+    echo "schedule ${name} already exists (${cur_cron})"
+  else
+    if [[ -n "${id}" ]]; then
+      echo "updating schedule ${name} from '${cur_cron}' to '${HEARTBEAT_CRON}'..."
+      hub_cli --project "${proj}" schedule delete "${id}"
+    fi
+    hub_cli --project "${proj}" schedule create-recurring --name "${name}" --cron "${HEARTBEAT_CRON}" \
+      --type message --agent "${agent}" --message "${msg}"
+  fi
 }
 
 case "${1:-status}" in
@@ -41,8 +55,8 @@ case "${1:-status}" in
     echo "VM: $(vm_status)"
     [[ "$(vm_status)" == "RUNNING" ]] || exit 0
     printf '%s\n' ".separator ' | '" \
-      "SELECT 'schedule', name, cron_expr, status FROM schedules WHERE name='${TICK_NAME}';" \
-      "SELECT 'agents', phase, count(*) FROM agents WHERE deleted_at IS NULL GROUP BY phase;" | \
+      "SELECT 'schedule', name, cron_expr, status FROM schedules WHERE name IN ('${BUILD_HB_NAME}','${EVAL_HB_NAME}');" \
+      "SELECT 'agents', p.slug, a.phase, count(*) FROM agents a JOIN projects p ON a.project_id = p.id WHERE a.deleted_at IS NULL GROUP BY p.slug, a.phase;" | \
       gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
         --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null
     for j in acme-factory-watchdog acme-lead-reincarnate; do
@@ -51,34 +65,32 @@ case "${1:-status}" in
     done ;;
   tick-install)
     admin_on
-    id="$(tick_id)"
-    cur_cron="$(tick_cron)"
-    if [[ -n "${id}" && "${cur_cron}" == "${TICK_CRON}" ]]; then
-      echo "schedule ${TICK_NAME} already exists (${cur_cron})"
-    else
-      if [[ -n "${id}" ]]; then
-        echo "updating schedule ${TICK_NAME} from '${cur_cron}' to '${TICK_CRON}'..."
-        hub schedule delete "${id}"
-      fi
-      hub schedule create-recurring --name "${TICK_NAME}" --cron "${TICK_CRON}" \
-        --type message --agent acme-lead --message "${TICK_MSG}"
-    fi ;;
+    old_id="$(sched_id "acme-factory-tick")"
+    [[ -z "${old_id}" ]] || hub_cli --project "${BUILD_PROJECT}" schedule delete "${old_id}" || true
+    ensure_schedule "${BUILD_PROJECT}" "${BUILD_HB_NAME}" "lead" "${BUILD_HB_MSG}"
+    ensure_schedule "${EVAL_PROJECT}"  "${EVAL_HB_NAME}"  "eval-lead" "${EVAL_HB_MSG}" ;;
   pause)
     admin_on
-    id="$(tick_id)"; [[ -z "${id}" ]] || hub schedule pause "${id}" || true
+    for pair in "${BUILD_PROJECT}:${BUILD_HB_NAME}" "${EVAL_PROJECT}:${EVAL_HB_NAME}"; do
+      p="${pair%%:*}"; n="${pair#*:}"
+      id="$(sched_id "${n}")"; [[ -z "${id}" ]] || hub_cli --project "${p}" schedule pause "${id}" || true
+      hub_cli --project "${p}" suspend --all || true
+    done
     for j in acme-factory-watchdog acme-lead-reincarnate; do
       gcloud scheduler jobs pause "${j}" --location="${REGION}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
     done
-    hub suspend --all || true
-    echo "paused: tick + watchdog schedules paused, agents suspended (roster and graph intact)" ;;
+    echo "paused: heartbeats + watchdog schedules paused, all agents suspended across ${BUILD_PROJECT} and ${EVAL_PROJECT}" ;;
   resume)
     admin_on
-    id="$(tick_id)"; [[ -z "${id}" ]] || hub schedule resume "${id}" || true
+    for pair in "${BUILD_PROJECT}:${BUILD_HB_NAME}:lead:${BUILD_HB_MSG}" "${EVAL_PROJECT}:${EVAL_HB_NAME}:eval-lead:${EVAL_HB_MSG}"; do
+      IFS=':' read -r p n lead_agent msg <<<"${pair}"
+      id="$(sched_id "${n}")"; [[ -z "${id}" ]] || hub_cli --project "${p}" schedule resume "${id}" || true
+      hub_cli --project "${p}" resume "${lead_agent}" "${msg}" 2>/dev/null \
+        || hub_cli --project "${p}" message "${lead_agent}" "${msg}"
+    done
     for j in acme-factory-watchdog acme-lead-reincarnate; do
       gcloud scheduler jobs resume "${j}" --location="${REGION}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
     done
-    hub resume acme-lead "Factory resumed by the operator. Run a full factory loop pass now." 2>/dev/null \
-      || hub message acme-lead "Factory resumed by the operator. Run a full factory loop pass now."
-    echo "resumed: tick + watchdog schedules active, acme-lead woken" ;;
-  *) sed -n '2,13p' "$0"; exit 2 ;;
+    echo "resumed: heartbeats active, lead and eval-lead woken" ;;
+  *) sed -n '2,10p' "$0"; exit 2 ;;
 esac
