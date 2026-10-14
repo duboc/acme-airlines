@@ -31,9 +31,9 @@ jobs:
         run: |
           set -euo pipefail
           total="$(gh api "repos/${REPO}/pulls/${PR}/files" --paginate \
-            --jq '.[] | select(.filename | test("(^|/)(uv\\.lock|package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock)$|^factory/templates/") | not) | .changes' \
+            --jq '.[] | select(.filename | test("(^|/)(uv\\.lock|package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock)$|^(factory|docs/scion)/templates/") | not) | .changes' \
             | awk '{s += $1} END {print s + 0}')"
-          echo "Changed lines (lockfiles and factory/templates excluded): ${total} (limit ${LIMIT})"
+          echo "Changed lines (lockfiles and templates excluded): ${total} (limit ${LIMIT})"
           if (( total <= LIMIT )); then exit 0; fi
           if jq -e 'index("size:exception")' <<<"${LABELS}" >/dev/null; then
             echo "::warning::${total} changed lines exceed ${LIMIT}; allowed by the size:exception label."

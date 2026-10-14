@@ -12,9 +12,9 @@ changes as pull requests.
 |------|------|
 | [`app/`](app/) | The acme-airlines multi-agent application (see [`app/README.md`](app/README.md)). |
 | [`docs/scion/`](docs/scion/README.md) | Concise Scion, GCP/IAP, `scion-frontiers/agent-team`, heartbeat, and eval configuration guides. |
+| [`docs/scion/templates/`](docs/scion/templates/) | The 6 Scion role templates (`coordinator`, `eng-manager`, `architect`, `developer`, `code-reviewer`, `test-engineer`) from [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team). |
 | [`docs/product/`](docs/product/) | Product brief ([IRROPS use case](docs/product/irrops-use-case.md)), [policy rules](docs/product/policy-rules.md), [engines](docs/product/engines.md), [test strategy](docs/product/test-strategy.md), and [try-it guide](docs/product/try-it.md). |
-| [`infra/`](infra/) | Scripts and config that create and operate the factory. |
-| [`factory/templates/`](factory/templates/) | Scion role templates built from [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team). |
+| [`infra/`](infra/) | Scripts and config that create and operate the factory (`infra/setup-scion.sh`). |
 
 ## Application quickstart
 

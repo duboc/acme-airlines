@@ -1,12 +1,12 @@
-# 02 — Agent Team (`scion-frontiers/agent-team`) & Heartbeat Configuration
+# 02 — Agent Team (`docs/scion/templates/`) & Heartbeat Configuration
 
-How the 6 core factory templates are built from [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team), mapped to `gemini-4-argon`, `gemini-3.8-flash`, `claude-opus-5-5`, and `claude-sonnet-5-5`, and kept running via the 4-layer heartbeat with zero idle agent sprawl.
+How the 6 core [`scion-frontiers/agent-team`](https://github.com/scion-frontiers/agent-team) templates in [`docs/scion/templates/`](./templates/) are imported and synced via the `scion` CLI, mapped to `gemini-4-argon`, `gemini-3.8-flash`, `claude-opus-5-5`, and `claude-sonnet-5-5`, and kept running via the 4-layer heartbeat with zero idle agent sprawl.
 
 ---
 
-## 1. Harness `model_aliases` (`infra/20-model-access.sh`)
+## 1. Harness `model_aliases` (`infra/setup-scion.sh`)
 
-[`infra/20-model-access.sh`](../../infra/20-model-access.sh) upgrades `scion-antigravity:latest` to `agy 1.3.4` and configures `model_aliases` across all harnesses on the Hub VM:
+[`infra/setup-scion.sh`](../../infra/setup-scion.sh) upgrades `scion-antigravity:latest` to `agy 1.3.4` and syncs `model_aliases` across all harnesses on the Hub via `scion --global harness-config sync <name>`:
 
 | Harness | `large` / `extra-large` | `medium` | `small` |
 |---|---|---|---|
@@ -16,23 +16,22 @@ How the 6 core factory templates are built from [`scion-frontiers/agent-team`](h
 
 ---
 
-## 2. The 6 Upstream `scion-frontiers/agent-team` Templates
+## 2. The 6 Agent Templates (`docs/scion/templates/`)
 
-Built by [`infra/40-build-team-templates.sh`](../../infra/40-build-team-templates.sh) into [`factory/templates/`](../../factory/templates/) and synced to the Hub at global scope by [`infra/45-push-templates.sh`](../../infra/45-push-templates.sh):
+Stored directly in [`docs/scion/templates/`](./templates/) and imported + synced to the Hub at global scope by [`infra/setup-scion.sh`](../../infra/setup-scion.sh) (`scion --global templates import --all --force` + `scion --global templates sync --all`):
 
-| Template (`--type`) | Harness | Tier | Effective Model | Max Duration | Max Turns | Max Model Calls |
-|---|---|---|---|---|---|---|
-| **`coordinator`** | `claude` | `large` | `claude-opus-5-5` | *(long-lived)* | — | — |
-| **`eng-manager`** | `claude` | `large` | `claude-opus-5-5` | `4h` | `800` | `2400` |
-| **`architect`** | `antigravity` | `large` | `Gemini 4 Argon (High)` (`gemini-4-argon`) | `1h` | `200` | `600` |
-| **`developer`** | `claude` | `medium` | `claude-sonnet-5-5` (+ `impeccable` skill) | `2h` | `400` | `1200` |
-| **`code-reviewer`** | `antigravity` | `large` | `Gemini 4 Argon (High)` (`gemini-4-argon`) | `45m` | `150` | `450` |
-| **`test-engineer`** | `antigravity` | `medium` | `Gemini 3.8 Flash (Medium)` (`gemini-3.8-flash`) | `1h` | `200` | `600` |
+| Template (`--type`) | Path | Harness | Tier | Effective Model | Max Duration | Max Turns | Max Model Calls |
+|---|---|---|---|---|---|---|---|
+| **`coordinator`** | [`templates/coordinator/`](./templates/coordinator/scion-agent.yaml) | `claude` | `large` | `claude-opus-5-5` | *(long-lived)* | — | — |
+| **`eng-manager`** | [`templates/eng-manager/`](./templates/eng-manager/scion-agent.yaml) | `claude` | `large` | `claude-opus-5-5` | `4h` | `800` | `2400` |
+| **`architect`** | [`templates/architect/`](./templates/architect/scion-agent.yaml) | `antigravity` | `large` | `Gemini 4 Argon (High)` (`gemini-4-argon`) | `1h` | `200` | `600` |
+| **`developer`** | [`templates/developer/`](./templates/developer/scion-agent.yaml) | `claude` | `medium` | `claude-sonnet-5-5` (+ `impeccable` skill) | `2h` | `400` | `1200` |
+| **`code-reviewer`** | [`templates/code-reviewer/`](./templates/code-reviewer/scion-agent.yaml) | `antigravity` | `large` | `Gemini 4 Argon (High)` (`gemini-4-argon`) | `45m` | `150` | `450` |
+| **`test-engineer`** | [`templates/test-engineer/`](./templates/test-engineer/scion-agent.yaml) | `antigravity` | `medium` | `Gemini 3.8 Flash (Medium)` (`gemini-3.8-flash`) | `1h` | `200` | `600` |
 
 ```bash
-# Rebuild the 6 templates and sync to the Scion Hub
-bash infra/40-build-team-templates.sh
-bash infra/45-push-templates.sh
+# Re-import docs/scion/templates/* and sync harness configs + templates to the Scion Hub
+bash infra/setup-scion.sh
 ```
 
 ---
