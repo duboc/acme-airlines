@@ -312,6 +312,19 @@ class GcpDataSource:
                     for p in ts.points
                 ]
                 notification[key] = max(vals) if vals else None
+                
+        engine_latency = None
+        lat_counts = series("engine.latency", agg_mod.Reducer.REDUCE_SUM)
+        if lat_counts:
+            engine_latency = {}
+            for key, red in (("p50_ms", "REDUCE_PERCENTILE_50"), ("p95_ms", "REDUCE_PERCENTILE_95")):
+                vals = [
+                    p.value.double_value
+                    for ts in series("engine.latency", getattr(agg_mod.Reducer, red))
+                    for p in ts.points
+                ]
+                engine_latency[key] = max(vals) if vals else None
+                
         raw = {
             "guardrail": guardrail,
             "offers": offers or None,
@@ -319,9 +332,11 @@ class GcpDataSource:
             "needs_human": total("needs_human"),
             "notification": notification,
             "errors_5xx": total("http.server.errors"),
+            "engine_rebuilds": total("engine.rebuilds"),
+            "engine_latency": engine_latency,
         }
-        if not (guardrail or offers or notification) and all(
-            raw[k] is None for k in ("template_fallbacks", "needs_human", "errors_5xx")
+        if not (guardrail or offers or notification or engine_latency) and all(
+            raw[k] is None for k in ("template_fallbacks", "needs_human", "errors_5xx", "engine_rebuilds")
         ):
             raise SourceEmpty(
                 "No IRROPS metrics yet: the runtime has not exported to Cloud Monitoring."
