@@ -1,0 +1,11 @@
+schema_version: "1"
+description: "Frontend engineer of the ${BUILD_PROJECT} factory (Antigravity Gemini 4 Argon High). Reports to lead."
+default_harness_config: antigravity
+model: large
+max_duration: "2h"
+max_turns: 400
+max_model_calls: 1200
+agent_instructions: agents.md
+system_prompt: system-prompt.md
+env:
+  FACTORY_ROLE: frontend

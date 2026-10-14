@@ -1,0 +1,8 @@
+schema_version: "1"
+description: "Tech lead and orchestrator of the ${BUILD_PROJECT} factory (Claude Code Opus 5.5). Plans and delegates GitHub issues; never writes product code."
+default_harness_config: claude
+model: large
+agent_instructions: agents.md
+system_prompt: system-prompt.md
+env:
+  FACTORY_ROLE: lead

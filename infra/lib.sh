@@ -20,6 +20,9 @@ cfg() { jq -r "$1" "${CONFIG_FILE}"; }
 PROJECT_ID="$(cfg '.project_id')"
 REGION="$(cfg '.region')"
 HUB_NAME="$(cfg '.hub_name')"
+HUB_PROJECT="${HUB_PROJECT:-${PROJECT_ID}}"
+SANDBOX_PROJECT="${SANDBOX_PROJECT:-${PROJECT_ID}}"
+SANDBOX_REGION="${SANDBOX_REGION:-${REGION}}"
 FACTORY_PREFIX="${FACTORY_PREFIX:-${HUB_NAME}}"
 BUDGET_NAME="${BUDGET_NAME:-${PROJECT_ID}-monthly}"
 VM_NAME="scion-hub-${HUB_NAME}"
@@ -52,12 +55,25 @@ SCION_SRC="${SCION_SRC:-${REPO_ROOT}/.cache/scion-${SCION_VERSION}}"
 
 DEFAULT_USER_ROLE="${DEFAULT_USER_ROLE:-viewer}"
 GITHUB_REPO="${GITHUB_REPO:-duboc/acme-airlines}"
-HUB_PROJECT_SLUG="${HUB_PROJECT_SLUG:-duboc-acme-airlines}"
+BUILD_PROJECT="${BUILD_PROJECT:-duboc-acme-airlines}"
+EVAL_PROJECT="${EVAL_PROJECT:-acme-airlines-eval}"
+HUB_PROJECT_SLUG="${HUB_PROJECT_SLUG:-${BUILD_PROJECT}}"
+BUILD_BRANCH="${BUILD_BRANCH:-main}"
+EVAL_BRANCH="${EVAL_BRANCH:-eval-dashboard}"
+SERVING_SERVICE="${SERVING_SERVICE:-acme-irrops-demo}"
+DASHBOARD_SERVICE="${DASHBOARD_SERVICE:-acme-observatory}"
+DEPLOYER_SA_NAME="${DEPLOYER_SA_NAME:-acme-observatory-deployer}"
+RUNTIME_SA_NAME="${RUNTIME_SA_NAME:-acme-irrops-demo}"
+DEPLOYER_SA="${DEPLOYER_SA:-${DEPLOYER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com}"
+RUNTIME_SA="${RUNTIME_SA:-${RUNTIME_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com}"
+AGENT_SA="${AGENT_SA:-${FACTORY_PREFIX}-agent@${PROJECT_ID}.iam.gserviceaccount.com}"
+PO_EMAIL="${PO_EMAIL:-${ADMIN_EMAIL:-}}"
 AGENT_TEAM_SHA="${AGENT_TEAM_SHA:-3650f1b03411116fcbf37852bfec6911db64b569}"
 IMPECCABLE_SHA="${IMPECCABLE_SHA:-d631a8827f99414d2b6daba4ef08b7f8701751d7}"
 BUDGET_USD="${BUDGET_USD:-2000}"
+HEARTBEAT_CRON="${HEARTBEAT_CRON:-*/15 * * * *}"
+TICK_CRON="${TICK_CRON:-${HEARTBEAT_CRON}}"
 WATCHDOG_CRON="${WATCHDOG_CRON:-0 * * * *}"
-TICK_CRON="${TICK_CRON:-0 */6 * * *}"
 DEPLOY_ZONE="${DEPLOY_ZONE:-us-central1-a}"
 GCLOUD_CLIENT_ID="${GCLOUD_CLIENT_ID:-32555940559.apps.googleusercontent.com}"
 
@@ -65,7 +81,8 @@ GCLOUD_CLIENT_ID="${GCLOUD_CLIENT_ID:-32555940559.apps.googleusercontent.com}"
 : "${REGION:?REGION missing in deploy-config.json}"
 : "${HUB_NAME:?HUB_NAME missing in deploy-config.json}"
 : "${GITHUB_REPO:?GITHUB_REPO missing in factory.env}"
-: "${HUB_PROJECT_SLUG:?HUB_PROJECT_SLUG missing in factory.env}"
+: "${BUILD_PROJECT:?BUILD_PROJECT missing in factory.env}"
+: "${EVAL_PROJECT:?EVAL_PROJECT missing in factory.env}"
 
 if [[ -z "${VERIFY_LIB_ONLY:-}" ]]; then
   : "${FOLDER_ID:?FOLDER_ID missing — set in infra/factory.local.env (or Secret Manager ${FACTORY_PREFIX}-factory-local-env)}"
@@ -78,10 +95,11 @@ fi
 # Retry a command with linear backoff: retry <attempts> <delay_seconds> <cmd...>
 retry() {
   local attempts="$1" delay="$2"; shift 2
-  local i=1
+  local i=1 rc=0
   while true; do
-    "$@" && return 0
-    (( i >= attempts )) && return 1
+    rc=0
+    "$@" && return 0 || rc=$?
+    (( i >= attempts )) && return "${rc}"
     sleep "$(( delay * i ))"
     (( i++ ))
   done
@@ -93,17 +111,31 @@ CLAUDE_TEST_MODELS="${CLAUDE_TEST_MODELS:-claude-opus-5-5 claude-sonnet-5-5 clau
 export GEMINI_TEST_MODELS CLAUDE_TEST_MODELS
 
 # Zone of the existing VM; falls back to <region>-b like deploy.sh does.
+_CACHED_VM_ZONE=""
 resolve_zone() {
+  if [[ -n "${_CACHED_VM_ZONE}" ]]; then
+    echo "${_CACHED_VM_ZONE}"
+    return 0
+  fi
   local z
   z="$(gcloud compute instances list --project="${PROJECT_ID}" \
         --filter="name=${VM_NAME}" --format='value(zone.basename())' 2>/dev/null | head -1)"
-  echo "${z:-${REGION}-b}"
+  _CACHED_VM_ZONE="${z:-${REGION}-b}"
+  echo "${_CACHED_VM_ZONE}"
 }
 
-# Run a command on the hub VM over IAP SSH.
+# Run a command on the hub VM over IAP SSH (retries transient SSH transport exit 255).
 vm_ssh() {
-  gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
-    --tunnel-through-iap --quiet --command="$1"
+  local z i=1 rc=0
+  z="$(resolve_zone)"
+  while true; do
+    rc=0
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="${z}" \
+      --tunnel-through-iap --quiet --command="$1" && return 0 || rc=$?
+    [[ "${rc}" -eq 255 && "${i}" -lt 3 ]] || return "${rc}"
+    sleep "$(( 2 * i ))"
+    (( i++ ))
+  done
 }
 
 # Run `scion <args...>` on the VM against http://localhost:8080 as the operator
@@ -111,17 +143,26 @@ vm_ssh() {
 # over SSH stdin, never in argv or files. Extra stdin for the scion command can
 # be supplied with HUB_CLI_STDIN (e.g. a secret value), sent after the token.
 hub_cli() {
-  local tok args
+  local tok args z i=1 rc=0
+  z="$(resolve_zone)"
   tok="$(gcloud auth print-identity-token 2>/dev/null)"
   printf -v args '%q ' "$@"
-  { printf '%s\n' "${tok}"; if [[ -n "${HUB_CLI_STDIN:-}" ]]; then printf '%s' "${HUB_CLI_STDIN}"; fi; } | \
-    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
-      --tunnel-through-iap --quiet --command="
-        IFS= read -r SCION_HUB_TOKEN; export SCION_HUB_TOKEN
-        export SCION_HUB_ENDPOINT=http://localhost:8080
-        mkdir -p ~/acme-cli && cd ~/acme-cli && scion ${args}"
+  while true; do
+    rc=0
+    { printf '%s\n' "${tok}"; if [[ -n "${HUB_CLI_STDIN:-}" ]]; then printf '%s' "${HUB_CLI_STDIN}"; fi; } | \
+      gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="${z}" \
+        --tunnel-through-iap --quiet --command="
+          IFS= read -r SCION_HUB_TOKEN; export SCION_HUB_TOKEN
+          export SCION_HUB_ENDPOINT=http://localhost:8080
+          mkdir -p ~/acme-cli && cd ~/acme-cli && scion ${args}" && return 0 || rc=$?
+    [[ "${rc}" -eq 255 && "${i}" -lt 3 ]] || return "${rc}"
+    sleep "$(( 2 * i ))"
+    (( i++ ))
+  done
 }
 
-export PROJECT_ID REGION HUB_NAME FACTORY_PREFIX BUDGET_NAME VM_NAME VM_SA PROXY_SVC
+export PROJECT_ID REGION HUB_NAME HUB_PROJECT SANDBOX_PROJECT SANDBOX_REGION FACTORY_PREFIX BUDGET_NAME VM_NAME VM_SA PROXY_SVC
 export REPO_ROOT FOLDER_ID BILLING_ACCOUNT SCION_SRC SCION_VERSION CONFIG_FILE LOCAL_ENV_FILE
-export ORG_DOMAIN WEB_DOMAINS ADMIN_EMAIL DEFAULT_USER_ROLE GITHUB_REPO HUB_PROJECT_SLUG AGENT_TEAM_SHA IMPECCABLE_SHA BUDGET_USD WATCHDOG_CRON TICK_CRON DEPLOY_ZONE GCLOUD_CLIENT_ID
+export ORG_DOMAIN WEB_DOMAINS ADMIN_EMAIL PO_EMAIL DEFAULT_USER_ROLE GITHUB_REPO BUILD_PROJECT EVAL_PROJECT HUB_PROJECT_SLUG BUILD_BRANCH EVAL_BRANCH
+export SERVING_SERVICE DASHBOARD_SERVICE DEPLOYER_SA_NAME RUNTIME_SA_NAME DEPLOYER_SA RUNTIME_SA AGENT_SA
+export AGENT_TEAM_SHA IMPECCABLE_SHA BUDGET_USD HEARTBEAT_CRON TICK_CRON WATCHDOG_CRON DEPLOY_ZONE GCLOUD_CLIENT_ID
