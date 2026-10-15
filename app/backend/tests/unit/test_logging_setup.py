@@ -50,6 +50,29 @@ def test_redaction_backstop_masks_fixture_pii_emails_and_phones(caplog):
     assert redact("plain text") == "plain text"
 
 
+def test_given_extra_fields_with_pii_when_logged_then_extra_attributes_are_redacted(caplog):
+    configure_logging()
+    logger = logging.getLogger("acme.extra.test")
+    caplog.set_level(logging.DEBUG)
+    logger.info(
+        "structured event",
+        extra={
+            "pax": "Mariana Silva",
+            "pnr": "MSLV42",
+            "pax_id": "P-MARIANA",
+            "nested": {
+                "email": "a@b.com",
+                "items": ["+55 11 91234-5678", ("FFP-0001", 42)],
+            },
+        },
+    )
+    (rec,) = [r for r in caplog.records if r.name == "acme.extra.test"]
+    assert rec.pax == "[redacted]"
+    assert rec.pnr == "[redacted]"
+    assert rec.pax_id == "[redacted]"
+    assert rec.nested == {"email": "[redacted]", "items": ["[redacted]", ("[redacted]", 42)]}
+
+
 def test_engine_set_up_configures_logging(monkeypatch):
     from acme.engines.customer import build_customer_engine_app
 
