@@ -21,7 +21,7 @@ of its own. Call `set_up()` once (the engine does this itself) before use.
 | `scenario_state() -> dict` | sync | Current `ScenarioState`. |
 | `journeys_list() -> list`, `journey_detail(journey_id) -> dict` | sync / async | `JourneySummary` / `JourneyDetail`, built by the same functions as the HTTP API. |
 | `reset()`, `trigger_cancellation(flight, reason)`, `whatsapp_messages(passenger_id)`, `whatsapp_reply(passenger_id, text)`, `whatsapp_action(passenger_id, action)` | sync / async | The phone panel, reset and trigger, calling the API's own functions (`acme.api.app.do_*`, so offer accept/decline still use `acme.customer.conversion` and its guardrail re-check). API errors come back as `{"error": {"status", "detail"}}` and `EngineBackend` re-raises them as HTTP errors. |
-| `journey_events(journey_id, since=0) -> list` | sync | Timeline events from index `since` (poll form of the SSE stream). |
+| `journey_events(journey_id, since=0) -> list` | async | Timeline events from index `since` (poll form of the SSE stream; calls `runtime.tick()`, `#395`). |
 
 
 Presets are allowed on the engine even with `LLM_MODE=vertex` (the API app still answers 404 outside fake mode). The world is deterministic; only message wording comes from the LLM, and the fact check before sending (`outreach.required_facts`, which requires `hotel_id`, `"transfer"`, and `"voucher"` only when those entitlements were granted by `duty_of_care_assessed` under `DOC-05..08`, `#324`, plus template fallback) is the same code. Outcomes match local mode structurally (status, flight, seat, offers, charge), not in message text. Guardrails are unchanged.
@@ -355,8 +355,8 @@ Presets still drive time explicitly (the `notify` step calls `tick()`), and the 
 `advance_clock` does too.
 
 Agent Engine: there is no background loop (processes are throttled between requests), so the engine's
-`journey_detail` operation still ticks, as before; that is the one read that writes, by design, and the
-demo's polling keeps notifications and closure moving in that mode.
+`journey_detail`, `journey_events`, and `whatsapp_messages` operations call `runtime.tick()` (`#395`);
+those polled reads advance time-triggered steps (notifications and closure) by design in that mode.
 
 ## Process identity for "no scenario is started" (#266)
 
