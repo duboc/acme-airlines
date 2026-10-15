@@ -19,15 +19,34 @@ expect 1 "curl crash 000"     $'gemini g 200\nclaude a 000'
 expect 1 "no result lines"    $'ssh: connection refused'
 expect 1 "claude line absent" $'gemini g 200'
 
-# topology_ok <rows "name|id|ancestry-json"> <min-children>
-texpect() {  # texpect <0|1> <name> <min> <rows>
-  if topology_ok "$4" "$3" >/dev/null; then got=0; else got=1; fi
+# topology_ok <rows "name|id|ancestry-json"> <min-children> [lead-name]
+texpect() {  # texpect <0|1> <name> <min> <rows> [lead-name]
+  if topology_ok "$4" "$3" "${5:-}" >/dev/null; then got=0; else got=1; fi
   if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
 }
-U=u-1; L=lead-1
+U=u-1; L=lead-1; EL=eval-lead-1
 texpect 0 "lead + children under lead"   2 "acme-lead|$L|[\"$U\"]
 acme-backend|b-1|[\"$U\",\"$L\"]
 acme-reviewer|r-1|[\"$U\",\"$L\"]"
+texpect 0 "build lead + 6 subagents under lead" 6 "lead|$L|[\"$U\"]
+researcher|rs-1|[\"$U\",\"$L\"]
+product-manager|pm-1|[\"$U\",\"$L\"]
+backend|b-1|[\"$U\",\"$L\"]
+frontend|f-1|[\"$U\",\"$L\"]
+reviewer|r-1|[\"$U\",\"$L\"]
+deployer|d-1|[\"$U\",\"$L\"]" "lead"
+texpect 0 "eval-lead + 4 subagents under eval-lead" 4 "eval-lead|$EL|[\"$U\"]
+factory-analyst|fa-1|[\"$U\",\"$EL\"]
+search-evaluator|se-1|[\"$U\",\"$EL\"]
+ui-craftsman|ui-1|[\"$U\",\"$EL\"]
+eval-deployer|ed-1|[\"$U\",\"$EL\"]" "eval-lead"
+texpect 1 "flat build worker (not under lead)" 6 "lead|$L|[\"$U\"]
+researcher|rs-1|[\"$U\"]
+product-manager|pm-1|[\"$U\",\"$L\"]
+backend|b-1|[\"$U\",\"$L\"]
+frontend|f-1|[\"$U\",\"$L\"]
+reviewer|r-1|[\"$U\",\"$L\"]
+deployer|d-1|[\"$U\",\"$L\"]" "lead"
 texpect 0 "grandchild via eng-manager"   2 "acme-lead|$L|[\"$U\"]
 acme-eng-manager|e-1|[\"$U\",\"$L\"]
 acme-backend-2|b-2|[\"$U\",\"$L\",\"e-1\"]"
@@ -105,5 +124,26 @@ texp 0 "tool span counts" '{"traces":[{"spans":[{"name":"execute_tool rebook"}]}
 texp 0 "acme.* engine span counts" '{"traces":[{"spans":[{"name":"acme.guardrail.evaluate"}]}]}'
 texp 1 "only Cloud Run request spans" '{"traces":[{"spans":[{"name":"/api/scenarios"}]}]}'
 texp 1 "no traces" '{}'
+
+pexpect() {  # pexpect <0|1> <name> <dir>
+  if eval_prompts_ok "$3" >/dev/null; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+P=$(mktemp -d)
+mkp() { mkdir -p "$P/$1/$2"; printf '%b' "$3" > "$P/$1/$2/system-prompt.md"; }
+for s in ok phantom generic; do
+  mkp "$s" eval-lead "VertexLlm agent_engine_proof.py IrropsPanel.tsx"
+  mkp "$s" search-evaluator "VertexLlm intent.py outreach.py scenarios.py agent_engine_proof.py acme.llm.template_fallbacks STRUCTURAL"
+  mkp "$s" factory-analyst "ACME_DIAG acme.guardrail.decisions observatory/collector"
+  mkp "$s" ui-craftsman "IrropsPanel.tsx AgentEnginePanel.tsx ModelsPanel.tsx"
+  mkp "$s" eval-deployer "acme-observatory"
+done
+mkp phantom search-evaluator "acme.evals.runner VertexLlm intent.py outreach.py scenarios.py agent_engine_proof.py acme.llm.template_fallbacks STRUCTURAL"
+mkp generic search-evaluator "generic search evaluator prompt"
+pexpect 0 "app & model specialized eval prompts" "$P/ok"
+pexpect 1 "phantom acme.evals.runner rejected" "$P/phantom"
+pexpect 1 "generic search-evaluator rejected" "$P/generic"
+pexpect 0 "repo docs/scion/templates eval prompts specialized" "docs/scion/templates"
+rm -rf "$P"
 
 if [[ "${fails}" == 0 ]]; then echo "PASS test_verify"; else echo "FAIL test_verify (${fails})"; exit 1; fi
