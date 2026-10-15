@@ -46,11 +46,39 @@ rebuild died with `NoSentOffer`. If a replay with a tape still raises, the rebui
 with no tape and the diag carries `tape_discarded` (0 or 1). The live proof reports only the class
 of a failing engine call, because the platform appends the request (the tape) to the error text.
 
+## Registry cache (#280)
+The simulators' tool registries are built once per process (`warm_registry()` in `set_up`) and
+shared across runs through a per-run world reference (`sim/current.py`), and a rebuild reuses its
+sim sessions. A replay no longer rebuilds the registries for every step, which is where most of the
+rebuild time went; isolation between runs is covered by `tests/unit/test_sim_session_reuse.py`.
+
 ## Known gap
 The offer text is composed on whichever container serves the Sales tick (`a2a_skill`), and the tape
 the caller holds is the one returned by the next Customer call. If that call lands on another
 container, the offer text is not on the tape: it is replayed with the fake model and `tape_miss` is
 greater than 0. State, journeys and the absence of duplicates are unaffected.
+
+## Rebuild latency budget (#280)
+A rebuild at a late step replays every earlier step offline. Measured by the no-coverage CI step
+(p95 per preset in ms, nearest rank; "not measured" where CI never ran that variant):
+
+| preset | no optimisation | + session reuse, run 38747137505 (8 samples) | + session reuse, run 38748878151 (20) | + registry cache, run 38756217625 attempts 1 / 3 / 4 (20) |
+|---|---|---|---|---|
+| happy-path | not measured | 361 | 475 | 326 / 394 / 406 |
+| upgrade-race | not measured | 363 | 444 | 312 / 370 / 401 |
+| declines-upgrade | not measured | 331 | 439 | 295 / 356 / 365 |
+| unsatisfiable-request | not measured | 233 | 286 | 210 / 234 / 245 |
+| seat-taken | not measured | 216 | 277 | 195 / 216 / 223 |
+| hotel-unavailable | not measured | 223 | 250 | 87 / 110 / 115 |
+
+Variance: the same code gave a happy-path median of 273 ms in one run and 386 ms in the next
+(+41%), and 219 / 308 / 313 ms across the three runs of the registry cache (+43%); p95 moved 326 ->
+406 ms (+25%). A guard at 500 ms with a worst observed 475 ms was therefore flaky as a required
+check, while the cache brings the worst observed p95 to 406 ms. Decision (lead, within the issue's
+allowance for a budget change): the enforced budget is p95 < 600 ms per preset (about 32% above the
+worst observed p95), asserted only in the dedicated no-coverage step (`pytest -m budget --no-cov`);
+500 ms stays the documented target and typical runs meet it. The default `pytest` skips the test
+because timing depends on CPU load.
 
 ## Consequences
 Rebuild cost is about 300 ms per replayed step offline (see #280 for the latency budget, which is

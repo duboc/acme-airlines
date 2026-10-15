@@ -45,7 +45,7 @@ jobs:
         run: uv run coverage report --include='src/acme/policy/*' --fail-under=100
       # #280: timing is only meaningful without the coverage tracer (it is skipped above).
       - name: Rebuild latency budget (#280, no coverage)
-        run: uv run pytest tests/engines/test_rebuild_budget.py --no-cov -q -s
+        run: uv run pytest -m budget --no-cov -q -s
 
   # #185: the engines crashed at container start-up (no top-level `acme` in the extra_packages
   # tarball). Stage the deploy artifacts exactly as the SDK uploads them, then load them in a

@@ -13,6 +13,7 @@ from weakref import WeakKeyDictionary
 from mcp.server.fastmcp import FastMCP
 
 from acme.domain.models import PNR, Bag, SeatAssignment
+from acme.sim.current import lazy, resolve
 from acme.sim.servers import _server
 from acme.sim.world import SimError, SimWorld
 
@@ -162,7 +163,7 @@ def dcs_state(sim: SimWorld) -> DcsState:
 
 def build_dcs(sim: SimWorld) -> FastMCP:
     mcp = _server("dcs")
-    st = dcs_state(sim)
+    st = lazy(lambda: dcs_state(resolve(sim)))  # per run, resolved at call time (#280)
 
     @mcp.tool(name="seatmap.get")
     def seatmap_get(flight: str) -> dict[str, Any]:
@@ -194,7 +195,7 @@ def build_dcs(sim: SimWorld) -> FastMCP:
 
 def build_worldtracer(sim: SimWorld) -> FastMCP:
     mcp = _server("worldtracer")
-    st = dcs_state(sim)
+    st = lazy(lambda: dcs_state(resolve(sim)))  # per run, resolved at call time (#280)
 
     @mcp.tool(name="bag.get")
     def bag_get(tag: str) -> dict[str, Any]:

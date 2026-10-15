@@ -60,6 +60,7 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = "-m 'not live'"
 markers = [
     "live: calls live external services (e.g. Vertex AI); deselected by default and in CI",
+    "budget: timing budget, CPU-load dependent; skipped unless selected with -m budget (#280)",
 ]
 
 # Mutation testing of the policy code (#232): `uv run mutmut run`, see docs/product/test-strategy.md.
