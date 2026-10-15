@@ -37,6 +37,7 @@ from pydantic import ConfigDict
 from acme import metrics
 from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
+from acme.llm.tape import RecordingLlm, TapeLlm, clean_tape
 from acme.replay import replaying
 from acme.sim.client import reuse_sessions
 from acme.telemetry import EngineOp, diag, flush, process_identity, span
@@ -314,10 +315,9 @@ class CustomerEngineApp:
             reason = "step_mismatch"
         from_step = runner.index if runner.active is not None else None
         started = time.perf_counter()
-        from acme.llm.fake import FakeLlm
-
-        real_llm = self.runtime.llm
-        self.runtime.llm = FakeLlm()  # deterministic and free: never the deployed model
+        recorder = self.runtime.llm  # the RecordingLlm wrapped around the engine's model
+        replay_llm = TapeLlm(clean_tape(kwargs.get("tape")) or [])  # untrusted: bad tape = none
+        self.runtime.llm = replay_llm  # deterministic and free: never the deployed model
         try:
             with replaying():
                 runner.start(target)
@@ -325,7 +325,8 @@ class CustomerEngineApp:
                     for _ in range(step):
                         await runner.step(sales_tick=True)
         finally:
-            self.runtime.llm = real_llm
+            self.runtime.llm = recorder
+        recorder.entries = replay_llm.entries  # what was replayed is what a next rebuild replays
         elapsed = time.perf_counter() - started
         metrics.rebuild_duration(elapsed, preset, reason)  # outside replaying(): not suppressed
         self.last_rebuild = {"preset": preset, "to_step": step, "reason": reason,
@@ -333,7 +334,7 @@ class CustomerEngineApp:
         ident = process_identity()
         diag(
             "rebuild", preset=preset, from_step=from_step, to_step=step, reason=reason,
-            ms=round(elapsed * 1000, 1),
+            ms=round(elapsed * 1000, 1), tape_miss=replay_llm.misses,
             proc=ident["proc"], container=ident["container"], pid=ident["pid"],
         )  # fmt: skip
 
@@ -378,6 +379,7 @@ class CustomerEngineApp:
         configure_cloud_trace(DISPLAY_NAME)
         configure_cloud_monitoring(DISPLAY_NAME)
         self.runtime = CustomerRuntime()  # in-process simulators, LlmPort from LLM_MODE
+        self.runtime.llm = RecordingLlm(self.runtime.llm)  # the replay tape (#279)
         self.skills = CustomerSkills(self.runtime)
         self._sessions = InMemorySessionService()
         self._runner = Runner(
@@ -466,6 +468,10 @@ class CustomerEngineApp:
             raise EngineOperationError("journey not found")
         return self.runtime.journeys[journey_id]
 
+    def _with_tape(self, state: Any) -> dict[str, Any]:
+        """The scenario state plus the replay tape, for the caller only (see acme.llm.tape)."""
+        return {**state.model_dump(mode="json"), "tape": list(self.runtime.llm.entries)}
+
     def scenarios_list(self) -> list[dict[str, Any]]:
         from acme.api.scenarios import PRESETS, preset_view
 
@@ -473,17 +479,20 @@ class CustomerEngineApp:
 
     @shared
     def scenario_start(self, scenario_id: str) -> dict[str, Any]:
-        return self.scenarios.start(self._preset(scenario_id)).model_dump(mode="json")
+        self.runtime.llm.reset()  # a new scenario starts a new tape
+        return self._with_tape(self.scenarios.start(self._preset(scenario_id)))
 
     @shared
-    def scenario_state(self, preset: str | None = None, step: int | None = None) -> dict[str, Any]:
+    def scenario_state(
+        self, preset: str | None = None, step: int | None = None, tape: list[Any] | None = None
+    ) -> dict[str, Any]:
         if self.scenarios.active is None:
             raise self._no_scenario()
-        return self.scenarios.state().model_dump(mode="json")
+        return self._with_tape(self.scenarios.state())
 
     @shared
     async def scenario_step(
-        self, preset: str | None = None, step: int | None = None
+        self, preset: str | None = None, step: int | None = None, tape: list[Any] | None = None
     ) -> dict[str, Any]:
         """Customer half of a step as an ADK turn. The Sales tick is driven by the demo."""
         runner = self.scenarios
@@ -512,11 +521,11 @@ class CustomerEngineApp:
             user_id="demo", session_id=sid, new_message=turn
         ):
             pass
-        return runner.state().model_dump(mode="json")
+        return self._with_tape(runner.state())
 
     @shared
     def journeys_list(
-        self, preset: str | None = None, step: int | None = None
+        self, preset: str | None = None, step: int | None = None, tape: list[Any] | None = None
     ) -> list[dict[str, Any]]:
         from acme.api.app import journey_summary
 
@@ -524,7 +533,11 @@ class CustomerEngineApp:
 
     @shared
     async def journey_detail(
-        self, journey_id: str, preset: str | None = None, step: int | None = None
+        self,
+        journey_id: str,
+        preset: str | None = None,
+        step: int | None = None,
+        tape: list[Any] | None = None,
     ) -> dict[str, Any]:
         from acme.api.app import journey_detail_view
 
@@ -534,7 +547,12 @@ class CustomerEngineApp:
 
     @shared
     def journey_events(
-        self, journey_id: str, since: int = 0, preset: str | None = None, step: int | None = None
+        self,
+        journey_id: str,
+        since: int = 0,
+        preset: str | None = None,
+        step: int | None = None,
+        tape: list[Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Timeline events from index ``since`` (a poll-friendly form of the SSE stream)."""
         timeline = self._journey(journey_id).state.timeline
@@ -573,7 +591,11 @@ class CustomerEngineApp:
 
     @shared
     async def whatsapp_messages(
-        self, passenger_id: str, preset: str | None = None, step: int | None = None
+        self,
+        passenger_id: str,
+        preset: str | None = None,
+        step: int | None = None,
+        tape: list[Any] | None = None,
     ):
         from acme.api.app import do_messages
 
@@ -581,7 +603,12 @@ class CustomerEngineApp:
 
     @shared
     async def whatsapp_reply(
-        self, passenger_id: str, text: str, preset: str | None = None, step: int | None = None
+        self,
+        passenger_id: str,
+        text: str,
+        preset: str | None = None,
+        step: int | None = None,
+        tape: list[Any] | None = None,
     ) -> dict[str, Any]:
         from acme.api.app import do_reply
 
@@ -589,7 +616,12 @@ class CustomerEngineApp:
 
     @shared
     async def whatsapp_action(
-        self, passenger_id: str, action: str, preset: str | None = None, step: int | None = None
+        self,
+        passenger_id: str,
+        action: str,
+        preset: str | None = None,
+        step: int | None = None,
+        tape: list[Any] | None = None,
     ) -> dict[str, Any]:
         from acme.api.app import do_action
 
