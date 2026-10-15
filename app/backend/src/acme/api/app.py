@@ -98,7 +98,12 @@ def _offer_view(rec: OfferRecord | None) -> OfferView | None:
 
 
 def _verification(rec: JourneyRecord) -> dict[str, bool] | None:
-    found = [e.payload["checks"] for e in rec.state.timeline if e.type == "verification_passed"]
+    # The latest verification, passed or failed: a failed one carries the check map too (#345).
+    found = [
+        e.payload["checks"]
+        for e in rec.state.timeline
+        if e.type in ("verification_passed", "verification_failed") and "checks" in e.payload
+    ]
     return found[-1] if found else None
 
 

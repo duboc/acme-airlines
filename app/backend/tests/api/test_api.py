@@ -204,3 +204,14 @@ async def test_notification_and_acknowledgement_through_the_api():
         r = await c.post(f"/whatsapp/{PID}/messages", json={"text": "Perfect, thanks!"})
         assert r.status_code == 201
         assert (await c.get(f"/journeys/{jid}")).json()["resolution_acknowledged"] is True
+
+
+async def test_journey_detail_shows_the_checks_of_a_failed_verification(client, app):
+    (jid,) = await trigger(client)
+    rec = app.state.runtime.journeys[jid]
+    rec.state.append_event(
+        "customer_agent", "verification_failed",
+        {"failed": ["hotel"], "details": {}, "checks": {"flight": True, "hotel": False}},
+    )  # fmt: skip
+    detail = (await client.get(f"/journeys/{jid}")).json()
+    assert detail["verification"] == {"flight": True, "hotel": False}  # was null
