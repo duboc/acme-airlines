@@ -2,7 +2,8 @@
 
 Everything below runs under the SAME per-journey lock as offer delivery (#15). The guardrail is
 re-run in full at accept time against the current journey and current inventory (rule 5 excludes
-this offer by id), and the offer must be `sent`. Order, so that money is never taken without a seat:
+this offer by id only while it is live), and the offer must be `sent`. Order, so that money is
+never taken without a seat:
 
 1. `seat.hold` (nothing is charged if the hold fails)
 2. `charge` (idempotency key = offer id, so a duplicate tap cannot charge twice)
@@ -90,8 +91,11 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     decision = evaluate_traced(state, offer, inventory, "accept")
     flight = state.current_flight or ""
     open_premium = rt.world.flights[flight].open_seats.get(inventory.cabin, []) if flight else []
-    if not decision.approved or not open_premium:
+    if record.status != "sent" or not decision.approved or not open_premium:
+        # A settled or invalidated offer is never converted (#340), whatever the guardrail says.
         reasons = list(decision.reasons) if not decision.approved else ["no_inventory"]
+        if record.status != "sent" and decision.approved:
+            reasons = ["offer_already_made"]
         skills._decision_event(state, offer, decision)  # noqa: SLF001
         return await _refuse(rt, rec, record, reasons)
     seat = open_premium[0]
@@ -126,7 +130,7 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     # raced the charge (anything not holding the journey lock) voids it and changes no seat.
     state.current_flight = skills._current_flight(rec)  # noqa: SLF001
     recheck = evaluate_traced(state, offer, inventory, "recheck")
-    if not recheck.approved:
+    if record.status != "sent" or not recheck.approved:
         skills._decision_event(state, offer, recheck)  # noqa: SLF001
         await _void(rt, rec, record, charge["charge_id"], reason="journey_changed")
         return await _refuse(rt, rec, record, list(recheck.reasons), charged=True)
