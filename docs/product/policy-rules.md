@@ -1,8 +1,8 @@
 # Policy rules
 
 Pure, deterministic policy modules in `app/backend/src/acme/policy/`. No LLM and no I/O are
-involved in any policy decision. Duty-of-care research and full citations:
-[docs/research/duty-of-care.md](../research/duty-of-care.md) (#31). Not legal advice.
+involved in any policy decision. Full statutory duty-of-care citations are carried directly in
+`acme.policy.duty_of_care` and the table below (#31). Not legal advice.
 
 ## connection_check
 
@@ -18,9 +18,19 @@ AC1252 arr 12:20 (margin 10) are feasible; AC1260 arr 14:00 (margin -90) is not.
 ## duty_of_care
 
 `evaluate_duty_of_care(...)` applies **ANAC Resolution 400/2016** (departures from Brazil;
-other origins raise `ValueError`). `wait_start` is the local time the wait begins (22:03 for
-Mariana). Every entitlement carries a cited reason in `rule_reasons`, including when it is
-not granted (`(threshold not met)`).
+other origins raise `ValueError`). `rights.assess(...)` (`acme.customer.specialists.rights`)
+computes `wait_begin = min(detected_at, original_departure).astimezone(tz)` in the origin
+airport's timezone and derives `wait_hours = max((new_local - wait_begin).total_seconds() / 3600, 0)`,
+`wait_start = wait_begin.time()` (22:03 for Mariana), and
+`requires_overnight = new_local.date() > wait_begin.date()` (#396). `duty.run_duty_of_care`
+(`acme.customer.specialists.duty`) reads `origin_resident` and `special_needs` from
+`crm.profile.get` (#324), `concierge.book_transfers` books round-trip `airport_to_hotel` +
+`hotel_to_airport` legs when `hotel_required=True` (`DOC-05`, `DOC-07`) or a single
+`airport_to_home` (`origin -> "HOME"`) leg when `hotel_required=False` (`DOC-06`), and
+`outreach` (`collect_facts`, `required_facts`, `template_text`, `send_notification`) requires
+and attaches `hotel_voucher` / `meal_voucher` / transfer mentions only for entitlements
+actually granted (#324). Every entitlement carries a cited reason in `rule_reasons`, including
+when it is not granted (`(threshold not met)`).
 
 | Rule | Condition | Entitlement | Citation |
 |---|---|---|---|
@@ -79,7 +89,7 @@ Tier discount table (`RECOVERY_DISCOUNT_PCT`):
 `evaluate(journey, offer, inventory)` in `acme.policy.guardrail_offer` implements the core "Two Goals, One Guardrail" policy. An offer from Sales is approved only if **all six rules** hold:
 
 1. **`disruption_resolved`:** Disruption status is `RESOLVED`.
-2. **`resolution_acknowledged`:** Passenger has acknowledged the current resolution (`resolution_acknowledged = True`) and has no open requests pending.
+2. **`resolution_acknowledged`:** Passenger has acknowledged the current resolution (`resolution_acknowledged = True`) and has no open requests pending (`guardrail_offer` rejects with `open_request_pending` if `open_requests` is non-empty). When an inbound reply escalates to `needs_human` (`Other` intent), `outreach.handle_inbound` appends the `PassengerRequest` to `open_requests`, resets `resolution_acknowledged = False`, and invalidates any live offers (`status = "invalidated"`), while `CustomerSkills` reports `ineligible_reason = "open_request_pending"` (`sales_suppressed` with `reason: "open_request_pending"`) and `resolution_acknowledged = False` on `journey_status` (#325).
 3. **`genuine_discount`:** Offer standard price matches inventory, inventory has open seats in the offered cabin, offer price is strictly below standard fare and at or below tier recovery price, and passenger tier is courtesy-eligible.
 4. **`margin_verified`:** Net margin is non-negative and equals `price - cost_floor` recomputed from current inventory.
 5. **`zero_pressure`:** Offer is optional (`optional = True`), and no other live or answered offer exists for this journey (none in `approved`, `sent`, `accepted`, `declined`, and none `invalidated` on the same flight).
@@ -94,7 +104,10 @@ Service advocacy outranks revenue, so closing a journey must not depend on the r
 that is `RESOLVED`, acknowledged by the passenger, has no open request and **no offer in play** (none
 proposed/approved/sent, none decided) is verified and closed once the **offer window** has passed since
 the acknowledgement (`CustomerRuntime.offer_window`, default 10 minutes on the injected `Clock`): flight,
-seat, hotel, baggage and "no upgrade, nothing charged" are verified, then the CRM log, the NPS prompt, the
+seat, hotel (`verify_journey` checks a matching `sim.partners.hotel_bookings` record when
+`hotel_required=True` under `DOC-05`/`DOC-07`, or verifies `rec.hotel is None` when
+`duty_of_care_assessed.hotel_required` is `False` under `DOC-06`/`DOC-08`, #324), baggage and "no upgrade,
+nothing charged" are verified, then the CRM log, the NPS prompt, the
 analytics record (`event: no_offer`, `converted: false`), `CLOSED` and the Memory Bank commit, preceded by
 a `service_closure` timeline entry. It runs from `CustomerRuntime.tick()` under the per-journey lock, so
 it never waits on Sales and concurrent polls close it once. It covers every no-offer branch: Sales down or
