@@ -111,3 +111,15 @@ def test_observatory_deploy_and_dependabot_do_not_trigger_from_main():
     dep = yaml.safe_load((APP.parent / ".github/dependabot.yml").read_text())
     dirs = [d for u in dep["updates"] for d in u.get("directories", [u.get("directory", "")])]
     assert not any(d.startswith("/observatory") for d in dirs)
+
+
+def test_docs_follows_the_two_folder_rule():
+    """#389: docs/ holds only docs/product and docs/scion, with no stale decisions/releases."""
+    docs_root = APP.parent / "docs"
+    subdirs = sorted(p.name for p in docs_root.iterdir() if p.is_dir())
+    assert subdirs == ["product", "scion"]
+    assert (docs_root / "product/adr-0103-stateless-engine-scenarios.md").is_file()
+    assert (docs_root / "product/release-notes-v0.1.0.md").is_file()
+    stale = re.compile(r"docs/(decisions|releases)/|\.\./(decisions|releases)/")
+    for md in [APP.parent / "README.md", APP / "frontend/README.md", *docs_root.rglob("*.md")]:
+        assert not stale.search(md.read_text()), f"stale docs path in {md}"
