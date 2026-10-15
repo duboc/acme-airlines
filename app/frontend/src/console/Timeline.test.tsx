@@ -43,6 +43,27 @@ describe('Timeline', () => {
     expect(items[1]).toHaveTextContent('Disruption is not resolved yet');
   });
 
+  it('renders singular payload.reason on sales_suppressed events', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'customer_agent',
+            type: 'sales_suppressed',
+            timestamp: '2026-10-10T08:00:05Z',
+            payload: { journey_status: 'RESOLVED', reason: 'resolution_not_acknowledged' },
+          },
+        ]}
+      />,
+    );
+    const item = screen.getByRole('listitem');
+    expect(item).toHaveAttribute('data-kind', 'sales-suppressed');
+    expect(item).toHaveTextContent('Sales held back');
+    expect(item.querySelector('.reasons')).toHaveTextContent(
+      'Passenger has not acknowledged the resolution',
+    );
+  });
+
   it('falls back to the raw reason code when unknown', () => {
     render(
       <Timeline

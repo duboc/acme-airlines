@@ -100,6 +100,29 @@ describe('ChatView', () => {
     );
   });
 
+  it('renders human-readable attachment chips on outbound messages', async () => {
+    transcript = [
+      {
+        message_id: 'm1',
+        direction: 'outbound',
+        text: RESOLUTION,
+        timestamp: '2026-10-10T21:05:00Z',
+        attachments: ['hotel_voucher', 'meal_voucher'],
+      },
+      {
+        message_id: 'm2',
+        direction: 'outbound',
+        text: 'Seat 2A confirmed.',
+        timestamp: '2026-10-10T21:08:00Z',
+        attachments: ['boarding_pass', 'hotel_voucher'],
+      },
+    ];
+    render(<ChatView passengerId="P-MARIANA" />);
+    expect(await screen.findByText('Meal voucher')).toBeInTheDocument();
+    expect(screen.getByText('Boarding pass')).toBeInTheDocument();
+    expect(screen.getAllByText('Hotel voucher')).toHaveLength(2);
+  });
+
   it('shows an error when the service is unreachable', async () => {
     vi.stubGlobal(
       'fetch',
