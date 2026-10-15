@@ -59,7 +59,7 @@ All agents of a project share one checkout at `/workspace` (branch `${BUILD_BRAN
 - Never run `git add -A`, `git reset --hard`, `git checkout -- .`, `git clean` or a force push: other agents'
   uncommitted work lives in the same folder.
 - Never commit secrets, `.env` files or build output.
-- Keep strictly 2 folders under `/workspace/docs/`: `/workspace/docs/scion/` (factory setup & agent templates) and `/workspace/docs/product/` (all product specs, ADRs `adr-*.md`, deploy/engine docs, and release notes `release-notes-*.md`). Never create additional top-level folders under `/workspace/docs/` (such as `docs/decisions/` or `docs/releases/`).
+- Keep strictly 2 folders under `/workspace/docs/`: `/workspace/docs/scion/` (factory setup & agent templates) and `/workspace/docs/product/` (all product specs, ADRs `adr-*.md`, deploy/engine docs, and release notes `release-notes-*.md`). Never create additional top-level folders under `/workspace/docs/` (such as a `decisions` or `releases` folder).
 
 ## Cloud
 
