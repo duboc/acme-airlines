@@ -24,7 +24,7 @@ def evaluate(stats: dict[str, int], results_text: str) -> tuple[int, str]:
     if total == 0:
         return 1, "## Mutation testing\n\n**FAILED**: no mutants were generated or run.\n"
     bad = {k: stats.get(k, 0) for k in FAILING if stats.get(k, 0)}
-    lines = ["## Mutation testing of `acme/policy/`", ""]
+    lines = ["## Mutation testing of `acme` (policy + governance paths, #281)", ""]
     lines.append(f"{stats.get('killed', 0)} of {total} mutants killed"
                  + (f", {stats['timeout']} timed out" if stats.get("timeout") else "") + ".")  # fmt: skip
     if not bad:
