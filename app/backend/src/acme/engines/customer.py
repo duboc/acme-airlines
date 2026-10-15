@@ -186,6 +186,7 @@ def shared(fn):
             except EngineOperationError:
                 raise
             except Exception as exc:
+                metrics.http_5xx(500)  # an unexpected failure of an operation (#344)
                 raise describe_error(exc) from exc
             finally:
                 op.log(flush(), **self._op_context())  # flush before the process is throttled
@@ -204,6 +205,7 @@ def shared(fn):
             except EngineOperationError:
                 raise
             except Exception as exc:
+                metrics.http_5xx(500)  # an unexpected failure of an operation (#344)
                 raise describe_error(exc) from exc
             finally:
                 op.log(await asyncio.to_thread(flush), **self._op_context())
@@ -220,6 +222,7 @@ def shared(fn):
         except EngineOperationError:
             raise
         except Exception as exc:
+            metrics.http_5xx(500)  # an unexpected failure of an operation (#344)
             raise describe_error(exc) from exc
         finally:
             op.log(flush(), **self._op_context())
@@ -594,9 +597,12 @@ class CustomerEngineApp:
         try:
             out = await fn(self.runtime, *args)
         except HTTPException as exc:  # remote calls lose exception types; the backend re-raises
+            if exc.status_code >= 500:
+                metrics.http_5xx(exc.status_code)
             code = exc.code if isinstance(exc, ApiError) else "error"
             return {"error": {"status": exc.status_code, "detail": exc.detail, "code": code}}
         except Exception:  # noqa: BLE001 - nothing raw (SimError, KeyError...) crosses the RPC
+            metrics.http_5xx(500)
             log.exception("engine operation failed")  # the log filter redacts the payload (#233)
             return {"error": {"status": 500, "detail": "internal error", "code": "internal_error"}}
         return (

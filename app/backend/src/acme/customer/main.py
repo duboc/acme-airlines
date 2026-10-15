@@ -12,6 +12,10 @@ import uvicorn
 
 from acme.api.app import create_a2a_app, create_app
 from acme.logging_setup import configure_logging
+from acme.metrics import configure_cloud_monitoring
+from acme.telemetry import configure_cloud_trace
+
+SERVICE_NAME = "acme-irrops-demo"
 
 
 def require_sales_token(env: Mapping[str, str]) -> None:
@@ -36,6 +40,10 @@ async def _serve(app, host: str, a2a_host: str, port: int, a2a_port: int) -> Non
 
 def main() -> None:
     configure_logging()
+    # No-ops unless ACME_ENABLE_TRACING (or the telemetry switch) is set: the 5xx counter of this
+    # service is exported like the engines' metrics (#344).
+    configure_cloud_trace(SERVICE_NAME)
+    configure_cloud_monitoring(SERVICE_NAME)
     require_sales_token(os.environ)
     host = os.environ.get("ACME_CUSTOMER_HOST", "127.0.0.1")
     port = int(os.environ.get("ACME_CUSTOMER_PORT", "8800"))
