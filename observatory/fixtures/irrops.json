@@ -10,5 +10,7 @@
   "template_fallbacks": 3,
   "needs_human": 1,
   "notification": {"count": 12, "p50_s": 8.0, "p95_s": 41.5},
-  "errors_5xx": 0
+  "errors_5xx": 0,
+  "engine_rebuilds": 2,
+  "engine_latency": {"p50_ms": 150.0, "p95_ms": 400.0}
 }

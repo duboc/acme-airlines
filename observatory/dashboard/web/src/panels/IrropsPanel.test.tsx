@@ -24,6 +24,9 @@ const full: IrropsResponse = {
   notification_p95_s: 41.5,
   errors_5xx: 0,
   errors_5xx_per_hour: 0,
+  engine_rebuilds: 2,
+  engine_latency_p50_ms: 150.0,
+  engine_latency_p95_ms: 400.0,
   demo_health: 'healthy',
   last_metric_at: '2026-10-10T12:00:00Z',
 };
@@ -41,6 +44,9 @@ const pending: IrropsResponse = {
   notification_p95_s: null,
   errors_5xx: null,
   errors_5xx_per_hour: null,
+  engine_rebuilds: null,
+  engine_latency_p50_ms: null,
+  engine_latency_p95_ms: null,
   demo_health: 'unknown',
 };
 
@@ -65,6 +71,9 @@ describe('IrropsPanel', () => {
     expect(p.getByText('Declined').nextElementSibling).toHaveTextContent('2');
     expect(p.getByText('Template fallback rate').nextElementSibling).toHaveTextContent('25%');
     expect(p.getByText('Needs human').nextElementSibling).toHaveTextContent('1');
+    expect(p.getByText('Engine rebuilds').nextElementSibling).toHaveTextContent('2');
+    expect(p.getByText('Engine latency p50').nextElementSibling).toHaveTextContent('150 ms');
+    expect(p.getByText('Engine latency p95').nextElementSibling).toHaveTextContent('400 ms');
     expect(p.getByText('Notification p50').nextElementSibling).toHaveTextContent('8.0 s');
     expect(p.getByText('Notification p95').nextElementSibling).toHaveTextContent('41.5 s');
     expect(p.getByText('HTTP 5xx').nextElementSibling).toHaveTextContent('0');

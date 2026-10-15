@@ -182,5 +182,8 @@ class IrropsResponse(Envelope):
     notification_p95_s: float | None = None
     errors_5xx: int | None = None
     errors_5xx_per_hour: float | None = None
+    engine_rebuilds: int | None = None
+    engine_latency_p50_ms: float | None = None
+    engine_latency_p95_ms: float | None = None
     demo_health: str = "unknown"  # "healthy" | "degraded" | "down" | "unknown"
     last_metric_at: str | None = None

@@ -339,6 +339,7 @@ def irrops(src: DataSource, hours: int) -> IrropsResponse:
             message="No IRROPS metrics yet: the runtime has not reported.",
         )
     offers, notif = raw.get("offers") or {}, raw.get("notification") or {}
+    engine_lat = raw.get("engine_latency") or {}
     fallbacks, errors, count = (
         raw.get("template_fallbacks"),
         raw.get("errors_5xx"),
@@ -370,6 +371,9 @@ def irrops(src: DataSource, hours: int) -> IrropsResponse:
         notification_p95_s=notif.get("p95_s"),
         errors_5xx=errors,
         errors_5xx_per_hour=round(errors / hours, 4) if errors is not None else None,
+        engine_rebuilds=raw.get("engine_rebuilds"),
+        engine_latency_p50_ms=engine_lat.get("p50_ms"),
+        engine_latency_p95_ms=engine_lat.get("p95_ms"),
         demo_health=health,
         last_metric_at=last,
     )
