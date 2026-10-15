@@ -61,6 +61,7 @@ class ReplanningChangeAgent:
             onward_departure=(
                 datetime.fromisoformat(onward["scheduled_departure"]) if onward else None
             ),
+            mct_minutes=rt.world.mct_minutes,
         )
         irrops = IrropsRebooking(client)
         options = await irrops.search(req)
@@ -103,6 +104,7 @@ class ReplanningChangeAgent:
                 onward["origin"],
                 rebook.arrival,
                 req.onward_departure,  # type: ignore[arg-type]
+                req.mct_minutes,
             )
             emit(
                 "connection_verified",

@@ -230,7 +230,9 @@ class CustomerRuntime:
             state.append_event("occ", "cancellation_detected", {"flight": flight, "reason": reason})
             state.transition(DisruptionStatus.RESOLVING, actor="customer_agent")
             await self._load_context(rec, flight)
-            result = await rebuild_journey(self.client, rec, flight)
+            result = await rebuild_journey(
+                self.client, rec, flight, mct_minutes=self.world.mct_minutes
+            )
             if self.auto_duty_of_care:
                 from acme.customer.specialists.duty import run_duty_of_care  # noqa: PLC0415
 
@@ -268,7 +270,7 @@ class CustomerRuntime:
     async def _record_constraint(self, rec: JourneyRecord, onward: dict[str, Any]) -> None:
         departure = datetime.fromisoformat(onward["scheduled_departure"])
         airport = onward["origin"]
-        latest, mct = latest_arrival(airport, departure)
+        latest, mct = latest_arrival(airport, departure, self.world.mct_minutes)
         rec.constraint_latest_arrival = latest
         local = latest.strftime("%Y-%m-%d %H:%M")
         rec.state.append_event(
