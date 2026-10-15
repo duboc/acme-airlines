@@ -41,6 +41,7 @@ ENV_CUSTOMER, ENV_SALES = "AGENT_ENGINE_CUSTOMER", "AGENT_ENGINE_SALES"
 ASYNC_OPS = {
     "scenario_step",
     "journey_detail",
+    "journey_events",
     "a2a_skill",
     "trigger_cancellation",
     "whatsapp_messages",

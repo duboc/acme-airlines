@@ -169,10 +169,10 @@ async def test_a_rebuild_works_with_arguments_that_went_through_a_protobuf_struc
     got = b.scenario_state(**through_agent_engine(preset="happy-path", step=3))  # b rebuilds
     assert got["step_index"] == 3 and isinstance(got["step_index"], int)
     assert {k: got[k] for k in STRUCTURAL} == {k: want[k] for k in STRUCTURAL}
-    events = b.journey_events(
+    events = await b.journey_events(
         got["journey_id"], **through_agent_engine(since=1, preset="happy-path", step=3)
     )
-    assert len(events) == len(b.journey_events(got["journey_id"])) - 1  # `since` 1.0 sliced
+    assert len(events) == len(await b.journey_events(got["journey_id"])) - 1  # `since` 1.0 sliced
 
 
 @pytest.mark.parametrize("step", [5.0, 5])

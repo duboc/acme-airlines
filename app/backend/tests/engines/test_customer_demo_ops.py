@@ -113,11 +113,11 @@ async def test_events_since_and_unknown_journey():
     app.scenario_start("happy-path")
     await app.scenario_step()
     (jid,) = [j["journey_id"] for j in app.journeys_list()]
-    everything = app.journey_events(jid)
-    assert everything and app.journey_events(jid, since=len(everything)) == []
-    assert app.journey_events(jid, since=1) == everything[1:]
+    everything = await app.journey_events(jid)
+    assert everything and await app.journey_events(jid, since=len(everything)) == []
+    assert await app.journey_events(jid, since=1) == everything[1:]
     with pytest.raises(EngineOperationError):
-        app.journey_events("J-nope")
+        await app.journey_events("J-nope")
 
 
 async def test_step_past_the_end_is_rejected():
@@ -183,7 +183,7 @@ async def test_llm_message_missing_a_fact_falls_back_to_the_template_on_the_engi
     app.scenario_start("seat-taken")
     state = await drive(app)
     (jid,) = [j["journey_id"] for j in app.journeys_list()]
-    notices = [e for e in app.journey_events(jid) if e["type"] == "notification_sent"]
+    notices = [e for e in await app.journey_events(jid) if e["type"] == "notification_sent"]
     assert [n["payload"]["source"] for n in notices] == ["template"]
     assert "sorted out" not in state["last_message"] and "AC1240" in state["last_message"]
 
@@ -195,3 +195,77 @@ async def test_api_app_keeps_the_404_rule_outside_fake_mode(vertex, monkeypatch)
     ) as c:
         assert (await c.get("/scenarios")).status_code == 404
         assert (await c.post("/scenarios/happy-path/start")).status_code == 404
+
+
+# --- reads move time-triggered steps on (#395) -------------------------------------------------
+async def _resolved_engine():
+    """An engine with the happy-path cancelled and RESOLVED, the 6 min outreach not yet due."""
+    from acme.api.scenarios import NOTIFY_AT  # noqa: F401
+
+    app = engine()
+    app.scenario_start("happy-path")
+    await app.scenario_step()
+    return app, app.scenario_state()["journey_id"]
+
+
+def _types(events):
+    return [e["type"] for e in events]
+
+
+async def test_ac1_journey_events_fires_the_due_outreach_without_a_detail_read():
+    from acme.api.scenarios import NOTIFY_AT
+
+    app, jid = await _resolved_engine()
+    assert "notification_sent" not in _types(await app.journey_events(jid))  # not due yet
+    app.runtime.clock.advance(NOTIFY_AT - app.runtime.clock.now())
+    assert _types(await app.journey_events(jid)).count("notification_sent") == 1
+    assert _types(await app.journey_events(jid)).count("notification_sent") == 1  # once
+
+
+async def test_ac1_journey_events_closes_a_no_offer_journey_after_the_window():
+    from datetime import timedelta
+
+    from acme.api.scenarios import NOTIFY_AT
+
+    app, jid = await _resolved_engine()
+    app.runtime.clock.advance(NOTIFY_AT - app.runtime.clock.now())
+    await app.journey_events(jid)
+    await app.runtime.handle_inbound("P-MARIANA", "Perfect, thanks!")
+    app.runtime.clock.advance(app.runtime.offer_window + timedelta(minutes=1))
+    events = _types(await app.journey_events(jid))
+    assert events.count("service_closure") == 1
+    assert app.runtime.journeys[jid].state.status.value == "CLOSED"
+
+
+async def test_ac2_whatsapp_messages_delivers_the_due_outreach_without_a_detail_read():
+    from acme.api.scenarios import NOTIFY_AT
+
+    app, _ = await _resolved_engine()
+    before = [m for m in await app.whatsapp_messages("P-MARIANA") if m["direction"] == "outbound"]
+    app.runtime.clock.advance(NOTIFY_AT - app.runtime.clock.now())
+    after = [m for m in await app.whatsapp_messages("P-MARIANA") if m["direction"] == "outbound"]
+    assert len(after) == len(before) + 1 and "AC1240" in after[-1]["text"]
+
+
+async def test_ac3_backend_polls_the_timeline_and_the_phone_past_t_plus_6_and_10():
+    from datetime import timedelta
+
+    from acme.api.engine_backend import EngineBackend
+    from acme.api.scenarios import NOTIFY_AT
+    from acme.engines.sales import build_sales_engine_app
+    from tests.api.test_engine_mode import LocalEngine
+
+    customer, jid = await _resolved_engine()
+    sales = build_sales_engine_app(customer_engine=customer)
+    sales.set_up()
+    backend = EngineBackend(LocalEngine(customer), LocalEngine(sales))
+    clock = customer.runtime.clock
+    assert clock.now() < NOTIFY_AT
+    clock.advance(NOTIFY_AT - clock.now())
+    phone = await backend.api("whatsapp_messages", passenger_id="P-MARIANA")
+    assert [m["direction"] for m in phone].count("outbound") >= 1
+    assert _types(await backend.timeline(jid)).count("notification_sent") == 1
+    await customer.runtime.handle_inbound("P-MARIANA", "Perfect, thanks!")
+    clock.advance(customer.runtime.offer_window + timedelta(minutes=1))
+    backend._timelines.clear()  # noqa: SLF001 - skip the poll-interval cache
+    assert _types(await backend.timeline(jid)).count("service_closure") == 1
