@@ -5,7 +5,8 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[3]
 SUFFIXES = {".py", ".ts", ".tsx", ".js", ".json", ".toml", ".yml", ".yaml", ".sh", ".env"}
-SKIP_DIRS = {".venv", "node_modules", "__pycache__", ".git", "dist"}
+# "mutants" is the git-ignored mutmut working copy (#281)
+SKIP_DIRS = {".venv", "node_modules", "__pycache__", ".git", "dist", "mutants"}
 THIS_FILE = Path(__file__).resolve()
 # Explicit allowlist: the refusal checks themselves, and tests (which assert refusals).
 ALLOWLIST = {APP / "backend/src/acme/llm/config.py"}
