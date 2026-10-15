@@ -121,7 +121,7 @@ describe('ConsolePage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not trigger/i);
   });
 
-  it('surfaces 429 Retry-After busy feedback and reconnects a closed EventSource', async () => {
+  it('surfaces 429 Retry-After busy feedback, preserves seenIds across closed EventSource reconnects, and clears transient errors on refresh', async () => {
     render(<ConsolePage />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/journeys', expect.anything()));
     fetchMock.mockImplementationOnce(() =>
@@ -141,6 +141,9 @@ describe('ConsolePage', () => {
     await screen.findByText('Detected');
     expect(FakeEventSource.instances).toHaveLength(1);
     const firstEs = FakeEventSource.instances[0]! as FakeEventSource & { readyState?: number };
+    act(() => firstEs.emit(events[0], '1'));
+    expect(await screen.findByText('Cancellation detected')).toBeInTheDocument();
+
     vi.useFakeTimers();
     try {
       firstEs.readyState = 2;
@@ -152,6 +155,31 @@ describe('ConsolePage', () => {
     } finally {
       vi.useRealTimers();
     }
+
+    const secondEs = FakeEventSource.instances[1]!;
+    // Replaying event id '1' on the reconnected stream must be deduplicated; id '2' is appended.
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ detail: 'Refresh quota exhausted.' }), {
+          status: 429,
+          headers: { 'Retry-After': '10' },
+        }),
+      ),
+    );
+    act(() => {
+      secondEs.emit(events[0], '1');
+      secondEs.emit(events[2], '2');
+    });
+    expect(screen.getAllByText('Cancellation detected')).toHaveLength(1);
+    expect(await screen.findByText('Net margin is negative')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Engine busy (429): Refresh quota exhausted. Retry in 10s.',
+    );
+
+    // Subsequent successful refreshJourney clears the transient error banner.
+    detail = resolved;
+    act(() => secondEs.emit(events[1], '3'));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 
   it('reset closes the stream and clears the view', async () => {
@@ -344,6 +372,48 @@ describe('ConsolePage', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
       await waitFor(() => expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled());
       expect(await screen.findByRole('button', { name: 'Accept upgrade $135' })).toBeEnabled();
+    });
+
+    it('falls back to listJourneys and attaches the journey when Step 1 returns 503 StepApplied', async () => {
+      const base = fetchMock.getMockImplementation() as (
+        u: string,
+        i?: RequestInit,
+      ) => Promise<Response>;
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url === '/api/scenarios')
+          return json([
+            {
+              id: 'happy-path',
+              title: 'Happy path',
+              description: 'd',
+              steps: ['a'],
+              expectation: 'e',
+            },
+          ]);
+        if (url.endsWith('/start'))
+          return json({ ...state, step_index: 0, journey_id: null, journey_status: null });
+        if (url.endsWith('/step')) {
+          existing = [{ journey_id: 'J-1', passenger_id: 'P-MARIANA', status: 'RESOLVED' }];
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                detail: 'The step was applied but its state could not be read: refresh.',
+              }),
+              { status: 503, headers: { 'Retry-After': '5' } },
+            ),
+          );
+        }
+        return base(url, init);
+      });
+      detail = resolved;
+      render(<ConsolePage />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+      expect(screen.getByText(/no journey open/i)).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+      expect(await screen.findByText('14A', { selector: 'dd span' })).toBeInTheDocument();
+      expect(FakeEventSource.instances).toHaveLength(1);
+      expect(FakeEventSource.instances[0]!.url).toBe('/api/journeys/J-1/events');
     });
   });
 });

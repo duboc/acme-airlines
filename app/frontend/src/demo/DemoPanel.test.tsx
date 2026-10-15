@@ -120,7 +120,7 @@ describe('DemoPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/scenarios are unavailable/i);
   });
 
-  it('clears active scenario state and error when resetToken increments', async () => {
+  it('clears active scenario state and error when resetToken increments and does not resurrect it on manual action', async () => {
     const { rerender } = render(
       <DemoPanel
         passengerId="P-MARIANA"
@@ -131,6 +131,7 @@ describe('DemoPanel', () => {
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
     expect(screen.getByRole('button', { name: 'Next step' })).toBeEnabled();
+    expect(screen.getByText(/next: occ cancels ac1234/i)).toBeInTheDocument();
 
     rerender(
       <DemoPanel
@@ -141,6 +142,15 @@ describe('DemoPanel', () => {
       />,
     );
     await waitFor(() => expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled());
+    expect(screen.queryByText(/next: occ cancels ac1234/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'after 1pm' }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/whatsapp/P-MARIANA/messages',
+      expect.objectContaining({ body: JSON.stringify({ text: 'Can I leave after 1pm?' }) }),
+    );
+    expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled();
+    expect(screen.queryByText(/next: occ cancels ac1234/i)).not.toBeInTheDocument();
   });
 
   it('surfaces 429 Retry-After busy feedback and refreshes on 503 StepApplied', async () => {

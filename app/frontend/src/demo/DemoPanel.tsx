@@ -61,6 +61,9 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
 
   async function run(fn: () => Promise<void>, failure: string) {
     setBusy(true);
+    if (isReset) {
+      setState(null);
+    }
     setActiveToken(resetToken);
     setError('');
     try {
