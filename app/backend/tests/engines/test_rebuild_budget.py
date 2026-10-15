@@ -52,6 +52,7 @@ async def rebuild_ms(app, preset: str, steps: int) -> float:
     return app.last_rebuild["ms"]
 
 
+@pytest.mark.budget
 async def test_rebuild_p95_per_preset_stays_under_the_interim_ceiling(capsys):
     app = build_customer_engine_app()
     app.set_up()
