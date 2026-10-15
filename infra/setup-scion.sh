@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Recreate and sync the Scion Hub configuration, harness model_aliases, the two
 # Scion projects (${BUILD_PROJECT} on ${BUILD_BRANCH} and ${EVAL_PROJECT} on
-# ${EVAL_BRANCH}), the 10 role templates (docs/scion/templates/), the 10 standing
+# ${EVAL_BRANCH}), the 12 role templates (docs/scion/templates/), the 12 standing
 # agents, and the two 15-minute heartbeat schedules using the native `scion` CLI
 # (matching duboc/scion-experiment). Idempotent.
 #
@@ -16,7 +16,7 @@ export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 AGY_VERSION="1.3.4"
 AGENT_SA_EMAIL="${AGENT_SA}"
 DEPLOYER_SA_EMAIL="${DEPLOYER_SA}"
-BUILD_ROLES=(lead backend frontend reviewer deployer)
+BUILD_ROLES=(lead researcher product-manager backend frontend reviewer deployer)
 EVAL_ROLES=(eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer)
 ALL_ROLES=("${BUILD_ROLES[@]}" "${EVAL_ROLES[@]}")
 
@@ -158,7 +158,7 @@ PY
     sudo chown -R scion:scion /home/scion/.scion/workspace-storage 2>/dev/null || true
   '
 
-  echo "==> 4. Rendering, importing, and syncing the 10 templates from docs/scion/templates/ via 'scion templates import' + 'sync'"
+  echo "==> 4. Rendering, importing, and syncing the 12 templates from docs/scion/templates/ via 'scion templates import' + 'sync'"
   LOCAL_RENDER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/scion-rendered.XXXXXX")"
   python3 "${INFRA_DIR}/render-templates.py" --out "${LOCAL_RENDER_DIR}"
   vm_ssh "rm -rf /tmp/scion-templates ~/.scion/templates && mkdir -p /tmp/scion-templates ~/.scion/templates"
@@ -176,6 +176,8 @@ import json, pathlib, shutil, sqlite3
 
 model_by_role = {
     "lead": "claude-opus-5-5",
+    "researcher": "Gemini 4 Argon (High)",
+    "product-manager": "Gemini 4 Argon (High)",
     "backend": "claude-sonnet-5-5",
     "deployer": "claude-sonnet-5-5",
     "frontend": "Gemini 4 Argon (High)",
@@ -198,11 +200,36 @@ for jf in pathlib.Path("/home/scion/.scion/project-configs").glob("*/.scion/agen
     jf.write_text(json.dumps(data, indent=2) + "\n")
     src_tpl = pathlib.Path("/tmp/scion-templates") / role
     if src_tpl.exists():
-        for doc in ("agents.md", "system-prompt.md"):
-            if (src_tpl / doc).exists():
-                for dst in [jf.parent / doc, jf.parent / "home" / ".scion" / doc]:
-                    if dst.parent.exists():
-                        shutil.copy2(src_tpl / doc, dst)
+        sys_src = src_tpl / "system-prompt.md"
+        if sys_src.exists():
+            for dst in [
+                jf.parent / "system-prompt.md",
+                jf.parent / "harness-inputs" / "system-prompt.md",
+                jf.parent / "home" / ".scion" / "system-prompt.md",
+                jf.parent / "home" / ".scion" / "harness" / "inputs" / "system-prompt.md",
+            ]:
+                if dst.parent.exists():
+                    shutil.copy2(sys_src, dst)
+        ag_src = src_tpl / "agents.md"
+        if ag_src.exists():
+            ag_text = ag_src.read_text()
+            for dst in [
+                jf.parent / "agents.md",
+                jf.parent / "home" / ".scion" / "agents.md",
+            ]:
+                if dst.parent.exists():
+                    shutil.copy2(ag_src, dst)
+            for hdoc in [
+                jf.parent / "home" / ".claude" / "CLAUDE.md",
+                jf.parent / "home" / ".gemini" / "GEMINI.md",
+            ]:
+                if hdoc.exists():
+                    cur_text = hdoc.read_text()
+                    marker = "# Factory operating protocol"
+                    if marker in cur_text:
+                        pre = cur_text.split(marker, 1)[0]
+                        suffix = "\n<!-- END SCION MANAGED -->\n" if "<!-- END SCION MANAGED -->" in cur_text else ""
+                        hdoc.write_text(pre + ag_text.rstrip() + suffix)
 
 con = sqlite3.connect("/home/scion/.scion/hub.db")
 cur = con.cursor()
@@ -396,7 +423,7 @@ vm_ssh "
   '
 "
 
-echo "==> 6. Starting the 10 standing agents across ${BUILD_PROJECT} and ${EVAL_PROJECT} via 'scion start'"
+echo "==> 6. Starting the 12 standing agents across ${BUILD_PROJECT} and ${EVAL_PROJECT} via 'scion start'"
 gcloud auth print-identity-token 2>/dev/null | vm_ssh "
   set -euo pipefail
   IFS= read -r SCION_HUB_TOKEN; export SCION_HUB_TOKEN
@@ -427,11 +454,13 @@ gcloud auth print-identity-token 2>/dev/null | vm_ssh "
     fi
   }
 
-  ensure_agent '${BUILD_PROJECT}' 'lead'      'full' '${BUILD_AGENT_SA_ID}'    'wait'   'Read your instructions, then run your wake-up steps.'
-  ensure_agent '${BUILD_PROJECT}' 'backend'   'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from lead. End your turn with sciontool status blocked \"waiting: brief from lead\".'
-  ensure_agent '${BUILD_PROJECT}' 'frontend'  'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from lead. End your turn with sciontool status blocked \"waiting: brief from lead\".'
-  ensure_agent '${BUILD_PROJECT}' 'reviewer'  'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for review requests from lead. End your turn with sciontool status blocked \"waiting: review request from lead\".'
-  ensure_agent '${BUILD_PROJECT}' 'deployer'  'base' '${BUILD_DEPLOYER_SA_ID}' 'nowait' 'Stand by for deploy requests from lead. End your turn with sciontool status blocked \"waiting: deploy request from lead\".'
+  ensure_agent '${BUILD_PROJECT}' 'lead'            'full' '${BUILD_AGENT_SA_ID}'    'wait'   'Read your instructions, then run your wake-up steps.'
+  ensure_agent '${BUILD_PROJECT}' 'researcher'      'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for research briefs from lead. End your turn with sciontool status blocked \"waiting: research request from lead\".'
+  ensure_agent '${BUILD_PROJECT}' 'product-manager' 'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for user-story requests from lead. End your turn with sciontool status blocked \"waiting: user-story request from lead\".'
+  ensure_agent '${BUILD_PROJECT}' 'backend'         'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from lead. End your turn with sciontool status blocked \"waiting: brief from lead\".'
+  ensure_agent '${BUILD_PROJECT}' 'frontend'        'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from lead. End your turn with sciontool status blocked \"waiting: brief from lead\".'
+  ensure_agent '${BUILD_PROJECT}' 'reviewer'        'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for review requests from lead. End your turn with sciontool status blocked \"waiting: review request from lead\".'
+  ensure_agent '${BUILD_PROJECT}' 'deployer'        'base' '${BUILD_DEPLOYER_SA_ID}' 'nowait' 'Stand by for deploy requests from lead. End your turn with sciontool status blocked \"waiting: deploy request from lead\".'
 
   ensure_agent '${EVAL_PROJECT}'  'eval-lead'        'full' '${EVAL_AGENT_SA_ID}'    'wait'   'Read your instructions, then run your wake-up steps.'
   ensure_agent '${EVAL_PROJECT}'  'factory-analyst'  'base' '${EVAL_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from eval-lead. End your turn with sciontool status blocked \"waiting: brief from eval-lead\".'
@@ -443,4 +472,4 @@ gcloud auth print-identity-token 2>/dev/null | vm_ssh "
 
 echo "==> 7. Installing the two 15-minute heartbeat schedules (${BUILD_PROJECT}-lead-heartbeat & ${EVAL_PROJECT}-lead-heartbeat)"
 bash "${INFRA_DIR}/60-factory.sh" tick-install
-echo "==> Done: 2 projects (${BUILD_PROJECT}, ${EVAL_PROJECT}), 10 templates, 10 agents, and 2 15-min heartbeats active."
+echo "==> Done: 2 projects (${BUILD_PROJECT}, ${EVAL_PROJECT}), 12 templates, 12 agents, and 2 15-min heartbeats active."

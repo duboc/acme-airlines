@@ -28,9 +28,11 @@ for n in 1 2 3 4 5; do
 done
 
 ensure_label "status:triage"      "fbca04" "Needs lead triage and acceptance criteria"
+ensure_label "status:spec-ready"  "5319e7" "Research brief complete; ready for product-manager user story"
 ensure_label "status:ready"       "0e8a16" "Triaged and ready for agent dispatch"
 ensure_label "status:in-progress" "1d76db" "Assigned to an active worker agent"
-ensure_label "status:in-review"   "5319e7" "Awaiting reviewer verdict"
+ensure_label "status:in-review"   "5319e7" "Awaiting eval-lead independent verification and approval"
+ensure_label "status:done"        "0e8a16" "Verified, approved, and closed by eval-lead"
 ensure_label "status:blocked"     "d93f0b" "Blocked on dependency or operator action"
 ensure_label "status:proposed"    "c5def5" "Proposed in idle mode; awaits PO approval"
 ensure_label "priority:p0"        "b60205" "Critical: broken main, deploy, or security blocker"
@@ -38,7 +40,7 @@ ensure_label "priority:p1"        "d93f0b" "High-priority backlog item"
 ensure_label "priority:p2"        "0e8a16" "Normal backlog item"
 ensure_label "size:exception"     "e99695" "Approved exception to the 400-line PR size gate"
 
-for r in backend frontend reviewer deployer factory-analyst search-evaluator ui-craftsman eval-deployer; do
+for r in researcher product-manager backend frontend reviewer deployer factory-analyst search-evaluator ui-craftsman eval-deployer; do
   ensure_label "role:${r}" "bfd4f2" "Target specialist role: ${r}"
 done
 

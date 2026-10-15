@@ -39,9 +39,11 @@ topology_ok() {
   echo "acme-lead + ${n} active workers under lead"
 }
 
-# 10-template scion-experiment model mapping: role -> "harness model".
+# 12-template model mapping: role -> "harness model".
 declare -A ACME_MODEL=(
   [lead]="claude large"
+  [researcher]="antigravity large"
+  [product-manager]="antigravity large"
   [backend]="claude medium"
   [frontend]="antigravity large"
   [reviewer]="antigravity large"
@@ -244,29 +246,29 @@ check_smoke() {
   pass smoke
 }
 check_team() {
-  # Read-only: all 10 scion-experiment templates registered on the hub.
+  # Read-only: all 12 templates registered on the hub.
   local out t
   out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"SELECT slug FROM templates;\"" 2>/dev/null)"
-  for t in lead backend frontend reviewer deployer eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer; do
+  for t in lead researcher product-manager backend frontend reviewer deployer eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer; do
     grep -qx "${t}" <<<"${out}" || { fail team "template ${t} not registered on hub"; return 1; }
   done
-  pass "team (10 templates across ${BUILD_PROJECT} and ${EVAL_PROJECT})"
+  pass "team (12 templates across ${BUILD_PROJECT} and ${EVAL_PROJECT})"
 }
 check_topology() {
-  # 2-project, 10-agent topology (5 in BUILD_PROJECT + 5 in EVAL_PROJECT).
+  # 2-project, 12-agent topology (7 in BUILD_PROJECT + 5 in EVAL_PROJECT).
   local rows r missing=""
   rows="$(printf '%s\n' ".separator '|'" \
     "SELECT p.slug, a.name FROM agents a JOIN projects p ON a.project_id = p.id WHERE a.deleted_at IS NULL;" | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
       --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
-  for r in lead backend frontend reviewer deployer; do
+  for r in lead researcher product-manager backend frontend reviewer deployer; do
     grep -qx "${BUILD_PROJECT}|${r}" <<<"${rows}" || missing+=" ${BUILD_PROJECT}/${r}"
   done
   for r in eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer; do
     grep -qx "${EVAL_PROJECT}|${r}" <<<"${rows}" || missing+=" ${EVAL_PROJECT}/${r}"
   done
   [[ -z "${missing}" ]] || { fail topology "missing agents:${missing}"; return 1; }
-  pass "topology (5 build agents in ${BUILD_PROJECT} + 5 eval agents in ${EVAL_PROJECT})"
+  pass "topology (7 build agents in ${BUILD_PROJECT} + 5 eval agents in ${EVAL_PROJECT})"
 }
 check_cost() {
   # Committed templates follow the model mapping and carry caps.

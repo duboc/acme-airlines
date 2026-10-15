@@ -34,21 +34,23 @@ flowchart TB
 
 ---
 
-## 2. The 10 Role Templates (`docs/scion/templates/`)
+## 2. The 12 Role Templates (`docs/scion/templates/`)
 
-All 10 roles share the operating protocol in [`templates/_shared/agents.md`](./templates/_shared/agents.md) (rendered into each role's `agents.md` by [`infra/render-templates.py`](../../infra/render-templates.py)):
+All 12 roles share the operating protocol in [`templates/_shared/agents.md`](./templates/_shared/agents.md) (rendered into each role's `agents.md` by [`infra/render-templates.py`](../../infra/render-templates.py)):
 
 | Role | Project | Path | Harness | Effective Model | GCP Identity | Purpose |
 |---|---|---|---|---|---|---|
-| **`lead`** | `duboc-acme-airlines` | [`templates/lead/`](./templates/lead/scion-agent.yaml) | `claude` (`large`) | `claude-opus-5-5` | `acme-agent@` | Plans & delegates build issues in wave order (≤ 2 in flight), reviews diffs, grants commit slot, hands over to PO; never writes product code. |
+| **`lead`** | `duboc-acme-airlines` | [`templates/lead/`](./templates/lead/scion-agent.yaml) | `claude` (`large`) | `claude-opus-5-5` | `acme-agent@` | Orchestrates the 6 build workers in parallel across specification, implementation, review, merge, and deploy (`status:in-review`); never writes product code. |
+| **`researcher`** | `duboc-acme-airlines` | [`templates/researcher/`](./templates/researcher/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Investigates `status:triage` / `status:proposed` issues and backlog gaps using primary code, CI/Cloud logs, traces, and ADRs (`## Research Brief` -> `status:spec-ready`). |
+| **`product-manager`** | `duboc-acme-airlines` | [`templates/product-manager/`](./templates/product-manager/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Authors executable User Stories (`As a ... I want ... so that ...`) with `Given / When / Then` acceptance criteria and deterministic `Verify:` command blocks (`status:ready`). |
 | **`backend`** | `duboc-acme-airlines` | [`templates/backend/`](./templates/backend/scion-agent.yaml) | `claude` (`medium`) | `claude-sonnet-5-5` | `acme-agent@` | Python FastAPI, ADK Customer/Sales agents, A2A, MCP, policy rules (`app/backend`). |
-| **`frontend`** | `duboc-acme-airlines` | [`templates/frontend/`](./templates/frontend/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` (`+ impeccable`) | `acme-agent@` | React + Vite Operations Console `/console` & WhatsApp `/whatsapp` (`app/frontend`). |
-| **`reviewer`** | `duboc-acme-airlines` | [`templates/reviewer/`](./templates/reviewer/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Runs `pytest` + `npm test`, checks policy/ADR compliance, records verdicts in [`REVIEW.md`](../../REVIEW.md). |
-| **`deployer`** | `duboc-acme-airlines` | [`templates/deployer/`](./templates/deployer/scion-agent.yaml) | `claude` (`medium`) | `claude-sonnet-5-5` | `acme-observatory-deployer@` | Clean `git archive` export, deploys `acme-irrops-demo`, runs live HTTP checks, rolls back on failure, updates [`DEPLOYMENT.md`](../../DEPLOYMENT.md). |
-| **`eval-lead`** | `acme-airlines-eval` | [`templates/eval-lead/`](./templates/eval-lead/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Measures the build factory & live IRROPS service; orchestrates the eval team on `acme-airlines-eval` issues. |
-| **`factory-analyst`** | `acme-airlines-eval` | [`templates/factory-analyst/`](./templates/factory-analyst/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Analyzes agent activity (`hub.db` / collector snapshots) and GitHub issue flow/bottlenecks from real data only. |
-| **`search-evaluator`** | `acme-airlines-eval` | [`templates/search-evaluator/`](./templates/search-evaluator/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Runs the 5-layer IRROPS evaluation suite (`acme.evals.runner`) and live scenario/latency probes against `acme-irrops-demo`. |
-| **`ui-craftsman`** | `acme-airlines-eval` | [`templates/ui-craftsman/`](./templates/ui-craftsman/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` (`+ impeccable`) | `acme-agent@` | Builds and refines the `acme-observatory` dashboard (`observatory/dashboard`) in Operate mode. |
+| **`frontend`** | `duboc-acme-airlines` | [`templates/frontend/`](./templates/frontend/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` (`+ impeccable`) | `acme-agent@` | React + Vite Operations Console `/console`, WhatsApp `/whatsapp` (`app/frontend`), and product/release documentation (`role:docs`). |
+| **`reviewer`** | `duboc-acme-airlines` | [`templates/reviewer/`](./templates/reviewer/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Runs `pytest` + `npm test` + `Verify:` blocks, checks policy/ADR compliance, records verdicts in [`REVIEW.md`](../../REVIEW.md), and handles `role:security` audits. |
+| **`deployer`** | `duboc-acme-airlines` | [`templates/deployer/`](./templates/deployer/scion-agent.yaml) | `claude` (`medium`) | `claude-sonnet-5-5` | `acme-observatory-deployer@` | Clean `git archive` export, deploys `acme-irrops-demo` & Agent Engines, runs live HTTP checks, rolls back on failure, updates [`DEPLOYMENT.md`](../../DEPLOYMENT.md). |
+| **`eval-lead`** | `acme-airlines-eval` | [`templates/eval-lead/`](./templates/eval-lead/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Evaluates and approves/closes `status:in-review` build issues, triggers continuous live app evaluations, and orchestrates `acme-observatory` dashboard updates. |
+| **`factory-analyst`** | `acme-airlines-eval` | [`templates/factory-analyst/`](./templates/factory-analyst/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Audits agent activity, issue flow, and CI/test/docs/security `status:in-review` acceptance criteria from real data only. |
+| **`search-evaluator`** | `acme-airlines-eval` | [`templates/search-evaluator/`](./templates/search-evaluator/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-agent@` | Runs the 5-layer IRROPS evaluation suite (`acme.evals.runner`), verifies live `status:in-review` issues against `acme-irrops-demo`, and files `duboc-acme-airlines,bug,status:triage` issues. |
+| **`ui-craftsman`** | `acme-airlines-eval` | [`templates/ui-craftsman/`](./templates/ui-craftsman/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` (`+ impeccable`) | `acme-agent@` | Builds and updates the `acme-observatory` dashboard (`observatory/dashboard` on `eval-dashboard`) in Operate mode. |
 | **`eval-deployer`** | `acme-airlines-eval` | [`templates/eval-deployer/`](./templates/eval-deployer/scion-agent.yaml) | `antigravity` (`large`) | `Gemini 4 Argon (High)` | `acme-observatory-deployer@` | Clean `git archive` export from `eval-dashboard`, deploys `acme-observatory`, verifies live endpoints, rolls back on failure. |
 
 ---
@@ -57,32 +59,29 @@ All 10 roles share the operating protocol in [`templates/_shared/agents.md`](./t
 
 ```mermaid
 sequenceDiagram
-    participant PO
     participant GH as GitHub Issue (#N)
-    participant L as lead
-    participant W as worker (backend/frontend)
+    participant L as lead (duboc-acme-airlines)
+    participant W as worker (backend/frontend/reviewer)
     participant R as reviewer
     participant D as deployer
-    Note over L: HEARTBEAT every 15 min
-    L->>GH: 1. Plan comment (approach, files, acceptance checks)
-    L->>W: 2. scion message "lead -> backend: #N: task, files, checks"
-    W->>L: scion message "backend -> lead: DONE #N: files, tests"
-    L->>R: 3. scion message "lead -> reviewer: review #N: files"
-    R->>L: scion message "reviewer -> lead: #N PASS: evidence" (updates REVIEW.md)
-    L->>W: 4. Grant commit slot
-    W->>L: Pushed commit SHA (#N)
-    L->>D: 5. scion message "lead -> deployer: deploy SHA for #N"
-    D->>GH: Revision, URL, live check results (updates DEPLOYMENT.md)
-    D->>L: scion message "deployer -> lead: #N deployed"
-    L->>GH: 6. Outcome comment
-    L->>PO: scion message user:PO "#N ready for acceptance"
-    PO->>GH: Close (accept) or comment (rework)
+    participant EL as eval-lead (acme-airlines-eval)
+    Note over L,EL: HEARTBEAT every 15 min
+    L->>GH: 1. Plan comment + status:in-progress
+    L->>W: 2. Parallel delegation (/tmp/wt-N)
+    W->>L: PR opened (Refs #N) + DONE message
+    L->>R: 3. Review PR #M
+    R->>L: VERDICT: APPROVE (updates REVIEW.md)
+    L->>GH: 4. Squash-merge PR to main
+    L->>D: 5. Deploy & verify acme-irrops-demo
+    D->>GH: Revision, URL, live checks (DEPLOYMENT.md)
+    L->>GH: 6. Mark status:in-review & start next issue
+    EL->>GH: 7. Verify via search-evaluator & factory-analyst, approve & close (status:done) + update acme-observatory
 ```
 
-1. **Intake & Ordering:** Open issues labeled `duboc-acme-airlines` (or `acme-airlines-eval`) and `wave-1`..`wave-5` form the backlog. Each lead works lowest `wave-*` first, then lowest issue number, with **at most 2 issues in flight**.
-2. **Only Delivered Messages Count:** Every handoff uses `scion message <agent> "<from> -> <to>: <text>"` (or `--body-file <file>`) and verifies that the CLI printed `Message delivered` (or `Message sent to user:<email>.` for the PO).
-3. **Every Turn Ends with a Status:** Agents always finish their turn with `sciontool status blocked "waiting: <what, from whom>"`, `sciontool status task_completed "<summary>"`, or `sciontool status ask_user "<question>"`.
-4. **Narrow Escalation & PO Acceptance:** Leads escalate to `user:<PO_EMAIL>` only for IAM grants, cost/paid resources, or scope questions. Leads never close issues themselves — **the PO accepts work by closing the issue**.
+1. **Parallel Intake & Distribution (`lead`):** Open issues labeled `duboc-acme-airlines` form the build backlog. `lead` distributes up to **4 active `status:in-progress` issues in parallel** across `backend` (`role:backend`, `bug`, backend `role:qa`), `frontend` (`role:frontend`, `role:docs`), `reviewer` (PR reviews + `role:security`), and `deployer` using isolated git worktrees (`/tmp/wt-<N>`). `status:in-review` and `status:blocked` issues never count against active worker slots.
+2. **Independent Evaluation, Issue Approval & Dashboard Loop (`eval-lead`):** Whenever an issue reaches `status:in-review` or new commits land on `main`, `eval-lead` dispatches `search-evaluator` and `factory-analyst` to independently verify all acceptance criteria against `origin/main` and live `acme-irrops-demo`. Verified issues are approved and closed (`gh issue close <N>` + `status:done`); newly discovered product bugs are filed as `duboc-acme-airlines,bug,status:triage`; and `ui-craftsman` + `eval-deployer` continuously update and deploy the `acme-observatory` dashboard on `eval-dashboard`.
+3. **Only Delivered Messages Count:** Every handoff uses `scion message <agent> "<from> -> <to>: <text>"` (or `--body-file <file>`) and verifies that the CLI printed `Message delivered`.
+4. **Every Turn Ends with a Status & Narrow Escalation:** Agents always finish their turn with `sciontool status blocked "waiting: <what, from whom>"`, `sciontool status task_completed "<summary>"`, or `sciontool status ask_user "<question>"`. Leads only escalate to `user:<PO_EMAIL>` after two failed recovery attempts on a genuine external IAM or scope blocker.
 
 ---
 
