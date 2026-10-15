@@ -94,7 +94,7 @@ async def test_sse_streams_existing_and_new_events(client, app):
     r = await asyncio.wait_for(client.get(f"/journeys/{jid}/events?limit={n + 1}"), timeout=5)
     await task
     assert r.headers["content-type"].startswith("text/event-stream")
-    frames = [f for f in r.text.split("\n\n") if f]
+    frames = [f for f in r.text.split("\n\n") if f and not f.startswith("retry:")]
     assert all(f.startswith("id: ") and "\ndata: " in f for f in frames)
     events = [json.loads(f.split("\ndata: ", 1)[1]) for f in frames]
     types = [e["type"] for e in events]

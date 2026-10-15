@@ -256,7 +256,8 @@ class EngineBackend:
     async def scenario_step(self, scenario_id: str) -> dict:
         """Customer step, then one Sales engine turn (its own trace). `409` conditions are the
         route's job: it checks `active` and `state["done"]` before calling this."""
-        await self._customer.call("scenario_step", **self._ctx())
+        state = await self._customer.call("scenario_step", **self._ctx())
+        self._keep_tape(state)  # the tape of the step just run, whatever worker answers next
         # The step is committed in the engine: the counter follows it, whatever comes next.
         self._step += 1
         self._stir()
@@ -332,6 +333,7 @@ class EngineBackend:
         self._run += 1
         self._stir()
         self._active = None
+        self._tape = None  # the tape belongs to the run that is over (#279)
         return await self._customer.call("reset")
 
     async def api(self, op: str, **kwargs: Any) -> Any:
@@ -437,13 +439,18 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     ) -> StreamingResponse:
         known(await backend.known_journeys(), journey_id)
         run = backend.run  # the stream belongs to this run: a restart ends it (#305)
+        start_after = resume_from(request.headers.get("last-event-id"))
+        # The first batch is read BEFORE the 200 is sent: a quota or engine error is then a 429/503
+        # with Retry-After (EventSource stops or backs off), not an empty stream it reconnects to.
+        first_batch = await _timeline_after(backend, journey_id, start_after)
         stream = event_stream(
             request,
             lambda sent: _timeline_after(backend, journey_id, sent),
             limit=limit,
             poll_seconds=POLL_SECONDS,
             still_open=lambda: backend.run == run,
-            start_after=resume_from(request.headers.get("last-event-id")),
+            start_after=start_after,
+            first_batch=first_batch,
         )
         return StreamingResponse(stream, media_type="text/event-stream")
 

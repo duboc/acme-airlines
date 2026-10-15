@@ -25,7 +25,8 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
-SSE_KEEPALIVE_SECONDS = 15.0
+SSE_KEEPALIVE_SECONDS = 3.0  # a write, not an engine query: it is how a dead client is noticed
+RECONNECT_MS = 3000  # `retry:` hint: how soon an EventSource reconnects after a drop
 SSE_MAX_SECONDS = 270.0
 KEEPALIVE = ": keep-alive\n\n"  # an SSE comment: ignored by clients, a write that detects a proxy
 
@@ -47,17 +48,22 @@ async def event_stream(
     poll_seconds: float,
     still_open: Callable[[], bool] = lambda: True,
     start_after: int = 0,
+    first_batch: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[str]:
     """`data:` frames for the events `fetch(sent)` returns (those after the first `sent`),
     starting after `start_after` events (a reconnect). `limit` counts the events of THIS stream."""
     start = last_write = time.monotonic()
     sent, emitted = start_after, 0
+    yield f"retry: {RECONNECT_MS}\n\n"  # reconnect quickly and in a bounded way after a drop
     while limit is None or emitted < limit:
         now = time.monotonic()
         if now - start >= SSE_MAX_SECONDS or not still_open() or await request.is_disconnected():
             return
         try:
-            batch = await fetch(sent)
+            if first_batch is not None:  # fetched by the route before the headers were sent
+                batch, first_batch = first_batch, None
+            else:
+                batch = await fetch(sent)
         except Exception as e:
             if not still_open():  # the run ended while the call was in flight: not an error
                 return

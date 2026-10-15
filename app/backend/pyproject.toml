@@ -58,6 +58,7 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-m 'not live'"
+faulthandler_timeout = 240  # a test stuck for 4 minutes dumps every thread stack to the log
 markers = [
     "live: calls live external services (e.g. Vertex AI); deselected by default and in CI",
     "stress: long multi-process stress test (about 30 s); skipped unless selected with -m stress (#288)",

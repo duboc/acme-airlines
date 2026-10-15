@@ -169,12 +169,31 @@ def test_rule5_invalidated_on_old_flight_allows_new_flight():
     assert evaluate(j, make_offer(), INVENTORY).approved
 
 
-@pytest.mark.parametrize("status", ["approved", "sent", "invalidated"])
-def test_rule5_offer_itself_is_excluded_on_recheck(status):
+@pytest.mark.parametrize("status", ["proposed", "approved", "sent"])
+def test_rule5_offer_itself_is_excluded_on_recheck_while_it_is_live(status):
     j = make_journey()
     offer = make_offer()
     j.offers.append(OfferRecord(offer=offer, status=status))
     assert evaluate(j, offer, INVENTORY).approved
+
+
+def test_rule5_skipping_itself_does_not_hide_another_offer_listed_after_it():
+    j = make_journey()
+    offer = make_offer()
+    j.offers.append(OfferRecord(offer=offer, status="sent"))  # itself, first in the list
+    add_other(j, "declined", flight="AC1252")  # another one, after it
+    assert evaluate(j, offer, INVENTORY).reasons == ["offer_already_made"]
+
+
+@pytest.mark.parametrize("status", ["invalidated", "declined", "accepted"])
+def test_rule5_an_offer_already_settled_or_invalidated_is_never_revived(status):
+    """#340: a stale Accept on an invalidated offer, after the passenger re-acknowledged the
+    resolution on the same flight, charged $135: the offer itself was always skipped."""
+    j = make_journey()
+    offer = make_offer()
+    j.offers.append(OfferRecord(offer=offer, status=status))
+    decision = evaluate(j, offer, INVENTORY)
+    assert not decision.approved and decision.reasons == ["offer_already_made"]
 
 
 def test_rule6_wrong_origin():

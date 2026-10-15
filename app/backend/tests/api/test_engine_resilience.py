@@ -272,7 +272,7 @@ async def test_given_a_quota_error_in_a_stream_then_it_sends_a_retry_hint_and_en
         raise engine_backend.EngineQuotaExceeded("quota")
 
     frames = [f async for f in event_stream(Request(), fetch, limit=None, poll_seconds=0.001)]
-    assert frames == ["retry: 20000\n\n"]
+    assert frames == ["retry: 3000\n\n", "retry: 20000\n\n"]
 
 
 async def test_given_a_stream_error_that_is_not_typed_then_it_still_surfaces():

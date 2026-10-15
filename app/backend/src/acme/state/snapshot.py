@@ -53,6 +53,9 @@ class RuntimeSnapshot(BaseModel):
     journeys: dict[str, JourneyMeta]
     journey_digest: str  # changes whenever any journey's persisted JSON changes
     scenario: ScenarioMeta | None = None
+    # The replay tape (#279): what the LLM answered, shared by every worker process of a container.
+    # Optional with a default, so snapshots written before it existed still load (an empty tape).
+    tape: list[dict[str, Any]] = []
 
 
 def capture(
@@ -84,6 +87,7 @@ def capture(
             for jid, rec in rt.journeys.items()
         },
         journey_digest=digest.hexdigest(),
+        tape=[dict(e) for e in getattr(rt.llm, "entries", [])],  # only the engine records one
         scenario=(
             ScenarioMeta(
                 preset_id=scenarios.active.id if scenarios.active else None, index=scenarios.index
@@ -129,6 +133,8 @@ def restore(
             constraint_latest_arrival=meta.constraint_latest_arrival,
             run_id=meta.run_id,
         )
+    if hasattr(rt.llm, "entries"):  # the engine's RecordingLlm: the tape follows the state
+        rt.llm.entries = [dict(e) for e in snap.tape]
     if scenarios is not None and snap.scenario is not None:
         scenarios.active = BY_ID.get(snap.scenario.preset_id) if snap.scenario.preset_id else None
         scenarios.index = snap.scenario.index

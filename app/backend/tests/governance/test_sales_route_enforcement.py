@@ -78,6 +78,17 @@ async def test_callers_without_the_sales_identity_keep_the_passenger_routes(toke
         assert (await http.get("/journeys")).status_code == 200
 
 
+@pytest.mark.parametrize("token", [None, OTHER])
+@pytest.mark.parametrize("method", ["POST", "GET"])
+async def test_callers_without_the_sales_identity_are_denied_on_a2a(app, token, method, caplog):
+    with caplog.at_level(logging.WARNING, logger="acme.audit"):
+        async with client(app, token) as http:
+            resp = await http.request(method, "/a2a", json={"jsonrpc": "2.0", "id": 1})
+    assert resp.status_code == 403 and resp.text == "forbidden"
+    assert any(r.name == "acme.audit" and r.event == "sales_route_denied" for r in caplog.records)
+    assert SALES not in caplog.text and OTHER not in caplog.text
+
+
 BYPASS_HEADERS = {
     "double space": [(b"authorization", f"Bearer  {SALES}".encode())],
     "tab": [(b"authorization", f"Bearer\t{SALES}".encode())],
