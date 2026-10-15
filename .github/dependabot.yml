@@ -9,15 +9,16 @@ updates:
       github-actions-minor-patch: { patterns: ["*"], update-types: [minor, patch] }
     open-pull-requests-limit: 5
 
+  # Live Observatory lives on the `eval-dashboard` trunk (#359); main tracks only /app/*.
   - package-ecosystem: uv
-    directories: [/app/backend, /observatory/collector, /observatory/dashboard]
+    directories: [/app/backend]
     schedule: { interval: weekly, day: monday }
     groups:
       python-minor-patch: { update-types: [minor, patch] }
     open-pull-requests-limit: 5
 
   - package-ecosystem: npm
-    directories: [/app/frontend, /observatory/dashboard/web]
+    directories: [/app/frontend]
     schedule: { interval: weekly, day: monday }
     groups:
       npm-minor-patch: { update-types: [minor, patch] }

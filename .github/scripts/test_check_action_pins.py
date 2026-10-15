@@ -66,6 +66,21 @@ class PinCheck(unittest.TestCase):
         found = pins.check_paths([root / ".github"])
         self.assertEqual(found, [], "\n".join(found))
 
+    def test_observatory_deploy_has_no_push_trigger_and_dependabot_excludes_observatory(self):
+        # #359: live Observatory is owned by `eval-dashboard`; main must never redeploy it on push.
+        root = Path(__file__).resolve().parents[2]
+        wf = (root / ".github/workflows/observatory-deploy.yml").read_text()
+        active = "\n".join(
+            line for line in wf.splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertNotRegex(active, r"(?m)^\s*push\s*:")
+        self.assertRegex(active, r"(?m)^\s*workflow_dispatch\s*:")
+        dep = (root / ".github/dependabot.yml").read_text()
+        dep_active = "\n".join(
+            line for line in dep.splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertNotIn("/observatory", dep_active)
+
 
 if __name__ == "__main__":
     unittest.main()
