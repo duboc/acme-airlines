@@ -37,7 +37,7 @@ def test_healthy_engine_reports_ready():
 
     assert app.diagnostics() == {
         "engine": "acme-customer-agent", "status": "ready", "startup_error": None,
-        "llm_mode": "fake", "identity": process_identity(),
+        "llm_mode": "fake", "identity": process_identity(), "last_rebuild": None,
     }  # fmt: skip
 
 
@@ -81,11 +81,12 @@ async def test_diagnostics_is_not_an_a2a_skill_so_sales_cannot_reach_it():
     assert [n for n in dir(EngineCustomerClient) if "diagnos" in n] == []
 
 
-def test_diagnostics_payload_has_exactly_five_fields_and_no_environment(monkeypatch):
+def test_diagnostics_payload_has_exactly_six_fields_and_no_environment(monkeypatch):
     monkeypatch.setenv("SOME_API_TOKEN", "tok-1234567890-abcdef")
     app = broken_customer(monkeypatch, RuntimeError("bad token tok-1234567890-abcdef"))
     d = app.diagnostics()
-    assert set(d) == {"engine", "status", "startup_error", "llm_mode", "identity"}
+    assert set(d) == {"engine", "status", "startup_error", "llm_mode", "identity",
+                 "last_rebuild"}  # fmt: skip
     assert "tok-1234567890-abcdef" not in d["startup_error"]
 
 

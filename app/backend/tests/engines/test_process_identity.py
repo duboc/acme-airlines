@@ -128,4 +128,4 @@ def test_diagnostics_reports_the_identity():
     app = worker()
     d = app.diagnostics()
     assert d["identity"] == telemetry.process_identity()
-    assert set(d) == {"engine", "status", "startup_error", "llm_mode", "identity"}
+    assert set(d) == {"engine", "status", "startup_error", "llm_mode", "identity", "last_rebuild"}
