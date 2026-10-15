@@ -69,3 +69,45 @@ async def test_passenger_without_onward_segment_has_no_constraint(rt):
     profile = next(e for e in rt.journeys[jid].state.timeline if e.type == "profile_loaded")
     assert profile.payload["connection"] is None
     assert rt.journeys[jid].constraint_latest_arrival is None
+
+
+async def test_ac1_constraint_uses_the_worlds_mct(rt):
+    rt.world.mct_minutes = 120
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    c = next(e for e in rt.journeys[jid].state.timeline if e.type == "connection_constraint")
+    assert c.payload["mct_minutes"] == 120
+    assert c.payload["latest_arrival"] == "2026-10-10T12:00:00-03:00"
+    assert rt.journeys[jid].constraint_latest_arrival.astimezone(GRU).strftime("%H:%M") == "12:00"
+
+
+async def test_ac2_rebuild_margin_follows_the_worlds_mct(rt):
+    rt.world.mct_minutes = 200  # AC1240 lands 10:15, AC0800 leaves 14:00: 225 - 200
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    types = [(e.type, e.payload) for e in rt.journeys[jid].state.timeline]
+    check = next(p for t, p in types if t == "connection_verified")
+    assert (check["flight"], check["feasible"], check["margin_minutes"]) == ("AC1240", True, 25)
+
+
+async def test_ac2_a_larger_mct_can_leave_no_feasible_flight(rt):
+    rt.world.mct_minutes = 300  # even AC1240 (225 min) misses the connection
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    state = rt.journeys[jid].state
+    assert not [e for e in state.timeline if e.type == "rebooked"]
+    assert state.status == S.RESOLVING
+
+
+def test_ac2_rebook_request_defaults_to_the_airport_mct():
+    from datetime import datetime
+
+    from acme.customer.specialists.irrops import IrropsRebooking, RebookRequest
+
+    arrive, onward = (
+        datetime(2026, 10, 10, 12, 20, tzinfo=GRU),
+        datetime(2026, 10, 10, 14, tzinfo=GRU),
+    )
+    flight = {"scheduled_arrival": arrive.isoformat()}
+    base = {"pnr": "X", "origin": "GRU", "destination": "SCL", "after": arrive}
+    default = RebookRequest(**base, onward_departure=onward)
+    assert default.mct_minutes is None and IrropsRebooking.feasible(default, flight) == 10
+    strict = RebookRequest(**base, onward_departure=onward, mct_minutes=120)
+    assert IrropsRebooking.feasible(strict, flight) is None

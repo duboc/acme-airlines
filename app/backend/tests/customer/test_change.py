@@ -185,3 +185,12 @@ async def test_every_event_of_the_full_replanning_flow_matches_the_api_contract(
     adapter = TypeAdapter(TimelineEvent)
     for e in rec.state.timeline:
         adapter.validate_python(e.model_dump(mode="json"))
+
+
+async def test_ac3_replan_honours_the_worlds_mct(setup):
+    rt, rec = setup
+    rt.world.mct_minutes = 120  # AC1252 lands 12:20, AC0800 leaves 14:00: 100 < 120
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    closed = of(rec, "request_closed")[-1]
+    assert closed.payload["outcome"] == "unsatisfiable"
+    assert [s.flight_number for s in rt.world.pnrs["MSLV42"].segments] == ["AC1240", "AC0800"]

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 async def rebuild_journey(
-    client: SimClient, rec: JourneyRecord, cancelled_flight: str
+    client: SimClient, rec: JourneyRecord, cancelled_flight: str, mct_minutes: int | None = None
 ) -> RebuildResult:
     """Rebook, re-seat and re-route the bag. Leaves the journey RESOLVING either way: a
     failure is a `needs_human` entry, never silent. The result feeds #12's duty of care."""
@@ -47,7 +47,7 @@ async def rebuild_journey(
                 pnr=rec.pnr_locator, origin=cancelled["origin"],
                 destination=cancelled["destination"],
                 after=datetime.fromisoformat(cancelled["scheduled_departure"]),
-                onward_departure=onward_departure,
+                onward_departure=onward_departure, mct_minutes=mct_minutes,
             ),
             emit_as("irrops_rebooking"),
         )  # fmt: skip
@@ -71,7 +71,7 @@ async def rebuild_journey(
         )
     bag_done = set(bags.rerouted) == set(tags)
     if onward and onward_departure and rebook.arrival:
-        check = check_connection(onward["origin"], rebook.arrival, onward_departure)
+        check = check_connection(onward["origin"], rebook.arrival, onward_departure, mct_minutes)
         state.append_event(
             "customer_agent",
             "connection_verified",

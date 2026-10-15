@@ -16,6 +16,7 @@ class RebookRequest(BaseModel):
     destination: str
     after: AwareDatetime  # earliest acceptable departure (the cancelled flight's schedule)
     onward_departure: AwareDatetime | None = None  # departure of the onward connection, if any
+    mct_minutes: int | None = None  # the world's MCT; None = the airport default
 
 
 class RebookResponse(BaseModel):
@@ -44,7 +45,7 @@ class IrropsRebooking:
         if req.onward_departure is None:
             return 0
         arrival = datetime.fromisoformat(flight["scheduled_arrival"])
-        result = check_connection(req.destination, arrival, req.onward_departure)
+        result = check_connection(req.destination, arrival, req.onward_departure, req.mct_minutes)
         return result.margin_minutes if result.feasible else None
 
     async def handle(self, req: RebookRequest, emit: Emit) -> RebookResponse:
