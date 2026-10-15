@@ -138,7 +138,7 @@ class GcpDataSource:
     def _query(self, sql: str, **params) -> Rows:
         from google.cloud import bigquery
 
-        types = {date: "DATE"}
+        types = {date: "DATE", str: "STRING"}
         cfg = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter(k, types[type(v)], v) for k, v in params.items()
@@ -165,9 +165,10 @@ class GcpDataSource:
             "SELECT DATE(usage_start_time) AS usage_date, service.description AS service, "
             "SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS cost_usd "
             f"FROM `{self._project}.{self._billing_ds}.{table}` "
-            "WHERE usage_start_time >= TIMESTAMP(@start) GROUP BY 1, 2 ORDER BY 1"
+            "WHERE usage_start_time >= TIMESTAMP(@start) AND project.id = @project "
+            "GROUP BY 1, 2 ORDER BY 1"
         )
-        return self._query(sql, start=start)
+        return self._query(sql, start=start, project=self._project)
 
     @guarded("Agent snapshots")
     def agent_snapshots(self) -> Rows:
@@ -430,15 +431,49 @@ class GcpDataSource:
             out[key] = max(vals) if vals else None
         return out
 
+    def _fallback_engine_traces(
+        self, name: str, limit: int, start: datetime, end: datetime
+    ) -> list:
+        from google.cloud import trace_v1
+
+        filters = (
+            ["root:acme.engine.op +acme.op:sales_tick", "root:acme.engine.op", "span:acme."]
+            if "sales" in name.lower()
+            else ["root:acme.engine.op", "span:acme."]
+        )
+        seen: set[str] = set()
+        out = []
+        scan_cap = max(limit * 10, 100)
+        for flt in filters:
+            req = {
+                "project_id": self._project,
+                "view": trace_v1.ListTracesRequest.ViewType.COMPLETE,
+                "start_time": start,
+                "end_time": end,
+                "filter": flt,
+                "order_by": "start desc",
+                "page_size": limit if "+acme.op:" in flt else max(limit * 5, 50),
+            }
+            for i, t in enumerate(self._trace.list_traces(request=req)):
+                if i >= scan_cap:
+                    break
+                if t.trace_id not in seen and _trace_for_engine(t, name):
+                    seen.add(t.trace_id)
+                    out.append(t)
+                    if len(out) >= limit:
+                        return out
+        return out
+
     @guarded("Agent Engine traces")
     def agent_engine_traces(self, name: str, limit: int, hours: int) -> Rows:
         from google.cloud import trace_v1
 
         end = self.now()
+        start = end - timedelta(hours=min(hours, 24))
         request = {
             "project_id": self._project,
             "view": trace_v1.ListTracesRequest.ViewType.ROOTSPAN,
-            "start_time": end - timedelta(hours=min(hours, 24)),
+            "start_time": start,
             "end_time": end,
             "filter": f'+service.name:"{name}"',
             "order_by": "start desc",
@@ -446,16 +481,23 @@ class GcpDataSource:
         }
         try:
             traces = list(self._trace.list_traces(request=request))[:limit]
+            if not traces:
+                traces = self._fallback_engine_traces(name, limit, start, end)
         except Forbidden as e:  # also covers gRPC PermissionDenied
             raise TraceNotGranted("cloudtrace.user is not granted to the dashboard SA") from e
         rows = []
         for t in traces:
-            root = t.spans[0] if t.spans else None
+            root = _root_span(t.spans)
             if root is None:
                 continue
             ms = (root.end_time - root.start_time).total_seconds() * 1000
-            code = str(root.labels.get("/http/status_code", ""))
-            failed = "error" in root.labels or (code.isdigit() and int(code) >= 400)
+            code = str(
+                root.labels.get("/http/status_code", "")
+                or root.labels.get("http.response.status_code", "")
+            )
+            failed = any("error" in s.labels for s in t.spans) or (
+                code.isdigit() and int(code) >= 400
+            )
             rows.append(
                 {
                     "trace_id": t.trace_id,
@@ -466,3 +508,43 @@ class GcpDataSource:
                 }
             )
         return rows
+
+
+def _root_span(spans):
+    if not spans:
+        return None
+    ids = {getattr(s, "span_id", None) for s in spans if getattr(s, "span_id", None)}
+    roots = [
+        s
+        for s in spans
+        if not getattr(s, "parent_span_id", None) or getattr(s, "parent_span_id", None) not in ids
+    ]
+    return min(roots or spans, key=lambda s: s.start_time)
+
+
+def _trace_for_engine(trace, name: str) -> bool:
+    spans = getattr(trace, "spans", None) or []
+    if not spans:
+        return False
+    services = {s.labels.get("service.name") for s in spans if s.labels.get("service.name")}
+    if services:
+        return name in services
+    is_sales = any(
+        s.labels.get("acme.op") == "sales_tick"
+        or s.name.startswith("acme.sales.")
+        or "sales_agent" in s.name
+        or s.labels.get("gen_ai.agent.name") == "sales_agent"
+        or s.name == "POST /api/stream_reasoning_engine"
+        for s in spans
+    )
+    if "sales" in name.lower():
+        return is_sales
+    if is_sales:
+        return False
+    return any(
+        (s.name == "acme.engine.op" and s.labels.get("acme.op") != "sales_tick")
+        or s.name.startswith(("acme.customer.", "acme.scenario.", "acme.guardrail.", "acme.a2a."))
+        or s.name == "POST /api/reasoning_engine"
+        or "scenario_step" in s.name
+        for s in spans
+    )

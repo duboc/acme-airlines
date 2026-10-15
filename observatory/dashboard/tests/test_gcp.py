@@ -49,9 +49,13 @@ def test_billing_query_is_parameterised_and_maps_rows():
     assert rows == [{"usage_date": "2026-10-09", "service": "Vertex AI", "cost_usd": 4.5}]
     sql = bq.query.call_args.args[0]
     assert "@start" in sql and "2026-10-01" not in sql
+    assert "project.id = @project" in sql
     assert "proj.billing_export.gcp_billing_export_v1_AB_CD" in sql
     params = bq.query.call_args.kwargs["job_config"].query_parameters
-    assert [(p.name, p.value) for p in params] == [("start", date(2026, 10, 1))]
+    assert [(p.name, p.value) for p in params] == [
+        ("start", date(2026, 10, 1)),
+        ("project", "proj"),
+    ]
 
 
 def test_billing_stale_is_lagging_via_service():

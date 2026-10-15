@@ -156,3 +156,85 @@ def test_http_status_400_plus_is_error():
     trace.list_traces.return_value = [mk("500"), mk("200"), mk("junk")]
     rows = gcp(trace=trace).agent_engine_traces("acme-customer-agent", 10, 1)
     assert [r["status"] for r in rows] == ["error", "ok", "ok"]
+
+
+def test_gcp_traces_fallback_distinguishes_customer_and_sales_without_service_name():
+    start = NOW - timedelta(minutes=5)
+    end = start + timedelta(milliseconds=750)
+    cust_trace = NS(
+        trace_id="cust-1",
+        spans=[
+            NS(
+                name="acme.scenario.step",
+                span_id="2",
+                parent_span_id="1",
+                start_time=start + timedelta(milliseconds=1),
+                end_time=end,
+                labels={"acme.scenario": "happy-path"},
+            ),
+            NS(
+                name="acme.engine.op",
+                span_id="1",
+                parent_span_id="",
+                start_time=start,
+                end_time=end,
+                labels={"acme.op": "scenario_step"},
+            ),
+        ],
+    )
+    sales_trace = NS(
+        trace_id="sales-1",
+        spans=[
+            NS(
+                name="acme.engine.op",
+                span_id="10",
+                parent_span_id="",
+                start_time=start,
+                end_time=start + timedelta(milliseconds=500),
+                labels={"acme.op": "sales_tick"},
+            ),
+            NS(
+                name="acme.a2a.list_journeys",
+                span_id="11",
+                parent_span_id="10",
+                start_time=start,
+                end_time=start + timedelta(milliseconds=200),
+                labels={"acme.skill": "list_journeys"},
+            ),
+        ],
+    )
+    noise_trace = NS(
+        trace_id="noise-1",
+        spans=[
+            NS(
+                name="/check",
+                span_id="99",
+                parent_span_id="",
+                start_time=start,
+                end_time=end,
+                labels={},
+            )
+        ],
+    )
+    trace = MagicMock()
+
+    def list_traces(request):
+        flt = request["filter"]
+        if flt.startswith("+service.name:"):
+            return []
+        if "+acme.op:sales_tick" in flt:
+            return [sales_trace]
+        if flt in ("root:acme.engine.op", "span:acme."):
+            return [cust_trace, sales_trace, noise_trace]
+        return []
+
+    trace.list_traces.side_effect = list_traces
+    src = gcp(trace=trace)
+    cust_rows = src.agent_engine_traces("acme-customer-agent", 10, 1)
+    sales_rows = src.agent_engine_traces("acme-sales-agent", 10, 1)
+    assert [(r["trace_id"], r["name"], r["duration_ms"]) for r in cust_rows] == [
+        ("cust-1", "acme.engine.op", 750.0)
+    ]
+    assert [(r["trace_id"], r["name"], r["duration_ms"]) for r in sales_rows] == [
+        ("sales-1", "acme.engine.op", 500.0)
+    ]

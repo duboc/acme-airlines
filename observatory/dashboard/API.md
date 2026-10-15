@@ -106,8 +106,8 @@ log lines, newest first; `action` is `no action | agents suspended`. `budget_usd
   (label `response_code`; `errors` = non-2xx, `error_rate = errors / requests`, null with no requests) and
   `.../reasoning_engine/request_latencies` (ms; `ALIGN_PERCENTILE_50/95` over the window). If several series
   match, the largest percentile is shown. Confirm the metric types against the live project on first deploy.
-- **Traces** (Cloud Trace v1, root spans, window = `hours` capped at 24h, newest first, up to 10): filter `+service.name:"<display name>"`.
-  Only trace id, root span name, start, duration and status (`error` if the span has an `error` label or `/http/status_code` >= 400) are
+- **Traces** (Cloud Trace v1, root spans, window = `hours` capped at 24h, newest first, up to 10): filter `+service.name:"<display name>"` (falling back to `COMPLETE` view on `span:acme.` classified by engine spans when `service.name` is not exported into Cloud Trace span labels).
+  Only trace id, root span name, start, duration and status (`error` if a span has an `error` label or `/http/status_code` >= 400) are
   returned; no span attribute values.
 - **Degradation:** if Trace returns 403 (the SA lacks `cloudtrace.user`, issue #158) the engine has
   `"traces": null, "trace_access": "not_granted"`; metrics still return.
