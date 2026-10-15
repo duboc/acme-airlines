@@ -57,9 +57,11 @@ class SalesRadar:
             offer = await self._price(journey_id, flight)
             if offer is None:
                 continue
-            self._sent.add(key)  # at most once per run, even if the proposal fails
             with span("acme.sales.pitch", acme__journey_id=journey_id, acme__flight=flight):
                 await self._customer.propose_offer(offer)
+            # Recorded once the Customer answered (a guardrail rejection is an answer): a transient
+            # RPC error leaves the key out so the next tick retries (#392).
+            self._sent.add(key)
             proposed.append(offer)
         return proposed
 
