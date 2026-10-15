@@ -123,6 +123,18 @@ describe('ChatView', () => {
     expect(screen.getAllByText('Hotel voucher')).toHaveLength(2);
   });
 
+  it('notifies onChanged after sending a reply or tapping an offer button', async () => {
+    const onChanged = vi.fn();
+    render(<ChatView passengerId="P-MARIANA" onChanged={onChanged} />);
+    await screen.findByText(RESOLUTION);
+    await userEvent.type(screen.getByLabelText('Message'), 'Can I leave after 10am?');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Accept upgrade $135' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2));
+  });
+
   it('shows an error when the service is unreachable', async () => {
     vi.stubGlobal(
       'fetch',

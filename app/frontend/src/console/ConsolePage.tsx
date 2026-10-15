@@ -16,6 +16,8 @@ export function ConsolePage() {
   const [events, setEvents] = useState<JourneyEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resetSeq, setResetSeq] = useState(0);
+  const [chatSeq, setChatSeq] = useState(0);
   const source = useRef<EventSource | null>(null);
 
   const close = useCallback(() => {
@@ -29,12 +31,40 @@ export function ConsolePage() {
       close();
       const es = new EventSource(eventsUrl(id));
       source.current = es;
+      const seenIds = new Set<string>();
+      let inflight = false;
+      let dirty = false;
+
+      const refreshJourney = async () => {
+        if (inflight) {
+          dirty = true;
+          return;
+        }
+        inflight = true;
+        try {
+          do {
+            dirty = false;
+            const j = await getJourney(id);
+            if (source.current !== es) return;
+            setJourney(j);
+          } while (dirty && source.current === es);
+        } catch {
+          if (source.current === es) {
+            setError('Could not refresh the journey. Events are still streaming.');
+          }
+        } finally {
+          inflight = false;
+        }
+      };
+
       es.onmessage = (m: MessageEvent<string>) => {
+        if (m.lastEventId) {
+          if (seenIds.has(m.lastEventId)) return;
+          seenIds.add(m.lastEventId);
+        }
         const event = JSON.parse(m.data) as JourneyEvent;
         setEvents((prev) => [...prev, event]);
-        getJourney(id)
-          .then((j) => source.current === es && setJourney(j))
-          .catch(() => setError('Could not refresh the journey. Events are still streaming.'));
+        void refreshJourney();
       };
     },
     [close],
@@ -72,6 +102,7 @@ export function ConsolePage() {
     setJourney(null);
     setEvents([]);
     setError(null);
+    setChatSeq((n) => n + 1);
   }
 
   async function demoChanged(state?: ScenarioState) {
@@ -111,6 +142,8 @@ export function ConsolePage() {
       close();
       setJourney(null);
       setEvents([]);
+      setResetSeq((n) => n + 1);
+      setChatSeq((n) => n + 1);
     } catch {
       setError('Could not reset the scenario. Try again.');
     } finally {
@@ -142,13 +175,18 @@ export function ConsolePage() {
           {error}
         </p>
       )}
-      <DemoPanel passengerId={PASSENGER_ID} onStarted={demoStarted} onChanged={demoChanged} />
+      <DemoPanel
+        passengerId={PASSENGER_ID}
+        onStarted={demoStarted}
+        onChanged={demoChanged}
+        resetToken={resetSeq}
+      />
       <div className="console-grid">
         <JourneyCard journey={journey} />
         <Timeline events={events} />
         <section className="panel chat-col" aria-labelledby="chat-h">
           <h2 id="chat-h">Passenger chat (simulated)</h2>
-          <ChatView passengerId={PASSENGER_ID} />
+          <ChatView key={chatSeq} passengerId={PASSENGER_ID} onChanged={() => void demoChanged()} />
         </section>
       </div>
     </section>

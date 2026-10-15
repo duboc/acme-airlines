@@ -21,14 +21,21 @@ interface Props {
   onStarted: () => void;
   /** Something changed server-side; refresh the console (state is given for scenario steps). */
   onChanged: (state?: ScenarioState) => void;
+  /** Incremented when the parent resets the world externally. */
+  resetToken?: number;
 }
 
-export function DemoPanel({ passengerId, onStarted, onChanged }: Props) {
+export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Props) {
   const [presets, setPresets] = useState<PresetView[]>([]);
   const [selected, setSelected] = useState('');
-  const [state, setState] = useState<ScenarioState | null>(null);
-  const [error, setError] = useState('');
+  const [rawState, setState] = useState<ScenarioState | null>(null);
+  const [rawError, setError] = useState('');
+  const [activeToken, setActiveToken] = useState(resetToken);
   const [busy, setBusy] = useState(false);
+
+  const isReset = activeToken !== resetToken;
+  const state = isReset ? null : rawState;
+  const error = isReset ? '' : rawError;
 
   useEffect(() => {
     listScenarios()
@@ -41,6 +48,7 @@ export function DemoPanel({ passengerId, onStarted, onChanged }: Props) {
 
   async function run(fn: () => Promise<void>, failure: string) {
     setBusy(true);
+    setActiveToken(resetToken);
     setError('');
     try {
       await fn();
