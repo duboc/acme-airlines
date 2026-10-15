@@ -6,7 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx>=0.28.1",
     "mcp>=1.9,<2",
-    "pydantic>=2.14.0",
+    "pydantic>=2.14.1",
     "google-genai>=2.29.0",
     "fastapi>=0.133,<0.142",
     "google-adk[a2a]>=1.28.1,<2",
@@ -26,7 +26,7 @@ acme-demo = "acme.demo.supervisor:main"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
-    "hypothesis>=6.168.5",
+    "hypothesis>=6.169.0",
     "mutmut>=3.8.0",
     "opentelemetry-sdk>=1.27",
     "pytest>=8",
