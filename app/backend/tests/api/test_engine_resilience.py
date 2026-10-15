@@ -419,3 +419,62 @@ async def test_given_a_step_or_a_detail_then_no_redundant_engine_query_is_made()
         while not backend.done:
             await c.post("/scenarios/happy-path/step")
         assert (await c.post("/scenarios/happy-path/step")).status_code == 409  # finished, no RPC
+
+
+# --- #374: Agent Engine returns every number as a double ----------------------------------------
+
+
+def as_doubles(value):
+    """What protobuf Struct does to a JSON reply: every number (not a bool) becomes a float."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return float(value)
+    if isinstance(value, dict):
+        return {k: as_doubles(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [as_doubles(v) for v in value]
+    return value
+
+
+class DoublesEngine:
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def call(self, op, **kwargs):
+        return as_doubles(await self.inner.call(op, **kwargs))
+
+    def stream(self, **kwargs):
+        return self.inner.stream(**kwargs)
+
+
+async def test_every_preset_steps_through_http_when_the_engine_replies_with_doubles():
+    """#374: `steps[self._step]` raised `TypeError: tuple indices must be integers, not float` on
+    the deployed engine, so every step was a 500; the CI fakes returned ints."""
+    from acme.api.scenarios import BY_ID
+
+    for sid in BY_ID:
+        backend = local_backend()
+        backend._customer = DoublesEngine(backend._customer)  # noqa: SLF001
+        async with client(create_engine_app(backend)) as c:
+            state = (await c.post(f"/scenarios/{sid}/start")).json()
+            while not state["done"]:
+                r = await c.post(f"/scenarios/{sid}/step")
+                assert r.status_code == 200, (sid, r.text)
+                state = r.json()
+                assert isinstance(backend._step, int) and not isinstance(backend._step, bool)  # noqa: SLF001
+            assert backend.done and backend._step == len(BY_ID[sid].steps)  # noqa: SLF001
+
+
+async def test_a_step_index_that_is_not_whole_is_an_engine_fault_not_a_500():
+    class Odd(LocalEngine):
+        async def call(self, op, **kwargs):
+            return {"step_index": 2.5}
+
+    backend = EngineBackend(Odd(None), Odd(None))
+    with pytest.raises(EngineUnavailable):
+        await backend.scenario_start("happy-path")
+    assert engine_backend.whole(5.0) == 5 and isinstance(engine_backend.whole(5.0), int)
+    for bad in (True, "5", None, 5.5):
+        with pytest.raises(EngineUnavailable):
+            engine_backend.whole(bad)

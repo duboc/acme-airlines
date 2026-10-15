@@ -182,6 +182,14 @@ def _resource(env: Mapping[str, str], key: str) -> str:
     return value
 
 
+def whole(value: Any) -> int:
+    """A step index as the engine returns it: Agent Engine sends JSON numbers as doubles (`5.0`),
+    which cannot index a tuple or be compared as a counter (#374)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value:
+        raise EngineUnavailable("The Agent Engine returned an invalid step index.")
+    return int(value)
+
+
 def ok(reply: Any) -> Any:
     """Engine ops return API errors as data (`{"error": {"status", "detail"}}`): re-raise them."""
     if isinstance(reply, dict) and "error" in reply:
@@ -246,14 +254,14 @@ class EngineBackend:
         self._sales_pending = False
         self._stir()
         state = await self._customer.call("scenario_start", scenario_id=scenario_id)
-        self._active, self._step = scenario_id, state["step_index"]
+        self._active, self._step = scenario_id, whole(state["step_index"])
         return self._keep_tape(state)
 
     async def scenario_state(self) -> dict:
         state = await self._customer.call("scenario_state", **self._ctx())
         # Never backwards: a stale read from another worker must not make the next call re-send
         # a step that already ran (only scenario_start and reset set the counter freely).
-        self._step = max(self._step, state["step_index"])
+        self._step = max(self._step, whole(state["step_index"]))
         return self._keep_tape(state)
 
     @property
