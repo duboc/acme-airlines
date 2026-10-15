@@ -211,6 +211,16 @@ def shared(fn):
     return wrapped
 
 
+def integral(value: Any, what: str) -> int:
+    """An int argument as it arrives through Agent Engine: JSON numbers become doubles (protobuf
+    Struct), so `5.0` is 5. Anything not whole (5.5, True, "5") is rejected."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise EngineOperationError(f"bad {what}")
+    if isinstance(value, float) and not (value.is_integer() and abs(value) < 2**53):
+        raise EngineOperationError(f"bad {what}")
+    return int(value)
+
+
 class CustomerEngineApp:
     _STARTED = ("runtime", "skills", "scenarios", "_sessions", "_runner", "_step_runner")
 
@@ -286,11 +296,12 @@ class CustomerEngineApp:
         preset, step = kwargs.get("preset"), kwargs.get("step")
         if preset is None or step is None:
             return
+        step = integral(step, "scenario step")  # Agent Engine sends 5.0 for 5
         runner = self.scenarios
         if runner.active is not None and runner.active.id == preset and runner.index == step:
             return
         target = self._preset(preset)
-        if not isinstance(step, int) or not 0 <= step <= len(target.steps):
+        if not 0 <= step <= len(target.steps):
             raise EngineOperationError("bad scenario step")
         if runner.active is None:
             reason = "no_local_scenario"
@@ -518,7 +529,7 @@ class CustomerEngineApp:
     ) -> list[dict[str, Any]]:
         """Timeline events from index ``since`` (a poll-friendly form of the SSE stream)."""
         timeline = self._journey(journey_id).state.timeline
-        return [e.model_dump(mode="json") for e in timeline[max(since, 0) :]]
+        return [e.model_dump(mode="json") for e in timeline[max(integral(since, "since"), 0) :]]
 
     # --- phone panel, reset and trigger (#181): the API's own functions, errors as data -------
     async def _api(self, fn, *args) -> dict[str, Any] | list[Any]:
