@@ -415,5 +415,94 @@ describe('ConsolePage', () => {
       expect(FakeEventSource.instances).toHaveLength(1);
       expect(FakeEventSource.instances[0]!.url).toBe('/api/journeys/J-1/events');
     });
+
+    it('immediately refreshes ChatView and disables offer buttons when DemoPanel declines the offer (#402)', async () => {
+      const offerMsg = {
+        message_id: 'm-offer',
+        direction: 'outbound',
+        text: 'Upgrade offer',
+        timestamp: '2026-10-10T21:06:00Z',
+        buttons: ['Accept upgrade $135', 'No thanks'],
+      };
+      let messages: unknown[] = [];
+      const base = fetchMock.getMockImplementation() as (
+        u: string,
+        i?: RequestInit,
+      ) => Promise<Response>;
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url === '/api/scenarios')
+          return json([
+            {
+              id: 'declines-upgrade',
+              title: 'Declines the upgrade',
+              description: 'd',
+              steps: ['a', 'b'],
+              expectation: 'e',
+            },
+          ]);
+        if (url.endsWith('/start')) return json({ ...state, scenario_id: 'declines-upgrade' });
+        if (url.endsWith('/step')) {
+          messages = [offerMsg];
+          detail = {
+            ...resolved,
+            offer: {
+              offer_id: 'O-1',
+              flight: 'AC1252',
+              price: '135.00',
+              standard_price: '290.00',
+              status: 'sent',
+            },
+          };
+          return json({
+            ...state,
+            scenario_id: 'declines-upgrade',
+            offer_status: 'sent',
+          });
+        }
+        if (
+          url.endsWith('/whatsapp/P-MARIANA/messages') &&
+          (!init?.method || init.method === 'GET')
+        )
+          return json(messages);
+        if (url.endsWith('/whatsapp/P-MARIANA/actions')) {
+          detail = {
+            ...detail,
+            status: 'CLOSED',
+            offer: {
+              offer_id: 'O-1',
+              flight: 'AC1252',
+              price: '135.00',
+              standard_price: '290.00',
+              status: 'declined',
+            },
+          };
+          return json({ offer_status: 'declined' });
+        }
+        return base(url, init);
+      });
+      detail = resolved;
+      render(<ConsolePage />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+
+      // Next step adds the offer message and DemoPanel triggers demoChanged -> ChatView refreshes immediately
+      await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+      const acceptBtn = await screen.findByRole('button', { name: 'Accept upgrade $135' });
+      expect(acceptBtn).toBeEnabled();
+
+      // Click manual "No thanks" in DemoPanel -> JourneyCard and ChatView update offerStatus="declined"
+      const manualNoThanks = screen
+        .getAllByRole('button', { name: 'No thanks' })
+        .find((el) => el.closest('fieldset.demo-manual'))!;
+      await userEvent.click(manualNoThanks);
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '✓ No thanks' })).toBeDisabled(),
+      );
+      expect(screen.getByRole('button', { name: '✓ No thanks' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByRole('button', { name: 'Accept upgrade $135' })).toBeDisabled();
+    });
   });
 });
