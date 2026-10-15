@@ -16,6 +16,7 @@ from acme import metrics
 from acme.customer.quiet_hours import can_send_proactive
 from acme.domain.fixtures import GRU
 from acme.domain.journey import DisruptionStatus, PassengerRequest
+from acme.llm.fake import departure_after
 from acme.llm.port import Acknowledge, DepartureAfter, Other, StructuredRequest
 from acme.telemetry import specialist_span
 
@@ -146,11 +147,21 @@ def notification_due(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
 
 
 async def classify(rt: CustomerRuntime, text: str) -> StructuredRequest:
-    """The passenger's intent. Depends only on the text, so callers run it outside any lock."""
+    """The passenger's intent. Depends only on the text, so callers run it outside any lock.
+
+    The model decides. Only when it answers Other (including malformed output, an exception or a
+    timeout: fail closed) and the deterministic time pattern reads the text does the pattern win,
+    so one bad model answer cannot lose the request. A non-Other answer is never overridden."""
     try:
-        return await rt.llm.parse_passenger_request(text)
+        result = await rt.llm.parse_passenger_request(text)
     except Exception:  # noqa: BLE001 (fail closed: never an acknowledgement)
-        return Other(text=text)
+        result = Other(text=text)
+    source = "model"
+    if isinstance(result, Other) and (after := departure_after(text)) is not None:
+        result, source = after, "pattern"
+    kind = {DepartureAfter: "departure_after", Acknowledge: "ack"}.get(type(result), "other")
+    rt.last_parse = {"parse_kind": kind, "parse_source": source}  # no text: for the op diag
+    return result
 
 
 async def handle_inbound(

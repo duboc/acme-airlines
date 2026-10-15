@@ -278,6 +278,10 @@ class CustomerEngineApp:
             "loaded_version": None,
             "db_inode": None,
         }
+        runtime = self.__dict__.get("runtime")
+        if runtime is not None and runtime.last_parse:  # the kind of the last parse, never text
+            ctx.update(runtime.last_parse)
+            runtime.last_parse = None
         if self.shared is not None:
             try:
                 ctx["shared_version"] = self.shared.version()
