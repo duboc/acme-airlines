@@ -5,10 +5,11 @@ import pytest
 
 from acme.api.app import create_app
 from acme.customer.adk_agent import customer_agent_card
-from acme.customer.skills import CustomerSkills, JourneyStatusView, SkillError
+from acme.customer.skills import CustomerSkills, JourneyStatusView, SkillError, ineligible_reason
 from acme.domain.clock import FixedClock
 from acme.domain.fixtures import DISRUPTION_DETECTED_AT
 from acme.domain.journey import DisruptionStatus as S
+from acme.domain.journey import PassengerRequest
 
 PII = {"name", "phone", "pnr", "pnr_locator", "seat", "passenger_id", "email", "tier"}
 
@@ -89,6 +90,21 @@ async def test_resolved_but_unacknowledged_is_suppressed(skills_and_jid):
     skills.journey_status(jid)
     (e,) = [e for e in rt.journeys[jid].state.timeline if e.type == "sales_suppressed"]
     assert e.payload == {"journey_status": "RESOLVED", "reason": "resolution_not_acknowledged"}
+
+
+async def test_resolved_with_open_request_is_suppressed_with_open_request_pending(skills_and_jid):
+    skills, jid, rt = skills_and_jid
+    rec = rt.journeys[jid]
+    rec.state.transition(S.RESOLVED)
+    rec.state.resolution_acknowledged = True
+    rec.state.open_requests.append(PassengerRequest(request_id="r1", text="wheelchair at gate"))
+    assert ineligible_reason(rec) == "open_request_pending"
+    status = skills.journey_status(jid)
+    assert status.resolution_acknowledged is False
+    assert set(status.model_dump()) == {"status", "flight", "resolution_acknowledged", "run_id"}
+    assert not PII & set(status.model_dump())
+    (e,) = [e for e in rec.state.timeline if e.type == "sales_suppressed"]
+    assert e.payload == {"journey_status": "RESOLVED", "reason": "open_request_pending"}
 
 
 async def test_eligible_journey_is_not_suppressed(skills_and_jid):

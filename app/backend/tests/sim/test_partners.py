@@ -29,6 +29,11 @@ async def test_transfer_and_voucher(connect, sim):
             "transfer.book", {"origin": "A", "destination": "B", "at": "2026-10-09T23:30:00"}
         )
     assert t["transfer_ref"] in sim.partners.transfers
+    async with connect("concierge") as s:
+        gone = await call(s, "transfer.cancel", transfer_ref=t["transfer_ref"])
+        again = await s.call_tool("transfer.cancel", {"transfer_ref": t["transfer_ref"]})
+    assert gone["status"] == "cancelled" and t["transfer_ref"] not in sim.partners.transfers
+    assert again.isError
     assert v["voucher_id"] in sim.partners.vouchers
     assert v["amount"] == "25.00" and v["type"] == "meal"
     assert bad.isError and naive.isError

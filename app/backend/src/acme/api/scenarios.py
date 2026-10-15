@@ -155,6 +155,19 @@ def passenger_offer_status(offers: list) -> str | None:
     return chosen[-1].status if chosen else None
 
 
+def matches_step(step: Step, op: str, passenger_id: str, value: str) -> bool:
+    """Whether a manual WhatsApp reply or action matches a scripted preset step (#322)."""
+    if passenger_id != PID:
+        return False
+    if op == "whatsapp_reply":
+        return step.kind == "reply" and step.text == value
+    if op == "whatsapp_action":
+        return (step.kind == "accept" and value == "accept_offer") or (
+            step.kind == "decline" and value == "decline_offer"
+        )
+    return False
+
+
 class ScenarioRunner:
     def __init__(self, rt: CustomerRuntime) -> None:
         self.rt = rt
@@ -201,6 +214,17 @@ class ScenarioRunner:
             await self.radar.tick()
         self.index += 1
         return self.state()
+
+    def advance_if_matches(self, op: str, passenger_id: str, value: str) -> bool:
+        """Advance the step cursor when a manual turn matches the next scripted step (#322)."""
+        if (
+            self.active is not None
+            and self.index < len(self.active.steps)
+            and matches_step(self.active.steps[self.index], op, passenger_id, value)
+        ):
+            self.index += 1
+            return True
+        return False
 
     def state(self) -> ScenarioState:
         p, rt = self.active, self.rt

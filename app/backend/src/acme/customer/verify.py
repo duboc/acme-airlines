@@ -81,11 +81,12 @@ async def verify_journey(rt: CustomerRuntime, rec: JourneyRecord) -> Verificatio
     # hotel (concierge)
     hotel = _last(rec, "hotel_booked")
     booking = rt.sim.partners.hotel_bookings.get(hotel["booking_ref"]) if hotel else None
-    check(
-        "hotel",
-        bool(booking and rec.hotel and rec.hotel.booking_id == hotel["booking_ref"]),
-        "hotel booking missing in the concierge system or on the journey",
-    )
+    assessed = _last(rec, "duty_of_care_assessed")
+    if hotel is None and assessed is not None and not assessed["hotel_required"]:
+        hotel_ok = rec.hotel is None  # DOC-06 / DOC-08: no hotel was due, none was booked
+    else:
+        hotel_ok = bool(booking and rec.hotel and rec.hotel.booking_id == hotel["booking_ref"])
+    check("hotel", hotel_ok, "hotel booking missing in the concierge system or on the journey")
 
     # baggage (WorldTracer)
     routings = []

@@ -33,19 +33,21 @@ def assess(
     resident: bool = False,
     special_needs: bool = False,
 ) -> DutyOfCareEntitlements:
-    """Wait = original scheduled departure -> new departure; it starts at `detected_at` local time.
+    """The wait runs from `min(detected_at, original_departure)` (local) to the new departure.
 
-    Overnight = the new departure falls on a later local calendar day than the original one.
+    Overnight = the new departure falls on a later local calendar day than the wait start.
     """
     tz = original_departure.tzinfo
+    wait_begin = min(detected_at, original_departure).astimezone(tz)
+    new_local = new_departure.astimezone(tz)
     return evaluate_duty_of_care(
         origin_airport=origin,
         destination_airport=destination,
         disruption_type="cancellation",
         disruption_reason=classify_reason(reason),
-        wait_hours=max((new_departure - original_departure).total_seconds() / 3600, 0),
-        wait_start=detected_at.astimezone(tz).time(),
-        requires_overnight=new_departure.astimezone(tz).date() > original_departure.date(),
+        wait_hours=max((new_local - wait_begin).total_seconds() / 3600, 0),
+        wait_start=wait_begin.time(),
+        requires_overnight=new_local.date() > wait_begin.date(),
         passenger_is_origin_resident=resident,
         passenger_has_special_needs=special_needs,
     )

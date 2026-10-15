@@ -16,7 +16,7 @@ from acme import metrics
 from acme.customer.intent import classify  # noqa: F401 - re-exported for callers
 from acme.customer.quiet_hours import can_send_proactive
 from acme.domain.fixtures import GRU
-from acme.domain.journey import DisruptionStatus, PassengerRequest
+from acme.domain.journey import LIVE_OFFER_STATUSES, DisruptionStatus, PassengerRequest
 from acme.llm.port import Acknowledge, DepartureAfter, StructuredRequest
 from acme.telemetry import specialist_span
 
@@ -30,12 +30,23 @@ def _last(rec: JourneyRecord, type_: str) -> dict[str, Any] | None:
 
 
 def collect_facts(rec: JourneyRecord) -> dict[str, Any] | None:
-    """Resolution facts from the journey timeline; None if the resolution is incomplete."""
+    """Resolution facts from the journey timeline; None if the resolution is incomplete.
+
+    What must be there follows the entitlements the rights specialist assessed (DOC-05..08): a
+    hotel, a transfer and meal vouchers are required only when they were due.
+    """
     detected, rebooked = _last(rec, "cancellation_detected"), _last(rec, "rebooked")
     seat, hotel = _last(rec, "seat_held"), _last(rec, "hotel_booked")
     transfer = _last(rec, "transfer_arranged")
     voucher = _last(rec, "voucher_issued")
-    if not (detected and rebooked and seat and hotel and transfer and voucher):
+    if not (detected and rebooked and seat):
+        return None
+    due = _last(rec, "duty_of_care_assessed") or {}  # no assessment: the full DOC-05 care
+    if due.get("hotel_required", True) and not hotel:
+        return None
+    if due.get("ground_transfer_required", True) and not transfer:
+        return None
+    if due.get("meal_vouchers", True) and not voucher:
         return None
     departure = rebooked["departure"]
     return {
@@ -43,17 +54,35 @@ def collect_facts(rec: JourneyRecord) -> dict[str, Any] | None:
         "new_flight": rebooked["flight"],
         "departure": departure[11:16],  # local HH:MM from the ISO string
         "seat": seat["seat"],
-        "hotel_id": hotel["hotel_id"],
-        "has_transfer": True,
-        "has_voucher": True,
+        "hotel_id": hotel["hotel_id"] if hotel else None,
+        "has_transfer": transfer is not None,
+        "has_voucher": voucher is not None,
     }
 
 
 def required_facts(facts: dict[str, Any]) -> list[str]:
-    return [
-        facts["cancelled_flight"], facts["new_flight"], facts["departure"], facts["seat"],
-        facts["hotel_id"], "transfer", "voucher",
-    ]  # fmt: skip
+    needed = [facts["cancelled_flight"], facts["new_flight"], facts["departure"], facts["seat"]]
+    if facts["hotel_id"]:
+        needed.append(facts["hotel_id"])
+    if facts["has_transfer"]:
+        needed.append("transfer")
+    if facts["has_voucher"]:
+        needed.append("voucher")
+    return needed
+
+
+def _care_sentence(f: dict[str, Any]) -> str:
+    extras = [
+        x
+        for x, on in (("a transfer", f["has_transfer"]), ("meal vouchers", f["has_voucher"]))
+        if on
+    ]
+    arranged = f"{' and '.join(extras)} arranged"
+    if f["hotel_id"]:
+        return f"Your hotel {f['hotel_id']} is booked" + (
+            f", with {arranged}. " if extras else ". "
+        )
+    return f"I have {arranged}. " if extras else ""
 
 
 def template_text(name: str, f: dict[str, Any]) -> str:
@@ -61,7 +90,7 @@ def template_text(name: str, f: dict[str, Any]) -> str:
         f"Hi {name}, I'm sorry: flight {f['cancelled_flight']} was cancelled. "
         f"I have already rebooked you on {f['new_flight']}, departing at {f['departure']}, "
         f"with your seat {f['seat']} kept and your bag re-routed. "
-        f"Your hotel {f['hotel_id']} is booked, with a transfer and meal vouchers arranged. "
+        f"{_care_sentence(f)}"
         "Reply here if you need anything changed."
     )
 
@@ -116,7 +145,15 @@ async def send_notification(
     text, source = prepared.text, prepared.source
     if facts != prepared.facts:
         text, source = template_text(prepared.name, facts), "template"
-    msg = await rt.send(rec.passenger_id, text, attachments=["hotel_voucher", "meal_voucher"])
+    attachments = [
+        name
+        for name, issued in (
+            ("hotel_voucher", facts["hotel_id"]),
+            ("meal_voucher", facts["has_voucher"]),
+        )
+        if issued
+    ]
+    msg = await rt.send(rec.passenger_id, text, attachments=attachments)
     resolved_at = max(
         (
             e.timestamp
@@ -165,6 +202,10 @@ async def handle_inbound(
         state.open_requests.append(
             PassengerRequest(request_id=uuid.uuid4().hex[:8], text=intent.text)
         )
+        state.resolution_acknowledged = False
+        for r in state.offers:
+            if r.status in LIVE_OFFER_STATUSES:
+                r.status = "invalidated"
         state.append_event(
             "customer_agent",
             "needs_human",

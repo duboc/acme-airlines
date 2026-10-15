@@ -40,6 +40,7 @@ async def run_duty_of_care(rt: CustomerRuntime, rec: JourneyRecord, rebuild: Reb
     original = await rt.client.call("pss", "flights.get", flight=detected.payload["flight"])
     new = await rt.client.call("pss", "flights.get", flight=rebuild.new_flight)
     new_departure = datetime.fromisoformat(new["scheduled_departure"])
+    profile = await rt.client.call("crm", "profile.get", passenger_id=rec.passenger_id)
     with specialist_span("rights", state.journey_id):
         e = rights.assess(
             origin=original["origin"],
@@ -48,16 +49,21 @@ async def run_duty_of_care(rt: CustomerRuntime, rec: JourneyRecord, rebuild: Reb
             detected_at=detected.timestamp,
             original_departure=datetime.fromisoformat(original["scheduled_departure"]),
             new_departure=new_departure,
+            resident=bool(profile.get("origin_resident", False)),
+            special_needs=bool(profile.get("special_needs", False)),
         )
         state.append_event("rights_agent", "duty_of_care_assessed", rights.entitlements_payload(e))
 
     ok = True
     with specialist_span("concierge", state.journey_id):
+        hotel_ok = True
         if e.hotel_required:
             hotel_ok = await concierge.book_hotel(rt, rec, e)
             ok &= hotel_ok
-            if hotel_ok and e.ground_transfer_required:
-                ok &= await concierge.book_transfers(rt, rec, e, original["origin"], new_departure)
+        if hotel_ok and e.ground_transfer_required:  # DOC-06 has a transfer and no hotel
+            ok &= await concierge.book_transfers(
+                rt, rec, e, original["origin"], new_departure, with_hotel=e.hotel_required
+            )
         if e.meal_vouchers:
             ok &= await concierge.issue_meal_vouchers(rt, rec, e)
     if not ok:

@@ -83,6 +83,15 @@ class PartnerState:
         self.transfers[ref] = rec
         return rec
 
+    def cancel_transfer(self, transfer_ref: str) -> dict:
+        """Remove a booked transfer (a superseded pickup); unknown refs are an error."""
+        if transfer_ref not in self.transfers:
+            raise SimError(f"transfer {transfer_ref} not found")
+        return {
+            "transfer_ref": self.transfers.pop(transfer_ref)["transfer_ref"],
+            "status": "cancelled",
+        }
+
     def issue_voucher(self, type: str, amount: Any) -> dict:
         vid = _ref("VC")
         rec = {"voucher_id": vid, "type": type, "amount": f"{amount:.2f}", "currency": "USD"}
@@ -182,6 +191,11 @@ def build_concierge(sim: SimWorld) -> FastMCP:
     def transfer_book(origin: str, destination: str, at: AwareDatetime) -> dict[str, Any]:
         """Book a ground transfer (`from`/`to` in the brief are `origin`/`destination`)."""
         return p.book_transfer(origin, destination, at)
+
+    @mcp.tool(name="transfer.cancel")
+    def transfer_cancel(transfer_ref: str) -> dict[str, Any]:
+        """Cancel a booked ground transfer (a pickup superseded by a replan)."""
+        return p.cancel_transfer(transfer_ref)
 
     @mcp.tool(name="voucher.issue")
     def voucher_issue(

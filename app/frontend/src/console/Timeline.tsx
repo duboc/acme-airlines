@@ -9,10 +9,34 @@ function kindOf(e: JourneyEvent): string {
 }
 
 function reasonsOf(e: JourneyEvent): string[] {
-  const r = e.payload?.reasons;
-  if (Array.isArray(r)) return r.map(String);
-  if (e.type === 'sales_suppressed' && e.payload?.reason) return [String(e.payload.reason)];
-  return [];
+  const p = e.payload;
+  if (!p) return [];
+  if (Array.isArray(p.reasons)) return p.reasons.map(String);
+  const out: string[] = [];
+  if (typeof p.reason === 'string' && p.reason) {
+    out.push(p.reason);
+  }
+  if (typeof p.error === 'string' && p.error) {
+    const step = typeof p.step === 'string' && p.step ? `${p.step}: ` : '';
+    out.push(`${step}${p.error}`);
+  }
+  if (p.rule_reasons && typeof p.rule_reasons === 'object' && !Array.isArray(p.rule_reasons)) {
+    for (const [k, v] of Object.entries(p.rule_reasons as Record<string, unknown>)) {
+      if (typeof v === 'string' && v) out.push(`${k}: ${v}`);
+    }
+  }
+  if (e.type === 'connection_constraint' && typeof p.text === 'string' && p.text) {
+    out.push(p.text);
+  }
+  if (
+    e.type === 'connection_verified' &&
+    typeof p.flight === 'string' &&
+    typeof p.connection_flight === 'string' &&
+    typeof p.margin_minutes === 'number'
+  ) {
+    out.push(`${p.flight} → ${p.connection_flight} (margin ${p.margin_minutes} min)`);
+  }
+  return out;
 }
 
 export function Timeline({ events }: { events: JourneyEvent[] }) {

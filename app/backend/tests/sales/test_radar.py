@@ -77,6 +77,19 @@ async def test_unacknowledged_resolved_sends_nothing(world):
     assert await radar.tick() == [] and state.offers == []
 
 
+async def test_needs_human_open_request_suppresses_radar(world):
+    radar, rt, jid = world
+    state = resolve(rt, jid, acknowledged=True)
+    await rt.handle_inbound("P-MARIANA", "I need wheelchair assistance at the gate")
+    assert state.resolution_acknowledged is False and len(state.open_requests) == 1
+    assert await radar.tick() == [] and state.offers == []
+    suppressed = [e for e in state.timeline if e.type == "sales_suppressed"]
+    assert suppressed[-1].payload == {
+        "journey_status": "RESOLVED",
+        "reason": "open_request_pending",
+    }
+
+
 async def test_no_open_premium_seats_sends_nothing(world):
     radar, rt, jid = world
     state = resolve(rt, jid)
@@ -196,3 +209,52 @@ def test_sales_package_has_no_passenger_channel_strings():
     text = "\n".join(p.read_text() for p in SALES_DIR.glob("*.py"))
     for word in ("whatsapp", "message.send", "payments", "profile.get"):
         assert word not in text.lower().replace("passenger-channel", "")
+
+
+class FlakyCustomer:
+    """The Customer client, failing `propose_offer` for the first `failures` calls."""
+
+    def __init__(self, inner, failures):
+        self._inner, self.failures, self.calls = inner, failures, 0
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def propose_offer(self, offer):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise httpx.ConnectError("transient Customer RPC error")
+        return await self._inner.propose_offer(offer)
+
+
+async def test_ac1_key_is_recorded_after_a_successful_proposal(world):
+    radar, rt, jid = world
+    resolve(rt, jid)
+    assert radar.export_sent() == []
+    assert len(await radar.tick()) == 1
+    assert [r[0] for r in radar.export_sent()] == [jid]
+    assert await radar.tick() == []  # skipped, not re-proposed
+
+
+async def test_ac2_transient_error_then_retry_sends_the_offer_exactly_once(world):
+    radar, rt, jid = world
+    state = resolve(rt, jid)
+    radar._customer = flaky = FlakyCustomer(radar._customer, failures=1)  # noqa: SLF001
+    with pytest.raises(httpx.ConnectError):
+        await radar.tick()
+    assert radar.export_sent() == [] and state.offers == []  # nothing persisted for the failure
+    assert len(await radar.tick()) == 1  # the retry delivers it
+    assert len(proposed(state)) == 1 and [r[0] for r in radar.export_sent()] == [jid]
+    assert await radar.tick() == []  # a third tick does not repeat it
+    assert len(state.offers) == 1 and flaky.calls == 2
+
+
+async def test_ac3_an_exported_sent_set_never_holds_the_failed_key(world):
+    radar, rt, jid = world
+    resolve(rt, jid)
+    radar._customer = FlakyCustomer(radar._customer, failures=1)  # noqa: SLF001
+    with pytest.raises(httpx.ConnectError):
+        await radar.tick()
+    other = SalesRadar(radar._customer, radar._inventory)  # noqa: SLF001
+    other.import_sent(radar.export_sent())  # what a second worker loads from sales_sent
+    assert len(await other.tick()) == 1
