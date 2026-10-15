@@ -159,3 +159,56 @@ def test_stream_query_works_outside_a_loop():
     app = engine()
     events = list(app.stream_query(message="poll", user_id="u"))
     assert events and events[-1]["author"] == "customer_agent"
+
+
+def test_engine_requirements_match_uv_lock():
+    """#330: direct and runtime transitive packages are pinned to exact uv.lock versions."""
+    import re
+    import tomllib
+    from pathlib import Path
+
+    lock = Path(__file__).resolve().parents[2] / "uv.lock"
+    locked = {p["name"]: p["version"] for p in tomllib.loads(lock.read_text())["package"]}
+    reqs = engine_requirements()
+    seen: set[str] = set()
+    for req in reqs:
+        m = re.fullmatch(r"([A-Za-z0-9_.-]+)(\[[^\]]+\])?==([\w.]+)", req)
+        assert m, f"{req} is not an exact == pin"
+        pkg = m.group(1).lower()
+        assert locked[pkg] == m.group(3), f"{req} drifted from uv.lock ({locked[pkg]})"
+        seen.add(pkg)
+    required_transitive = {
+        "a2a-sdk",
+        "anyio",
+        "certifi",
+        "cloudpickle",
+        "cryptography",
+        "grpcio",
+        "httpcore",
+        "protobuf",
+        "pydantic-core",
+        "starlette",
+        "urllib3",
+        "uvicorn",
+    }
+    assert required_transitive <= seen
+
+
+async def test_a2a_skill_never_returns_replay_tape_or_passenger_pii():
+    """#330: a2a_skill never returns _with_tape or passenger PII even after scenario steps."""
+    import json
+
+    app = engine()
+    app.scenario_start("happy-path")
+    for _ in range(3):
+        step_state = await app.scenario_step()
+    assert step_state.get("tape"), "scenario_step must populate the replay tape"
+    listed = await app.a2a_skill("list_journeys", {})
+    (jid,) = listed["journey_ids"]
+    status = await app.a2a_skill("journey_status", {"journey_id": jid})
+    proposed = await app.a2a_skill("propose_offer", {"offer": offer(jid)})
+    for payload in (listed, status, proposed):
+        assert "tape" not in payload
+        wire = json.dumps(payload)
+        for pii in ("Mariana", "Silva", "MSLV42", "P-MARIANA", "FFP-0001"):
+            assert pii not in wire

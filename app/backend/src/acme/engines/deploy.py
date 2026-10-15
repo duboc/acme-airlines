@@ -60,6 +60,10 @@ def _find(sdk: AgentEngineSdk, display_name: str) -> str | None:
 
 
 def _settings(env: Mapping[str, str], name: str, extra_env: dict[str, str]) -> dict[str, Any]:
+    # Both engines share AGENT_ENGINE_SA (separate GCP SAs require project IAM grants and are
+    # deferred as a PO decision, and `aiplatform.reasoningEngines.query` is resource-scoped per
+    # reasoningEngine rather than operation-scoped; #330). Operation-level separation is enforced in
+    # code (`EngineCustomerClient` calls only `a2a_skill`; verified in `test_architecture.py`).
     return {
         "display_name": name,
         "requirements": customer.engine_requirements(),

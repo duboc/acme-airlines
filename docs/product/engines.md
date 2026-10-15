@@ -121,7 +121,7 @@ local mode. Bodies are never logged. See `docs/product/deploy.md`.
 
 ### Security boundary
 
-Both engines run as `acme-agent-engine` (project-wide `aiplatform.user`), so IAM does not stop the Sales engine from calling the Customer engine's demo ops, which return passenger data. The boundary is enforced in code: `EngineCustomerClient` exposes only the three skills, via `a2a_skill`. The governance architecture test (`tests/governance/test_architecture.py`) checks that Sales sources never call any other Customer engine operation. This residual risk is still accepted for the engines (security audit of #178). In local and compose modes it is now closed at runtime: Sales is fenced to `POST /a2a` on an A2A-only listener, and a Sales-credentialed request to any other route gets 403 plus an audit event (ADR 0102, #230).
+Both engines run as `acme-agent-engine` (`AGENT_ENGINE_SA`, project-wide `aiplatform.user`), and GCP IAM permission `aiplatform.reasoningEngines.query` is resource-scoped per `reasoningEngine` rather than operation-scoped (provisioning separate GCP service accounts per engine requires project IAM grants and is deferred as a PO decision, `#330`). Because `CustomerEngineApp` keeps container-local state in `/tmp/acme-state/state.db` (`max_instances=1`, ADR 0103), `a2a_skill` and the demo operations execute on the same `reasoningEngine` resource. The boundary is enforced in code and verified offline: `EngineCustomerClient` (`acme.sales.client`) exposes and calls only `a2a_skill` (`list_journeys`, `journey_status`, `propose_offer`), `a2a_skill` never returns `_with_tape` or passenger PII, and the governance architecture suite (`tests/governance/test_architecture.py`) verifies that Sales sources never reference or invoke any other Customer engine operation. In local and compose modes the boundary is also enforced at network/listener runtime: Sales is fenced to `POST /a2a` on an A2A-only listener, and a Sales-credentialed request to any other route gets 403 plus an audit event (ADR 0102, #230).
 
 ## Proof
 
@@ -181,14 +181,18 @@ only those requirements (the repo's `acme` is not installed) runs `scripts/engin
 `LLM_MODE=fake`; the Sales engine is loaded (its `set_up()` needs the live Customer engine). Run it
 locally the same way. Unit tests (`tests/engines/test_packaging.py`) cover the tarball layout.
 
-## Self-diagnosis and pinned requirements (#185)
+## Self-diagnosis and pinned requirements (#185, #330)
 
 Agent Engine injects `GOOGLE_CLOUD_PROJECT` as the project **number** (`493084803309`). The LLM
 config accepts the project id or that number for the same project (never another one) and always
 hands the client the id; the deploy also sets `ACME_GENAI_PROJECT=acme-airlines-factory`, which wins.
 
-`ENGINE_REQUIREMENTS` are exact pins equal to `uv.lock` (a test enforces it): the container resolves
-them with pip, so ranges let it drift from what CI tested. Transitive dependencies still float.
+`ENGINE_REQUIREMENTS` pins the 9 direct dependencies plus 12 critical runtime transitive packages
+(`a2a-sdk`, `anyio`, `certifi`, `cloudpickle`, `cryptography`, `grpcio`, `httpcore`, `protobuf`,
+`pydantic-core`, `starlette`, `urllib3`, `uvicorn`) to exact `==` versions matching `uv.lock`
+(enforced by `test_engine_requirements_match_uv_lock` and `test_engine_requirements_are_exact_pins_matching_uv_lock`):
+the container resolves requirements with `pip`, so unpinned ranges would let container builds drift
+from what CI tested.
 
 `set_up()` no longer kills the server: it catches any exception and stores a scrubbed traceback. The
 `diagnostics` operation (both engines; **not** an A2A skill, so Sales cannot call it) returns exactly
