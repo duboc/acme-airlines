@@ -256,7 +256,8 @@ class EngineBackend:
     async def scenario_step(self, scenario_id: str) -> dict:
         """Customer step, then one Sales engine turn (its own trace). `409` conditions are the
         route's job: it checks `active` and `state["done"]` before calling this."""
-        await self._customer.call("scenario_step", **self._ctx())
+        state = await self._customer.call("scenario_step", **self._ctx())
+        self._keep_tape(state)  # the tape of the step just run, whatever worker answers next
         # The step is committed in the engine: the counter follows it, whatever comes next.
         self._step += 1
         self._stir()
@@ -332,6 +333,7 @@ class EngineBackend:
         self._run += 1
         self._stir()
         self._active = None
+        self._tape = None  # the tape belongs to the run that is over (#279)
         return await self._customer.call("reset")
 
     async def api(self, op: str, **kwargs: Any) -> Any:
