@@ -57,11 +57,14 @@ def metric_points():
 
 
 def pytest_collection_modifyitems(config, items):
-    """Timing budgets (`@pytest.mark.budget`, #280) depend on CPU load, so they run only when
-    asked for with `-m budget` (the no-coverage CI step), whatever other `-m` the caller passes."""
-    if "budget" in (config.option.markexpr or ""):
-        return
-    skip = pytest.mark.skip(reason="timing budget: run it with `pytest -m budget --no-cov`")
-    for item in items:
-        if "budget" in item.keywords:
-            item.add_marker(skip)
+    """Timing budgets (`@pytest.mark.budget`, #280) and the long stress tests (`stress`, #288)
+    depend on CPU load or take long, so they run only when asked for with `-m budget` or
+    `-m stress`, whatever other `-m` the caller passes."""
+    expr = config.option.markexpr or ""
+    for mark in ("budget", "stress"):
+        if mark in expr:
+            continue
+        skip = pytest.mark.skip(reason=f"{mark}: run it with `pytest -m {mark} --no-cov`")
+        for item in items:
+            if mark in item.keywords:
+                item.add_marker(skip)

@@ -37,17 +37,40 @@ def dump_journey(j: JourneyState) -> str:
     )
 
 
-class SqliteJourneyStore:
-    """One row per journey (latest snapshot). `path=":memory:"` for tests."""
+BUSY_TIMEOUT_MS = 10_000  # how long a writer waits for another process's write lock (#288)
 
-    def __init__(self, path: str = ":memory:") -> None:
-        self._db = sqlite3.connect(path, check_same_thread=False, timeout=10)
-        if path != ":memory:":  # several processes share one file (#200)
-            self._db.execute("PRAGMA journal_mode=WAL")
+
+def configure_connection(db: sqlite3.Connection) -> None:
+    """WAL (readers never block the writer and vice versa), an explicit `busy_timeout` (a
+    contended write waits instead of failing with "database is locked") and `synchronous=NORMAL`
+    (safe with WAL: a crash may lose the last commit, never corrupt the file; the state is
+    container-local and ephemeral anyway). Applied to every connection on a shared file (#288)."""
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    db.execute("PRAGMA synchronous=NORMAL")
+
+
+class SqliteJourneyStore:
+    """One row per journey (latest snapshot). `path=":memory:"` for tests.
+
+    With `connection`, the store writes through the caller's connection and never commits: the
+    caller owns the transaction (`SharedState` saves the journeys and the snapshot atomically)."""
+
+    def __init__(
+        self, path: str = ":memory:", connection: sqlite3.Connection | None = None
+    ) -> None:
+        self._own = connection is None
+        self._db = connection or sqlite3.connect(path, check_same_thread=False, timeout=10)
+        if self._own and path != ":memory:":  # several processes share one file (#200)
+            configure_connection(self._db)
         self._db.execute(
             "CREATE TABLE IF NOT EXISTS journeys (id TEXT PRIMARY KEY, snapshot TEXT NOT NULL)"
         )
-        self._db.commit()
+        self._commit()
+
+    def _commit(self) -> None:
+        if self._own:
+            self._db.commit()
 
     def save(self, journey: JourneyState) -> None:
         self._db.execute(
@@ -55,7 +78,7 @@ class SqliteJourneyStore:
             "ON CONFLICT(id) DO UPDATE SET snapshot = excluded.snapshot",
             (journey.journey_id, dump_journey(journey)),
         )
-        self._db.commit()
+        self._commit()
 
     def load(self, journey_id: str, clock: Clock | None = None) -> JourneyState | None:
         row = self._db.execute(
@@ -83,7 +106,7 @@ class SqliteJourneyStore:
         """Drop every journey not in `keep` (a scenario reset removes them from the shared DB)."""
         stale = [i for i in self.ids() if i not in keep]
         self._db.executemany("DELETE FROM journeys WHERE id = ?", [(i,) for i in stale])
-        self._db.commit()
+        self._commit()
 
     def close(self) -> None:
         self._db.close()

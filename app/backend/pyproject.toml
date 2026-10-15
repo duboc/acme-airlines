@@ -60,6 +60,7 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = "-m 'not live'"
 markers = [
     "live: calls live external services (e.g. Vertex AI); deselected by default and in CI",
+    "stress: long multi-process stress test (about 30 s); skipped unless selected with -m stress (#288)",
     "budget: timing budget, CPU-load dependent; skipped unless selected with -m budget (#280)",
 ]
 
