@@ -162,12 +162,14 @@ def test_stream_query_works_outside_a_loop():
 
 
 def test_engine_requirements_match_uv_lock():
-    """#330: direct and runtime transitive packages are pinned to exact uv.lock versions."""
+    """#330, #367: all direct pyproject.toml deps and critical runtime transitive packages are
+    pinned to exact uv.lock versions."""
     import re
     import tomllib
     from pathlib import Path
 
-    lock = Path(__file__).resolve().parents[2] / "uv.lock"
+    root = Path(__file__).resolve().parents[2]
+    lock = root / "uv.lock"
     locked = {p["name"]: p["version"] for p in tomllib.loads(lock.read_text())["package"]}
     reqs = engine_requirements()
     seen: set[str] = set()
@@ -177,6 +179,11 @@ def test_engine_requirements_match_uv_lock():
         pkg = m.group(1).lower()
         assert locked[pkg] == m.group(3), f"{req} drifted from uv.lock ({locked[pkg]})"
         seen.add(pkg)
+    direct = {
+        re.match(r"([A-Za-z0-9_.-]+)", d).group(1).lower()
+        for d in tomllib.loads((root / "pyproject.toml").read_text())["project"]["dependencies"]
+    }
+    assert direct <= seen, f"Direct dependencies missing from ENGINE_REQUIREMENTS: {direct - seen}"
     required_transitive = {
         "a2a-sdk",
         "anyio",

@@ -102,12 +102,16 @@ BYPASS_HEADERS = {
         (b"authorization", b"dummy"),
     ],
     "lowercase scheme": [(b"authorization", f"bearer {SALES}".encode())],
+    " lowercase scheme + extra spaces": [(b"authorization", f"bearer  {SALES}".encode())],
     "unknown scheme": [(b"authorization", f"Token {SALES}".encode())],
+    "basic scheme": [(b"authorization", f"Basic {SALES}".encode())],
+    "bare token": [(b"authorization", SALES.encode())],
 }
 
 
+@pytest.mark.parametrize("path", ["/scenario/reset", "/a2a"])
 @pytest.mark.parametrize("name", BYPASS_HEADERS)
-async def test_given_a_malformed_or_duplicated_sales_header_then_still_403(name):
+async def test_given_a_malformed_or_duplicated_sales_header_then_still_403(name, path):
     main = create_local_app(sales_token=SALES)
     sent = []
 
@@ -118,12 +122,36 @@ async def test_given_a_malformed_or_duplicated_sales_header_then_still_403(name)
         return {"type": "http.request", "body": b"", "more_body": False}
 
     scope = {
-        "type": "http", "method": "POST", "path": "/scenario/reset", "query_string": b"",
+        "type": "http", "method": "POST", "path": path, "query_string": b"",
         "headers": BYPASS_HEADERS[name], "scheme": "http", "server": ("t", 80),
         "client": ("c", 1), "http_version": "1.1", "root_path": "",
     }  # fmt: skip
     await main(scope, receive, send)
     assert sent[0]["status"] == 403
+
+
+async def test_a2a_rejects_no_space_bearer_and_accepts_single_mixed_case_authorization_header():
+    main = create_local_app(sales_token=SALES)
+
+    async def call(headers):
+        sent = []
+
+        async def send(msg):
+            sent.append(msg)
+
+        async def receive():
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+
+        scope = {
+            "type": "http", "method": "POST", "path": "/a2a", "query_string": b"",
+            "headers": headers, "scheme": "http", "server": ("t", 80),
+            "client": ("c", 1), "http_version": "1.1", "root_path": "",
+        }  # fmt: skip
+        await main(scope, receive, send)
+        return sent[0]["status"]
+
+    assert await call([(b"authorization", f"Bearer{SALES}".encode())]) == 403
+    assert await call([(b"Authorization", f"Bearer {SALES}".encode())]) != 403
 
 
 def test_customer_runtime_refuses_to_start_without_the_sales_token(monkeypatch):
