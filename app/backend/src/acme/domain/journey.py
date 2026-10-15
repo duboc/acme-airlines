@@ -111,7 +111,7 @@ class JourneyState:
             metrics.needs_human(payload or {})
         elif type == "offer_proposed":
             metrics.offer("proposed")
-        elif type == "accept_offer":
+        elif type == "upgrade_confirmed":  # not the tap (`accept_offer`): a refused one is no sale
             metrics.offer("accepted")
         elif type == "decline_offer":
             metrics.offer("declined")
