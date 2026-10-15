@@ -36,6 +36,8 @@ def _segments(path: str) -> list[str]:
     prev = None
     while path != prev:
         prev, path = path, unquote(path)
+    if any(ord(c) < 0x20 or ord(c) == 0x7F or c in "#?" for c in path):
+        return ["a2a"]
     out: list[str] = []
     for s in path.split("/"):
         if not s or s == ".":

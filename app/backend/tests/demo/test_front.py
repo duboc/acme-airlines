@@ -35,11 +35,15 @@ async def test_serves_index_and_assets(client):
 async def test_spa_fallback(client):
     r = await client.get("/journeys/J1")
     assert r.status_code == 200 and "console" in r.text
+    r_console = await client.get("/console")
+    assert r_console.status_code == 200 and "console" in r_console.text
 
 
 async def test_api_proxies_to_runtime(client):
     r = await client.get("/api/openapi.json")
     assert r.status_code == 200 and "paths" in r.json()
+    assert (await client.get("/api/journeys?limit=10")).status_code == 200
+    assert (await client.get("/api/journeys/J%201")).text != "Not Found"
 
 
 async def test_scenario_resolves_end_to_end(client):
@@ -75,6 +79,16 @@ async def test_scenario_resolves_end_to_end(client):
         "/api/x/%252e%252e/.well-known/agent-card.json",
         "/api/%252e%252e/a2a",
         "/%252e/.well-known/agent-card.json",
+        "/api/a2a%23",
+        "/api/a2a%3f",
+        "/api/a2a%2523",
+        "/api/a2a%253f",
+        "/api/.well-known%2523/agent-card.json",
+        "/api/a2a%250a",
+        "/api/journeys/%2500",
+        "/api/journeys/%251f",
+        "/api/journeys/%257f",
+        "/%00",
     ],
 )
 @pytest.mark.parametrize("method", ["GET", "POST"])
