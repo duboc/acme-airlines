@@ -35,6 +35,9 @@ from acme.policy.margin_opt import recovery_quote
 from acme.telemetry import set_attributes, span
 
 _BLOCKING_OTHER_STATUSES = frozenset({"approved", "sent", "accepted", "declined"})
+# An offer may be re-evaluated against itself (send, accept, recheck) only while it is live. Once
+# it is settled or invalidated it counts as an offer already made: it can never be revived (#340).
+_LIVE_STATUSES = frozenset({"proposed", "approved", "sent"})
 
 
 @dataclass(frozen=True)
@@ -99,7 +102,7 @@ def evaluate(journey: JourneyState, offer: Offer, inventory: CabinInventory) -> 
     if offer.optional is not True:
         f5.append("not_optional")
     for rec in journey.offers:
-        if rec.offer.offer_id == offer.offer_id:
+        if rec.offer.offer_id == offer.offer_id and rec.status in _LIVE_STATUSES:
             continue
         if rec.status in _BLOCKING_OTHER_STATUSES or (
             rec.status == "invalidated" and rec.offer.flight == offer.flight

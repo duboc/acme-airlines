@@ -97,6 +97,36 @@ async def test_accept_after_replanning_is_refused(c):
     await _assert_refused(c, before)
 
 
+async def test_a_stale_accept_after_replanning_and_reacknowledging_never_charges(c):
+    """#340 (live upgrade-race): the invalidated offer was revived by a second Accept tap once the
+    passenger had confirmed the new plan, and charged $135."""
+    c.state.transition(S.REPLANNING)  # the offer is invalidated
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    assert "your journey is being changed" in last_text(c)  # the reason order is kept
+    c.state.transition(S.RESOLVED)
+    c.state.resolution_acknowledged = True  # "Perfect, thanks!" on the new plan, same flight
+    before, seat_before = sent_count(c), seat_of(c)
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    assert not charges(c) and c.rt.sim.partners.net_charged(PNR) == 0
+    assert c.state.offers[0].status == "invalidated"  # not resurrected
+    assert seat_of(c) == seat_before and seat_of(c).seat != "2A"
+    assert sent_count(c) == before + 1  # one honest message, nothing else
+    assert "another offer was already made" in last_text(c)
+
+
+async def test_convert_requires_a_sent_offer_even_if_the_guardrail_would_approve(c, monkeypatch):
+    """Defence in depth: the status invariant holds without rule 5."""
+    from acme.customer import conversion
+    from acme.policy.guardrail_offer import GuardrailDecision
+
+    c.state.offers[0].status = "invalidated"
+    monkeypatch.setattr(
+        conversion, "evaluate_traced", lambda *a: GuardrailDecision(approved=True, reasons=[])
+    )
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    assert not charges(c) and seat_of(c).seat == "14A"
+
+
 async def test_accept_after_journey_moved_to_another_flight_is_refused(c):
     await c.rt.sim.rebook(PNR, "AC1260")  # releases the AC1252 seat; no premium seat is touched
     before = sent_count(c)

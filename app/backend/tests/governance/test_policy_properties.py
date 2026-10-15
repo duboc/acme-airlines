@@ -75,7 +75,12 @@ def scenarios(draw):
 
 def six_rules(journey, offer, inv: CabinInventory) -> list[bool]:
     cap = DISCOUNT_CAP.get(journey.passenger_tier or "")
-    others = [r for r in journey.offers if r.offer.offer_id != offer.offer_id]
+    # the offer itself is excluded only while it is live (#340): settled, it is "already made"
+    others = [
+        r
+        for r in journey.offers
+        if not (r.offer.offer_id == offer.offer_id and r.status in ("proposed", "approved", "sent"))
+    ]
     return [
         journey.status is S.RESOLVED,
         journey.resolution_acknowledged and not journey.open_requests,
