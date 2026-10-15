@@ -15,8 +15,8 @@ class FakeEventSource {
   close() {
     this.closed = true;
   }
-  emit(data: unknown) {
-    this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }));
+  emit(data: unknown, lastEventId = '') {
+    this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data), lastEventId }));
   }
 }
 
@@ -71,6 +71,46 @@ describe('ConsolePage', () => {
     await waitFor(() => expect(screen.getByText('14A')).toBeInTheDocument());
     act(() => es.emit(events[2]));
     expect(screen.getByText('Net margin is negative')).toBeInTheDocument();
+  });
+
+  it('coalesces getJourney calls during an SSE replay burst and deduplicates lastEventId', async () => {
+    render(<ConsolePage />);
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' }));
+    await screen.findByText('Detected');
+    const es = FakeEventSource.instances[0]!;
+
+    let resolveFirst!: (r: Response) => void;
+    let journeyCalls = 0;
+    fetchMock.mockImplementation((url: string) => {
+      if (url === '/api/journeys/J-1') {
+        journeyCalls += 1;
+        if (journeyCalls === 1) {
+          return new Promise<Response>((res) => {
+            resolveFirst = res;
+          });
+        }
+        return json(resolved);
+      }
+      if (url.startsWith('/api/whatsapp/')) return json([]);
+      return json({}, 404);
+    });
+
+    act(() => {
+      for (let i = 1; i <= 16; i += 1) {
+        es.emit(events[0], String(i));
+      }
+      // Duplicate frame with an already-seen SSE id must be ignored.
+      es.emit(events[0], '16');
+    });
+
+    expect(journeyCalls).toBe(1);
+    expect(screen.getAllByRole('listitem')).toHaveLength(5 + 16); // 5 stepper + 16 timeline items
+
+    await act(async () => {
+      resolveFirst(new Response(JSON.stringify(detected), { status: 200 }));
+    });
+    await waitFor(() => expect(journeyCalls).toBe(2));
+    await waitFor(() => expect(screen.getByText('14A')).toBeInTheDocument());
   });
 
   it('shows an actionable error when the API fails', async () => {
@@ -165,25 +205,26 @@ describe('ConsolePage', () => {
   });
 
   describe('guided scenario wiring', () => {
+    const state = {
+      scenario_id: 'happy-path',
+      step_index: 1,
+      total_steps: 5,
+      done: false,
+      last_step: 'x',
+      next_step: 'y',
+      journey_id: 'J-1',
+      journey_status: 'RESOLVED',
+      flight: 'AC1240',
+      seat: '14A',
+      seat_reason: null,
+      offers_sent: 0,
+      offer_status: null,
+      charged: '0.00',
+      needs_human: false,
+      last_message: null,
+    };
+
     it('attaches to the journey created by a scenario step and clears it on start', async () => {
-      const state = {
-        scenario_id: 'happy-path',
-        step_index: 1,
-        total_steps: 5,
-        done: false,
-        last_step: 'x',
-        next_step: 'y',
-        journey_id: 'J-1',
-        journey_status: 'RESOLVED',
-        flight: 'AC1240',
-        seat: '14A',
-        seat_reason: null,
-        offers_sent: 0,
-        offer_status: null,
-        charged: '0.00',
-        needs_human: false,
-        last_message: null,
-      };
       const base = fetchMock.getMockImplementation() as (
         u: string,
         i?: RequestInit,
@@ -211,6 +252,65 @@ describe('ConsolePage', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Start scenario' }));
       await waitFor(() => expect(FakeEventSource.instances[0]!.closed).toBe(true));
       expect(screen.getByText(/no journey open/i)).toBeInTheDocument();
+    });
+
+    it('resets DemoPanel Next step and ChatView button state on Reset, and refreshes journey on ChatView actions', async () => {
+      const offerMsg = {
+        message_id: 'm-offer',
+        direction: 'outbound',
+        text: 'Upgrade offer',
+        timestamp: '2026-10-10T21:06:00Z',
+        buttons: ['Accept upgrade $135'],
+      };
+      const base = fetchMock.getMockImplementation() as (
+        u: string,
+        i?: RequestInit,
+      ) => Promise<Response>;
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url === '/api/scenarios')
+          return json([
+            {
+              id: 'happy-path',
+              title: 'Happy path',
+              description: 'd',
+              steps: ['a'],
+              expectation: 'e',
+            },
+          ]);
+        if (url.startsWith('/api/scenarios/')) return json(state);
+        if (
+          url.endsWith('/whatsapp/P-MARIANA/messages') &&
+          (!init?.method || init.method === 'GET')
+        )
+          return json([offerMsg]);
+        if (url.endsWith('/whatsapp/P-MARIANA/actions')) {
+          detail = {
+            ...resolved,
+            seat: { flight_number: 'AC1240', seat: '2A', cabin: 'premium_business' },
+          };
+          return json({ offer_status: 'accepted' });
+        }
+        return base(url, init);
+      });
+      detail = resolved;
+      render(<ConsolePage />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+      expect(await screen.findByText('14A', { selector: 'dd span' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Next step' })).toBeEnabled();
+
+      // Tap offer button in ChatView -> button disables and ConsolePage refreshes JourneyCard to 2A
+      const offerBtn = await screen.findByRole('button', { name: 'Accept upgrade $135' });
+      await userEvent.click(offerBtn);
+      await waitFor(() =>
+        expect(screen.getByText('2A', { selector: 'dd span' })).toBeInTheDocument(),
+      );
+      expect(screen.getByRole('button', { name: '✓ Accept upgrade $135' })).toBeDisabled();
+
+      // Click Reset -> DemoPanel Next step disables and ChatView remounts with fresh enabled button
+      await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled());
+      expect(await screen.findByRole('button', { name: 'Accept upgrade $135' })).toBeEnabled();
     });
   });
 });

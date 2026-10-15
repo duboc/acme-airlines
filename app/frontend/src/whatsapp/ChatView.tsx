@@ -22,9 +22,11 @@ function formatTime(iso: string) {
 export function ChatView({
   passengerId,
   pollMs = POLL_MS,
+  onChanged,
 }: {
   passengerId: string;
   pollMs?: number;
+  onChanged?: () => void;
 }) {
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const [draft, setDraft] = useState('');
@@ -65,6 +67,7 @@ export function ChatView({
       await sendReply(passengerId, text);
       setDraft('');
       await refresh();
+      onChanged?.();
     } catch {
       setError('Your message was not sent. Please try again.');
     } finally {
@@ -78,6 +81,7 @@ export function ChatView({
     try {
       await postAction(passengerId, actionForButton(label));
       await refresh();
+      onChanged?.();
     } catch {
       setAnswered((s) => {
         const next = new Map(s);
