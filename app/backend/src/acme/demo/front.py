@@ -33,7 +33,19 @@ _HOP = {
 
 
 def _segments(path: str) -> list[str]:
-    return [s for s in unquote(unquote(path)).split("/") if s]
+    prev = None
+    while path != prev:
+        prev, path = path, unquote(path)
+    out: list[str] = []
+    for s in path.split("/"):
+        if not s or s == ".":
+            continue
+        if s == "..":
+            if out:
+                out.pop()
+            continue
+        out.append(s)
+    return out
 
 
 def _blocked(segs: list[str]) -> bool:
