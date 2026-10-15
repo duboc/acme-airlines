@@ -32,7 +32,7 @@ from acme.api.app import (
 from acme.api.errors import ApiError, add_error_handlers, not_found
 from acme.api.events import TimelineEvent
 from acme.api.scenarios import BY_ID, PresetView, ScenarioState
-from acme.api.sse import event_stream
+from acme.api.sse import event_stream, resume_from
 from acme.customer.runtime import WhatsAppMessage
 
 ENV_CUSTOMER, ENV_SALES = "AGENT_ENGINE_CUSTOMER", "AGENT_ENGINE_SALES"
@@ -308,6 +308,7 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
             limit=limit,
             poll_seconds=POLL_SECONDS,
             still_open=lambda: backend.run == run,
+            start_after=resume_from(request.headers.get("last-event-id")),
         )
         return StreamingResponse(stream, media_type="text/event-stream")
 

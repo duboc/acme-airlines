@@ -24,7 +24,7 @@ from acme.api.scenarios import (
     ScenarioState,
     preset_view,
 )
-from acme.api.sse import event_stream
+from acme.api.sse import event_stream, resume_from
 from acme.customer.adk_agent import CARD_PATH, customer_agent_card
 from acme.customer.conversion import NoSentOffer, accept_offer, decline_offer
 from acme.customer.loop import CustomerLoop
@@ -308,6 +308,7 @@ def create_local_app(clock: Clock | None = None, sales_token: str | None = None)
             limit=limit,
             poll_seconds=SSE_POLL_SECONDS,
             still_open=lambda: rt.journeys.get(journey_id) is rec,
+            start_after=resume_from(request.headers.get("last-event-id")),
         )
         return StreamingResponse(stream, media_type="text/event-stream")
 

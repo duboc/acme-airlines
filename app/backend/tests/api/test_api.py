@@ -95,8 +95,8 @@ async def test_sse_streams_existing_and_new_events(client, app):
     await task
     assert r.headers["content-type"].startswith("text/event-stream")
     frames = [f for f in r.text.split("\n\n") if f]
-    assert all(f.startswith("data: ") for f in frames)
-    events = [json.loads(f[len("data: ") :]) for f in frames]
+    assert all(f.startswith("id: ") and "\ndata: " in f for f in frames)
+    events = [json.loads(f.split("\ndata: ", 1)[1]) for f in frames]
     types = [e["type"] for e in events]
     assert types[:3] == ["cancellation_detected", "status_changed", "profile_loaded"]
     assert "rebooked" in types and types[-1] == "ping"
