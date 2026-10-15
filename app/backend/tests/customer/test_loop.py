@@ -139,7 +139,10 @@ async def test_the_loop_never_dies_on_an_unexpected_error():
     rt.tick = boom
     loop = CustomerLoop(rt, interval=0.005, backoff_base=0.005, backoff_cap=0.01)
     loop.start()
-    await asyncio.sleep(0.15)
+    for _ in range(500):  # poll, do not assume the runner is fast: 5 s deadline
+        if n["i"] >= 3:
+            break
+        await asyncio.sleep(0.01)
     assert loop.running and n["i"] >= 3  # still alive, still retrying
     await loop.stop()
 
