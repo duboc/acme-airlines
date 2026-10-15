@@ -38,7 +38,11 @@ export function ChatView({
 
   const refresh = useCallback(async () => {
     try {
-      setMessages(await fetchMessages(passengerId));
+      const next = await fetchMessages(passengerId);
+      setMessages(next);
+      if (next.length === 0) {
+        setAnswered((prev) => (prev.size === 0 ? prev : new Map()));
+      }
       setError('');
     } catch {
       setError('Cannot reach the messaging service. Retrying.');
@@ -108,46 +112,49 @@ export function ChatView({
       )}
       <div className="chat-log" role="log" aria-label="Conversation">
         {messages.length === 0 && <p className="chat-empty">No messages yet.</p>}
-        {messages.map((m) => (
-          <div key={m.message_id} className={`bubble-row ${m.direction}`}>
-            <div className="bubble">
-              <p className="bubble-text">
-                <span className="sr-only">
-                  {m.direction === 'inbound' ? 'You: ' : 'ACME Airlines: '}
-                </span>
-                {m.text}
-              </p>
-              {m.attachments && m.attachments.length > 0 && (
-                <div className="attachments" aria-label="Attachments">
-                  {m.attachments.map((a) => (
-                    <span key={a} className="attachment-chip">
-                      {attachmentLabel(a)}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <time dateTime={m.timestamp}>{formatTime(m.timestamp)}</time>
-              {m.buttons && m.buttons.length > 0 && (
-                <>
-                  <p className="quick-hint">Optional. You can ignore this.</p>
-                  <div className="quick-replies" role="group" aria-label="Quick replies">
-                    {m.buttons.map((b) => (
-                      <button
-                        key={b}
-                        type="button"
-                        disabled={answered.has(m.message_id)}
-                        aria-pressed={answered.get(m.message_id) === b}
-                        onClick={() => onButton(m, b)}
-                      >
-                        {answered.get(m.message_id) === b ? `✓ ${b}` : b}
-                      </button>
+        {messages.map((m, idx) => {
+          const isSettled = answered.has(m.message_id) || idx < messages.length - 1;
+          return (
+            <div key={m.message_id} className={`bubble-row ${m.direction}`}>
+              <div className="bubble">
+                <p className="bubble-text">
+                  <span className="sr-only">
+                    {m.direction === 'inbound' ? 'You: ' : 'ACME Airlines: '}
+                  </span>
+                  {m.text}
+                </p>
+                {m.attachments && m.attachments.length > 0 && (
+                  <div className="attachments" aria-label="Attachments">
+                    {m.attachments.map((a) => (
+                      <span key={a} className="attachment-chip">
+                        {attachmentLabel(a)}
+                      </span>
                     ))}
                   </div>
-                </>
-              )}
+                )}
+                <time dateTime={m.timestamp}>{formatTime(m.timestamp)}</time>
+                {m.buttons && m.buttons.length > 0 && (
+                  <>
+                    <p className="quick-hint">Optional. You can ignore this.</p>
+                    <div className="quick-replies" role="group" aria-label="Quick replies">
+                      {m.buttons.map((b) => (
+                        <button
+                          key={b}
+                          type="button"
+                          disabled={isSettled}
+                          aria-pressed={answered.get(m.message_id) === b}
+                          onClick={() => onButton(m, b)}
+                        >
+                          {answered.get(m.message_id) === b ? `✓ ${b}` : b}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={endRef} />
       </div>
       <form className="chat-input" onSubmit={onSubmit}>
