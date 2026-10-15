@@ -76,8 +76,13 @@ class SalesRouted:
 
     async def stream(self, **kwargs):
         c = self.containers
-        c.pinned = c.i % len(c.apps)  # the Sales turn's calls all reach the same replica
-        c.i += 1
+        # The Sales turn's calls all reach ONE replica: the one that just ran the Customer step.
+        # (An offer made on a replica that is later at the same step without having replayed it is
+        # the cross-replica gap of ADR 0103; the single-container deployment shares its state.)
+        # The routing of this test used to depend on how many engine queries the API made per step.
+        c.pinned = next(
+            (i for i, op in reversed(c.log) if op == "scenario_step"), c.i % len(c.apps)
+        )
         try:
             async for event in self.sales.async_stream_query(**kwargs):
                 yield event
