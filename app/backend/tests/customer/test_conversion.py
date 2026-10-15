@@ -194,6 +194,8 @@ async def test_accept_when_2a_is_taken_by_another_pnr_never_charges(c):
     before = sent_count(c)
     assert await accept_offer(c.rt, c.rec) == "invalidated"
     await _assert_refused(c, before)
+    decision = last_decision(c)
+    assert decision["approved"] is False and decision["reasons"] == ["no_inventory"]
 
 
 async def test_seat_assign_failure_after_charge_voids_the_charge(c, monkeypatch):
@@ -210,6 +212,8 @@ async def test_seat_assign_failure_after_charge_voids_the_charge(c, monkeypatch)
     (charge,) = charges(c).values()
     assert charge["status"] == "voided" and c.rt.sim.partners.net_charged(PNR) == 0
     assert seat_of(c).seat == "14A" and c.state.offers[0].status == "invalidated"
+    assert dcs_state(c.rt.sim).holds == {}
+    assert c.rt.sim.cabin_inventory("AC1252", "premium_business").open_seats == 4
     assert sent_count(c) == before + 1
     assert "not been charged" in last_text(c) or "reversed" in last_text(c)
     assert any(e.type == "charge_voided" for e in c.state.timeline)
@@ -226,6 +230,8 @@ async def test_charge_failure_leaves_no_charge_and_keeps_14a(c, monkeypatch):
     monkeypatch.setattr(c.rt.client, "call", call)
     assert await accept_offer(c.rt, c.rec) == "invalidated"
     assert charges(c) == {} and seat_of(c).seat == "14A"
+    assert dcs_state(c.rt.sim).holds == {}
+    assert c.rt.sim.cabin_inventory("AC1252", "premium_business").open_seats == 4
 
 
 async def test_hold_precedes_charge(c, monkeypatch):
@@ -335,14 +341,15 @@ async def test_no_release_when_the_upgrade_fails(c, monkeypatch):
     tools = []
 
     async def call(server, tool, **args):
-        tools.append(tool)
+        tools.append((tool, args.get("seat")))
         if tool == "seat.assign":
             raise ToolError("dcs/seat.assign: boom")
         return await real(server, tool, **args)
 
     monkeypatch.setattr(c.rt.client, "call", call)
     assert await accept_offer(c.rt, c.rec) == "invalidated"
-    assert "seat.release" not in tools
+    assert ("seat.release", "14A") not in tools
+    assert ("seat.release", "2A") in tools
     assert seat_of(c).seat == "14A" and "14A" not in open_economy(c)
     assert not [e for e in c.state.timeline if e.type == "seat_released"]
 
@@ -373,10 +380,36 @@ async def test_replanning_racing_the_charge_voids_it_and_says_why(c, monkeypatch
     monkeypatch.setattr(c.rt.client, "call", call)
     assert await accept_offer(c.rt, c.rec) == "invalidated"
     assert c.rt.sim.partners.net_charged(PNR) == 0 and seat_of(c).seat == "14A"
+    assert dcs_state(c.rt.sim).holds == {}
+    assert c.rt.sim.cabin_inventory("AC1252", "premium_business").open_seats == 4
     (voided,) = [e for e in c.state.timeline if e.type == "charge_voided"]
     assert voided.payload["reason"] == "journey_changed"
     assert "your journey is being changed" in last_text(c) and "not been charged" in last_text(c)
     assert not [e for e in c.state.timeline if e.type == "seat_released"]  # 14A is kept
+
+
+async def test_status_invalidated_racing_the_charge_logs_refusal_not_approval_and_releases_hold(
+    c, monkeypatch
+):
+    from acme.customer import conversion
+    from acme.policy.guardrail_offer import GuardrailDecision
+
+    real = c.rt.client.call
+
+    async def call(server, tool, **args):
+        if tool == "charge":
+            c.state.offers[0].status = "invalidated"
+        return await real(server, tool, **args)
+
+    monkeypatch.setattr(c.rt.client, "call", call)
+    monkeypatch.setattr(conversion, "evaluate_traced", lambda *a: GuardrailDecision(True, ["a"]))
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    assert c.rt.sim.partners.net_charged(PNR) == 0 and seat_of(c).seat == "14A"
+    assert dcs_state(c.rt.sim).holds == {}
+    assert c.rt.sim.cabin_inventory("AC1252", "premium_business").open_seats == 4
+    decision = last_decision(c)
+    assert decision["approved"] is False and decision["reasons"] == ["offer_already_made"]
+    assert "another offer was already made" in last_text(c)
 
 
 async def test_a_change_request_waits_for_an_in_flight_accept(c):
