@@ -77,6 +77,19 @@ async def test_unacknowledged_resolved_sends_nothing(world):
     assert await radar.tick() == [] and state.offers == []
 
 
+async def test_needs_human_open_request_suppresses_radar(world):
+    radar, rt, jid = world
+    state = resolve(rt, jid, acknowledged=True)
+    await rt.handle_inbound("P-MARIANA", "I need wheelchair assistance at the gate")
+    assert state.resolution_acknowledged is False and len(state.open_requests) == 1
+    assert await radar.tick() == [] and state.offers == []
+    suppressed = [e for e in state.timeline if e.type == "sales_suppressed"]
+    assert suppressed[-1].payload == {
+        "journey_status": "RESOLVED",
+        "reason": "open_request_pending",
+    }
+
+
 async def test_no_open_premium_seats_sends_nothing(world):
     radar, rt, jid = world
     state = resolve(rt, jid)

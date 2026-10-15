@@ -16,7 +16,7 @@ from acme import metrics
 from acme.customer.intent import classify  # noqa: F401 - re-exported for callers
 from acme.customer.quiet_hours import can_send_proactive
 from acme.domain.fixtures import GRU
-from acme.domain.journey import DisruptionStatus, PassengerRequest
+from acme.domain.journey import LIVE_OFFER_STATUSES, DisruptionStatus, PassengerRequest
 from acme.llm.port import Acknowledge, DepartureAfter, StructuredRequest
 from acme.telemetry import specialist_span
 
@@ -165,6 +165,10 @@ async def handle_inbound(
         state.open_requests.append(
             PassengerRequest(request_id=uuid.uuid4().hex[:8], text=intent.text)
         )
+        state.resolution_acknowledged = False
+        for r in state.offers:
+            if r.status in LIVE_OFFER_STATUSES:
+                r.status = "invalidated"
         state.append_event(
             "customer_agent",
             "needs_human",
