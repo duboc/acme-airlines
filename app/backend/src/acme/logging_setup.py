@@ -14,6 +14,7 @@ import logging
 import re
 import traceback
 from functools import lru_cache
+from typing import Any
 
 NOISY = (
     "mcp", "httpx", "httpcore", "google_genai", "google.genai", "google.adk", "google_adk",
@@ -60,6 +61,18 @@ def redact(text: str) -> str:
     return text
 
 
+def _redact_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, dict):
+        return {k: _redact_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_value(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_value(v) for v in value)
+    return value
+
+
 def _redact_error_paths(record: logging.LogRecord) -> None:
     """The traceback and stack are formatted by the handler, after the message was redacted, so
     they must be redacted here (#233): exception messages carry tool payloads on exactly the error
@@ -88,6 +101,14 @@ def configure_logging() -> None:
         return
     _installed = True
     previous = logging.getLogRecordFactory()
+    orig_make_record = logging.Logger.makeRecord
+
+    def make_record(
+        self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None
+    ) -> logging.LogRecord:
+        if extra:
+            extra = {k: _redact_value(v) for k, v in extra.items()}
+        return orig_make_record(self, name, level, fn, lno, msg, args, exc_info, func, extra, sinfo)
 
     def factory(*args, **kwargs) -> logging.LogRecord:
         record = previous(*args, **kwargs)
@@ -103,4 +124,5 @@ def configure_logging() -> None:
             pass
         return record
 
+    logging.Logger.makeRecord = make_record  # type: ignore[method-assign]
     logging.setLogRecordFactory(factory)
