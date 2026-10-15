@@ -21,6 +21,11 @@ class MutationGate(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("10 of 10 mutants killed", md)
 
+    def test_the_heading_names_the_governance_paths_not_only_the_policy_code(self):
+        _, md = gate.evaluate(CLEAN, "")
+        self.assertIn("policy + governance paths", md.splitlines()[0])
+        self.assertNotIn("`acme/policy/`", md)
+
     def test_a_surviving_mutant_fails_and_is_listed_in_the_summary(self):
         code, md = gate.evaluate({**CLEAN, "killed": 9, "survived": 1}, RESULTS)
         self.assertEqual(code, 1)
