@@ -111,7 +111,16 @@ def journey_summary(rec: JourneyRecord) -> JourneySummary:
 def journey_detail_view(rt: Runtime, rec: JourneyRecord) -> JourneyDetail:
     """The `GET /journeys/{id}` body; shared with the Customer Agent Engine operations (#162)."""
     pnr: PNR = rt.world.pnrs[rec.pnr_locator]
-    offers = [o for o in rec.state.offers if o.status not in ("invalidated", "rejected")]
+    # An invalidated offer that WAS sent stays visible as such (upgrade-race steps 5 and 6: the
+    # scenario state, the timeline and the chat all say so, #339); one withdrawn before it was ever
+    # sent, and a rejected one, never reached the passenger.
+    sent_ids = {e.payload.get("offer_id") for e in rec.state.timeline if e.type == "offer_sent"}
+    offers = [
+        o
+        for o in rec.state.offers
+        if o.status != "rejected"
+        and (o.status != "invalidated" or str(o.offer.offer_id) in sent_ids)
+    ]
     return JourneyDetail(
         journey_id=rec.state.journey_id,
         passenger_id=rec.passenger_id,

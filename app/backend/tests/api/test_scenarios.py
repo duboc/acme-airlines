@@ -105,3 +105,23 @@ async def test_openapi_documents_scenarios(client):
         paths
     )
     assert render_openapi(create_app()).count("/scenarios") >= 3
+
+
+async def test_journey_detail_keeps_an_offer_that_was_sent_and_then_invalidated(client):
+    """#339: upgrade-race steps 5-6 invalidate the sent offer; the scenario state, the timeline and
+    the chat say so, and `GET /journeys/{id}` returned `offer: null` (the console: "None")."""
+    s = await run_to_end(client, "upgrade-race")
+    assert s["offer_status"] == "invalidated"
+    (journey,) = (await client.get("/journeys")).json()
+    detail = (await client.get(f"/journeys/{journey['journey_id']}")).json()
+    assert detail["offer"]["status"] == "invalidated"
+    assert detail["offer"]["price"] == "135.00" and detail["offer"]["flight"] == "AC1252"
+
+
+async def test_journey_detail_hides_an_offer_withdrawn_before_it_was_sent(client):
+    await run_to_end(client, "upgrade-race")
+    (journey,) = (await client.get("/journeys")).json()
+    rec = client._transport.app.state.runtime.journeys[journey["journey_id"]]  # noqa: SLF001
+    rec.state._timeline[:] = [e for e in rec.state.timeline if e.type != "offer_sent"]  # noqa: SLF001
+    detail = (await client.get(f"/journeys/{journey['journey_id']}")).json()
+    assert detail["offer"] is None  # it never reached the passenger
