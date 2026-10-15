@@ -3,7 +3,7 @@ history reads the same after a cross-container recovery. Offline: the deployed m
 for by an LLM with different wording and a different parse."""
 
 import json
-from datetime import time
+from datetime import UTC, datetime, time
 
 import pytest
 
@@ -173,3 +173,24 @@ async def test_recorded_failures_are_replayed_as_failures_and_misses_fall_back()
     assert replay.misses == 1  # the second call had no entry: fake model, counted
     assert isinstance(await replay.parse_passenger_request("thanks"), Acknowledge)
     assert replay.misses == 2
+
+
+async def test_the_rebuild_proof_replays_the_plain_runs_tape_not_the_decoys(monkeypatch):
+    """#279 live run 3: parking the engine on the decoy replaced backend._tape with the decoy's, so
+    the forced rebuild replayed the wrong tape (tape_miss, every compose differed). The proof must
+    put the plain run's tape back together with _active and _step."""
+    from tests.live.agent_engine_proof import run_rebuild_proof
+
+    app, cust, sales = build(Creative())
+    backend = EngineBackend(cust, sales)
+    log = diags(monkeypatch)
+
+    def logs(since):
+        now = datetime.now(UTC).isoformat()
+        return [{"ts": now, "text": "ACME_DIAG " + json.dumps({"event": e, **kw})}
+                for e, kw in log if e == "rebuild"]  # fmt: skip
+
+    report = await run_rebuild_proof(backend, logs, "happy-path", "seat-taken", wait=0.0)
+    assert report.failures == []
+    (_, rebuild) = next(e for e in log if e[0] == "rebuild")
+    assert rebuild["tape_miss"] == 0
