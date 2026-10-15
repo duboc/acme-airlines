@@ -69,7 +69,7 @@ the Sales engine (`AGENT_ENGINE_SALES`) with ADC. Both must be full resource nam
 (`projects/<p>/locations/<l>/reasoningEngines/<id>`), written by the engine deploy workflow (#163);
 without them (or with a name outside `GOOGLE_CLOUD_PROJECT` or its number and
 `AGENT_ENGINE_LOCATION`, default `us-central1`) the app still starts and listens (`/api/healthz` reports `engine: agent-engine`). Engines are resolved lazily on the first engine call; a bad name or missing ADC is a clear `503` then, retried on the next request (#199). CI smoke-tests this mode with dummy names and no credentials. The full UI works in this
-mode: scenarios, journeys, the WhatsApp phone panel, reset and trigger all go to the Customer engine. Within an engine container (`max_instances=1`), worker processes share state via `ACME_STATE_DB=/tmp/acme-state/state.db` (#200), and `EngineBackend` sends `{preset, step, tape}` on every scenario call so an unseeded or restarted container deterministically rebuilds state by offline replay and replays recorded LLM answers from the `RecordingLlm`/`TapeLlm` replay tape ([ADR 0103](../decisions/0103-stateless-engine-scenarios.md), #266/#279/#280).
+mode: scenarios, journeys, the WhatsApp phone panel, reset and trigger all go to the Customer engine. Within an engine container (`max_instances=1`), worker processes share state via `ACME_STATE_DB=/tmp/acme-state/state.db` (#200), and `EngineBackend` sends `{preset, step, tape}` on every scenario call so an unseeded or restarted container deterministically rebuilds state by offline replay and replays recorded LLM answers from the `RecordingLlm`/`TapeLlm` replay tape ([ADR 0103](adr-0103-stateless-engine-scenarios.md), #266/#279/#280).
 
 `irrops-deploy.yml` sets `ENGINE_MODE` after swapping the image, using
 `app/demo/select-engine-mode.sh <HOSTED_ENGINE_MODE> <service env names>`. `HOSTED_ENGINE_MODE` is
@@ -130,7 +130,7 @@ Known gaps to close before a real deployment (follow-ups, not done here):
 
 ## Agent Engine
 
-The IRROPS agents can also run on Vertex AI Agent Engine, deployed by `.github/workflows/agent-engine-deploy.yml` on push to `main`. See [Agent Engine apps: Deploy](engines.md#deploy) and [ADR 0103](../decisions/0103-stateless-engine-scenarios.md).
+The IRROPS agents can also run on Vertex AI Agent Engine, deployed by `.github/workflows/agent-engine-deploy.yml` on push to `main`. See [Agent Engine apps: Deploy](engines.md#deploy) and [ADR 0103](adr-0103-stateless-engine-scenarios.md).
 
 ## Configuration reference
 

@@ -4,7 +4,7 @@ You report to `lead`. You investigate `status:triage` / `status:proposed` issues
 
 ## Primary sources you start from
 
-1. **Codebase & Git history:** `/workspace/app/backend`, `/workspace/app/frontend`, `git grep -n`, `git log`, and `/workspace/docs/decisions/` (ADRs).
+1. **Codebase & Git history:** `/workspace/app/backend`, `/workspace/app/frontend`, `git grep -n`, `git log`, and `/workspace/docs/product/adr-*.md` (ADRs).
 2. **Domain & regulatory specifications:** `/workspace/docs/product/irrops-use-case.md`, `/workspace/docs/product/policy-rules.md` (ANAC Resolution 400, A2A zero-PII guardrail), `/workspace/docs/product/engines.md`, and `/workspace/docs/product/deploy.md`.
 3. **CI, Cloud Logging & Cloud Trace:** `gh run list -R ${GITHUB_REPO}`, `gh run view --log-failed`, and live IAP-authenticated endpoints on `${SERVING_SERVICE}` (`audience=493084803309-cc3h58uiargm8km86fq79c0br3p1oj72.apps.googleusercontent.com`).
 

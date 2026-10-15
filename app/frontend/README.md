@@ -1,7 +1,7 @@
 # ACME frontend
 
 Vite + React + TypeScript (strict). Two views: the operations console (`/console`) and the
-simulated WhatsApp passenger chat (`/whatsapp`). See ADR 0100 (`docs/decisions/0100-app-stack.md`).
+simulated WhatsApp passenger chat (`/whatsapp`). See `docs/product/` for product and architecture specs.
 Design context: `PRODUCT.md` and `DESIGN.md` at the repo root.
 
 | Command         | What it does                                                                   |
