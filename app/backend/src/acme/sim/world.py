@@ -107,6 +107,7 @@ class SimWorld:
                 old = self.flight(seg.flight_number)
                 if (old.origin, old.destination) == (new.origin, new.destination):
                     pnr.segments[i] = Segment(flight_number=flight)
+                    self._release_old_seats(pnr, old)
                     pnr.seats = [s for s in pnr.seats if s.flight_number != old.number]
                     return pnr
             raise SimError(f"PNR {locator} has no segment on {new.origin}-{new.destination}")
@@ -138,6 +139,21 @@ class SimWorld:
             if inv.flight_number == flight and inv.cabin == cabin:
                 return self._live(inv)
         raise SimError(f"no {cabin} inventory for {flight}")
+
+    def _release_old_seats(self, pnr: PNR, old: Flight) -> None:
+        """Give the seats this PNR held or was assigned on the flight it leaves back to DCS (the
+        docstring of `rebook` always said so): otherwise a replan to another flight and back finds
+        her own seat missing from the old flight's map (#345). A cancelled flight has no map."""
+        if old.status == "cancelled":
+            return
+        from acme.sim.dcs import dcs_state
+
+        dcs = dcs_state(self)
+        for seat in [s.seat for s in pnr.seats if s.flight_number == old.number]:
+            dcs.release(old.number, seat, pnr.locator)
+        for (flight, seat), owner in list(dcs.holds.items()):
+            if flight == old.number and owner == pnr.locator:
+                dcs.release(flight, seat, pnr.locator)
 
     def _live(self, inv: CabinInventory) -> CabinInventory:
         """The seed count capped by the seats that really are free: those the flight still lists
