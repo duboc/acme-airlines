@@ -40,11 +40,10 @@ export function ConsolePage() {
   useEffect(() => close, [close]);
 
   const open = useCallback(
-    function connect(id: string) {
+    function connect(id: string, seenIds: Set<string> = new Set<string>()) {
       close();
       const es = new EventSource(eventsUrl(id));
       source.current = es;
-      const seenIds = new Set<string>();
       let inflight = false;
       let dirty = false;
 
@@ -60,6 +59,7 @@ export function ConsolePage() {
             const j = await getJourney(id);
             if (source.current !== es) return;
             setJourney(j);
+            setError(null);
           } while (dirty && source.current === es);
         } catch (err) {
           if (source.current === es) {
@@ -88,7 +88,7 @@ export function ConsolePage() {
       es.onerror = () => {
         if (source.current === es && (es as { readyState?: number }).readyState === 2) {
           reconnectTimer.current = setTimeout(() => {
-            if (source.current === es) connect(id);
+            if (source.current === es) connect(id, seenIds);
           }, SSE_RECONNECT_MS);
         }
       };
@@ -139,11 +139,12 @@ export function ConsolePage() {
   }
 
   async function demoChanged(state?: ScenarioState) {
-    const id = state?.journey_id ?? currentId;
-    if (!id) return;
     try {
+      const id = state?.journey_id ?? currentId ?? (await listJourneys())[0]?.journey_id;
+      if (!id) return;
       if (source.current && currentId === id) setJourney(await getJourney(id));
       else await attach(id);
+      setError(null);
     } catch (err) {
       setError(formatTransientError(err, 'Could not refresh the journey.'));
     }
