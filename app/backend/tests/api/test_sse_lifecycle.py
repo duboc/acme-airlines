@@ -77,7 +77,7 @@ async def test_given_the_lifetime_cap_when_reached_then_the_stream_ends_cleanly(
     monkeypatch.setattr(sse, "SSE_MAX_SECONDS", 0.05)
     stream = event_stream(Request(), Fetch(), limit=None, poll_seconds=0.001)
     assert all(frame == KEEPALIVE for frame in await drain(stream))
-    assert sse.SSE_MAX_SECONDS < 300  # the real cap sits under the Cloud Run request timeout
+    assert sse.SSE_MAX_SECONDS <= 60  # short, so an unnoticed dead client costs at most a minute
 
 
 async def test_given_a_limit_when_events_arrive_then_exactly_that_many_frames_are_sent():

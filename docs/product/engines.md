@@ -381,3 +381,22 @@ State is per container (`/tmp/acme-state/state.db`). The caller (`EngineBackend`
 - **Replay tape (`RecordingLlm` / `TapeLlm`, #279):** On `LLM_MODE=vertex`, message wording and passenger reply parsing come from Gemini, so replaying with `FakeLlm` alone altered message text after a rebuild. `RecordingLlm` records each LLM answer in order (keyed by message kind `offer`/`notice` for compose, or a short SHA-256 of the passenger text for parse) and returns it as `tape` in scenario state. `EngineBackend` keeps `tape` next to `preset`/`step`, strips `tape` before returning state to the API client or Sales (the tape holds passenger text and is never logged, traced, exported in metrics, or emitted in `ACME_DIAG`), and sends it back on subsequent Customer calls. During a rebuild, `TapeLlm` replays matching entries and falls back to `FakeLlm` on a miss (`tape_miss`). The tape is untrusted input (at most 32 entries, texts at most 2000 chars, parse entries schema-validated; malformed tapes are ignored as a whole). Because `RecordingLlm` lives per worker process, if replaying with a partial tape raises, the rebuild retries once with no tape (`tape_discarded=1`). Separately, when the live model fails closed to `Other` on a passenger reply, `classify` falls back to the deterministic time pattern (`parse_kind`, `parse_source` in `ACME_DIAG`).
 - **Registry cache & rebuild latency budget (#280):** `warm_registry()` in `set_up()` builds simulator tool registries once per process and shares them across runs via `sim/current.py`, while rebuilds reuse sim sessions. This keeps cross-container rebuild p95 within the enforced `< 600 ms` budget (`500 ms` target, checked in CI by `pytest -m budget --no-cov`).
 - **Live proof of the rebuild (#279):** The `Agent Engine Live Proof` workflow (`workflow_dispatch` only, never a PR check) has a forced-rebuild step: it runs `happy-path` plainly and snapshots state, journeys and the WhatsApp conversation, parks the engine on `seat-taken`, then asks for the final step of `happy-path`, so the engine rebuilds. The step fails unless (1) the Customer log has exactly one `ACME_DIAG rebuild` for it, (2) the rebuilt state, journeys and conversation (without the random `message_id`; offer message wording may differ when the Sales tick ran on another worker/container as long as position, buttons, attachments, timestamp and offer facts match, reported as `"offer wording differs"`) equal the plain run, and (3) there is no extra or repeated WhatsApp message and no extra offer. The run summary lists the rebuild latency (the engine's `ms` and the client-side wall time). Logic and its offline tests: `app/backend/tests/live/agent_engine_proof.py`, `test_agent_engine_proof_logic.py`.
+
+## Event stream lifetime on Cloud Run (#305)
+
+`GET /journeys/{id}/events` is an SSE stream. On Cloud Run the app is **not told** when a client
+disconnects while the response is being proxied (the front proxy, then Google's frontend sit in
+between), so the stream cannot rely on a disconnect signal alone. What bounds it:
+
+- a keep-alive comment every 3 s (a write only, never an engine query): a write to a dead
+  connection fails and ends the stream, and the front proxy also checks `is_disconnected` every
+  second;
+- a lifetime cap of **60 s** per stream (`acme.api.sse.SSE_MAX_SECONDS`, was 270 s) with a clean
+  end: `EventSource` reconnects by itself, sends `Last-Event-ID`, and the server resumes after that
+  event (no duplicates in the UI), so a viewer sees nothing, while a vanished client that the
+  platform never reported costs at most a minute of polling;
+- the engine is asked at most once per interval per journey however many streams are open (the
+  shared poller, 1.6 s backing off to 6 s), and an engine or quota error is a typed 429/503 with
+  `Retry-After` (a `retry:` hint inside an open stream).
+
+Expect a reconnect about every minute in the browser network panel: it is by design.
