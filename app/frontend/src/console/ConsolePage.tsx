@@ -26,6 +26,7 @@ export function ConsolePage() {
   const [busy, setBusy] = useState(false);
   const [resetSeq, setResetSeq] = useState(0);
   const [chatSeq, setChatSeq] = useState(0);
+  const [chatRefresh, setChatRefresh] = useState(0);
   const source = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -138,7 +139,8 @@ export function ConsolePage() {
     setChatSeq((n) => n + 1);
   }
 
-  async function demoChanged(state?: ScenarioState) {
+  async function demoChanged(state?: ScenarioState, refreshChat = true) {
+    if (refreshChat) setChatRefresh((n) => n + 1);
     try {
       const id = state?.journey_id ?? currentId ?? (await listJourneys())[0]?.journey_id;
       if (!id) return;
@@ -223,7 +225,13 @@ export function ConsolePage() {
         <Timeline events={events} />
         <section className="panel chat-col" aria-labelledby="chat-h">
           <h2 id="chat-h">Passenger chat (simulated)</h2>
-          <ChatView key={chatSeq} passengerId={PASSENGER_ID} onChanged={() => void demoChanged()} />
+          <ChatView
+            key={chatSeq}
+            passengerId={PASSENGER_ID}
+            offerStatus={journey?.offer?.status}
+            refreshToken={chatRefresh}
+            onChanged={() => void demoChanged(undefined, false)}
+          />
         </section>
       </div>
     </section>

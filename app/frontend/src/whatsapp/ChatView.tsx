@@ -24,10 +24,14 @@ function formatTime(iso: string) {
 export function ChatView({
   passengerId,
   pollMs = POLL_MS,
+  offerStatus,
+  refreshToken,
   onChanged,
 }: {
   passengerId: string;
   pollMs?: number;
+  offerStatus?: string | null;
+  refreshToken?: number;
   onChanged?: () => void;
 }) {
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
@@ -37,6 +41,7 @@ export function ChatView({
   // Message ids whose buttons were already tapped: one action per offer.
   const [answered, setAnswered] = useState<Map<string, string>>(new Map());
   const cooldownUntil = useRef(0);
+  const prevRefreshToken = useRef(refreshToken);
   const endRef = useRef<HTMLDivElement>(null);
 
   const noteCooldown = useCallback((err: unknown) => {
@@ -73,6 +78,13 @@ export function ChatView({
   }, [refresh, pollMs]);
 
   useEffect(() => {
+    if (prevRefreshToken.current === refreshToken) return;
+    prevRefreshToken.current = refreshToken;
+    if (Date.now() < cooldownUntil.current) return;
+    void refresh();
+  }, [refreshToken, refresh]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: 'end' });
   }, [messages.length]);
 
@@ -103,11 +115,13 @@ export function ChatView({
       onChanged?.();
     } catch (err) {
       noteCooldown(err);
-      setAnswered((s) => {
-        const next = new Map(s);
-        next.delete(msg.message_id);
-        return next;
-      });
+      if (!(err instanceof ApiHttpError && err.status === 409)) {
+        setAnswered((s) => {
+          const next = new Map(s);
+          next.delete(msg.message_id);
+          return next;
+        });
+      }
       setError(formatTransientError(err, 'Your choice was not sent. Please try again.'));
     }
   }
@@ -129,7 +143,18 @@ export function ChatView({
       <div className="chat-log" role="log" aria-label="Conversation">
         {messages.length === 0 && <p className="chat-empty">No messages yet.</p>}
         {messages.map((m, idx) => {
-          const isSettled = answered.has(m.message_id) || idx < messages.length - 1;
+          const statusSettled = offerStatus != null && offerStatus !== 'sent';
+          const isSettled =
+            answered.has(m.message_id) || idx < messages.length - 1 || statusSettled;
+          const chosenLabel = answered.get(m.message_id);
+          const isChosen = (b: string) => {
+            if (chosenLabel !== undefined) return chosenLabel === b;
+            if (idx === messages.length - 1) {
+              if (offerStatus === 'declined') return actionForButton(b) === 'decline_offer';
+              if (offerStatus === 'accepted') return actionForButton(b) === 'accept_offer';
+            }
+            return false;
+          };
           return (
             <div key={m.message_id} className={`bubble-row ${m.direction}`}>
               <div className="bubble">
@@ -158,10 +183,10 @@ export function ChatView({
                           key={b}
                           type="button"
                           disabled={isSettled}
-                          aria-pressed={answered.get(m.message_id) === b}
+                          aria-pressed={isChosen(b)}
                           onClick={() => onButton(m, b)}
                         >
-                          {answered.get(m.message_id) === b ? `✓ ${b}` : b}
+                          {isChosen(b) ? `✓ ${b}` : b}
                         </button>
                       ))}
                     </div>

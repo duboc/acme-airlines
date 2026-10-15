@@ -192,4 +192,74 @@ describe('ChatView', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(pollCalls).toBe(1);
   });
+
+  it('disables offer buttons and sets aria-pressed when offerStatus is settled (declined, accepted, invalidated) (#402)', async () => {
+    const { rerender } = render(<ChatView passengerId="P-MARIANA" offerStatus="sent" />);
+    const accept = await screen.findByRole('button', { name: 'Accept upgrade $135' });
+    const decline = screen.getByRole('button', { name: 'No thanks' });
+    expect(accept).toBeEnabled();
+    expect(decline).toBeEnabled();
+
+    rerender(<ChatView passengerId="P-MARIANA" offerStatus="declined" />);
+    const declinedBtn = screen.getByRole('button', { name: '✓ No thanks' });
+    expect(declinedBtn).toBeDisabled();
+    expect(declinedBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Accept upgrade $135' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Accept upgrade $135' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    rerender(<ChatView passengerId="P-MARIANA" offerStatus="accepted" />);
+    const acceptedBtn = screen.getByRole('button', { name: '✓ Accept upgrade $135' });
+    expect(acceptedBtn).toBeDisabled();
+    expect(acceptedBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'No thanks' })).toBeDisabled();
+
+    rerender(<ChatView passengerId="P-MARIANA" offerStatus="invalidated" />);
+    expect(screen.getByRole('button', { name: 'Accept upgrade $135' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'No thanks' })).toBeDisabled();
+  });
+
+  it('keeps offer buttons disabled when postAction fails with 409 Conflict (#402)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/actions')) {
+          return new Response(
+            JSON.stringify({ code: 'no_offer_sent', detail: 'no offer has been sent' }),
+            { status: 409 },
+          );
+        }
+        return new Response(JSON.stringify(transcript), { status: 200 });
+      }),
+    );
+    render(<ChatView passengerId="P-MARIANA" />);
+    const decline = await screen.findByRole('button', { name: 'No thanks' });
+    await userEvent.click(decline);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/your choice was not sent/i);
+    expect(screen.getByRole('button', { name: '✓ No thanks' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Accept upgrade $135' })).toBeDisabled();
+  });
+
+  it('refreshes immediately when refreshToken increments unless in cooldown (#402)', async () => {
+    const { rerender } = render(
+      <ChatView passengerId="P-MARIANA" pollMs={60_000} refreshToken={0} />,
+    );
+    expect(await screen.findByText(RESOLUTION)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === 'GET')).toHaveLength(1);
+
+    transcript = [
+      ...transcript,
+      {
+        message_id: 'm-new',
+        direction: 'outbound',
+        text: 'Replanned on AC1252.',
+        timestamp: '2026-10-10T21:08:00Z',
+      },
+    ];
+    rerender(<ChatView passengerId="P-MARIANA" pollMs={60_000} refreshToken={1} />);
+    expect(await screen.findByText('Replanned on AC1252.')).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === 'GET')).toHaveLength(2);
+  });
 });
