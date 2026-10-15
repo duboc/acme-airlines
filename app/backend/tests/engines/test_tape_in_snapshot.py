@@ -3,6 +3,7 @@ came from whichever worker answered its last call, so a forced rebuild missed th
 ran elsewhere and re-worded the Customer's own messages. The tape now travels in the shared
 snapshot (and a reset drops it)."""
 
+import asyncio
 import inspect
 import json
 from datetime import UTC, datetime
@@ -34,6 +35,7 @@ def workers(n=4):
     for _ in range(n):  # the worker processes of one container: own memory, one shared file
         app = build_customer_engine_app()
         app.set_up()
+        app.shared._lock_timeout = 10.0  # noqa: SLF001 - a stuck lock fails fast, not after 60 s
         app.runtime.llm.inner = Creative()
         apps.append(app)
     return apps
@@ -90,7 +92,9 @@ async def test_a_forced_rebuild_after_a_run_spread_over_workers_replays_every_tu
         return [{"ts": now, "text": "ACME_DIAG " + json.dumps({"event": e, **kw})}
                 for e, kw in log if e == "rebuild"]  # fmt: skip
 
-    report = await run_rebuild_proof(backend, logs, "happy-path", "seat-taken", wait=0.0)
+    report = await asyncio.wait_for(  # a hang fails here, fast
+        run_rebuild_proof(backend, logs, "happy-path", "seat-taken", wait=0.0), timeout=120
+    )
     assert report.failures == []  # transcript, journeys and state identical
     (rebuild,) = [kw for e, kw in log if e == "rebuild"]
     assert rebuild["tape_miss"] == 0 and rebuild["tape_discarded"] == 0
