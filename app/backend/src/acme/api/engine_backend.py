@@ -336,8 +336,12 @@ class EngineBackend:
         async with self._journeys_lock:
             at, journeys = self._journeys
             if time.monotonic() - at >= JOURNEYS_TTL_SECONDS:
+                seq = self._stir_seq
                 journeys = await self.journeys_list()
-                self._journeys = (time.monotonic(), journeys)
+                # A write that landed while we asked (a journey created, a reset) made this list
+                # stale: keep it expired so the next caller asks again (#379), like `timeline`.
+                stamp = float("-inf") if self._stir_seq != seq else time.monotonic()
+                self._journeys = (stamp, journeys)
             return journeys
 
     async def timeline(self, journey_id: str) -> list[dict]:

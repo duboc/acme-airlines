@@ -498,3 +498,31 @@ def test_ok_turns_a_double_status_into_an_integer_api_error():
     with pytest.raises(ApiError) as err:
         engine_backend.ok({"error": {"status": 409.0, "detail": "no offer", "code": "x"}})
     assert err.value.status_code == 409 and isinstance(err.value.status_code, int)
+
+
+async def test_given_a_write_while_the_journeys_list_is_in_flight_then_it_stays_expired(clock):
+    """#379: the list read before a journey existed was stamped fresh, so the new journey was a
+    404 (detail and events) for the whole TTL."""
+    backend = local_backend()
+    real = backend.journeys_list
+
+    async def list_during_a_write():
+        out = await real()  # the list as it was before the write
+        backend._stir()  # trigger-cancellation / a step / a reset lands meanwhile
+        return out
+
+    backend.journeys_list = list_during_a_write
+    assert await backend.known_journeys() == []
+    assert backend._journeys[0] == float("-inf")  # noqa: SLF001 - not cached as fresh
+    backend.journeys_list = real
+    await backend.scenario_start("happy-path")
+    await backend.scenario_step("happy-path")
+    assert len(await backend.known_journeys()) == 1  # the next caller sees the new journey
+
+
+async def test_given_no_write_in_flight_then_the_journeys_list_is_cached_for_the_ttl(clock):
+    backend = local_backend()
+    counter = backend._customer = CountingEngine(backend._customer)  # noqa: SLF001
+    await backend.known_journeys()
+    await backend.known_journeys()
+    assert counter.calls.count("journeys_list") == 1
