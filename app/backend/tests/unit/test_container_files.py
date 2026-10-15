@@ -86,6 +86,13 @@ def test_containers_are_hardened():
 def test_nginx_never_exposes_the_agent_to_agent_endpoint():
     conf = (APP / "frontend/nginx.conf").read_text()
     assert re.search(r"location \^~ /api/a2a \{ return 404; \}", conf)
+    assert re.search(r"location \^~ /api/\.well-known/ \{ return 404; \}", conf)
+    assert re.search(
+        r"location ~\* \^/api/\(a2a\|\\\.well-known\|mcp\)\(/\|\$\) \{ return 404; \}", conf
+    )
+    pct_guard = r'if \(\$request_uri ~\* "\^/api/\[\^\?\]\*%\[0-9a-f\]\{2\}"\) \{ return 404; \}'
+    assert re.search(pct_guard, conf)
+    assert conf.index("$request_uri") < conf.index("rewrite ^/api/") < conf.index("proxy_pass")
 
 
 def test_deploy_doc_is_global_with_service_to_service_iam_and_no_api_keys():

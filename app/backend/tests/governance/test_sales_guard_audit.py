@@ -101,3 +101,27 @@ async def test_given_sales_posts_a2a_then_it_passes_and_nothing_is_audited(caplo
         rec = await Recorder().call(scope(path="/a2a", method="POST"))
     assert rec.reached == ["/a2a"] and rec.sent == []
     assert not [r for r in caplog.records if r.name == "acme.audit"]
+
+
+@pytest.mark.parametrize("auth", [None, "Bearer wrong-token"])
+@pytest.mark.parametrize(("kind", "method"), [("http", "POST"), ("http", "GET"), ("websocket", "")])
+async def test_given_non_sales_caller_on_a2a_then_denied_audited_and_counted(
+    auth, kind, method, caplog, metric_points
+):
+    attrs = {"rule": "sales_route_denied", "outcome": "reject", "step": "route"}
+
+    def count():
+        return next((v for a, v in metric_points().get(NAME, []) if a == attrs), 0)
+
+    before = count()
+    with caplog.at_level(logging.WARNING, logger="acme.audit"):
+        rec = await Recorder().call(scope(kind=kind, path="/a2a", method=method, auth=auth))
+    assert rec.reached == []
+    assert count() == before + 1
+    (record,) = [r for r in caplog.records if r.name == "acme.audit"]
+    want_method = method if kind == "http" else "WS"
+    assert (
+        record.getMessage()
+        == f"guardrail audit: sales caller denied route=/a2a method={want_method}"
+    )
+    assert (record.event, record.caller) == ("sales_route_denied", "sales")
