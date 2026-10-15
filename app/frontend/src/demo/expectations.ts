@@ -122,3 +122,29 @@ export function evaluate(s: ScenarioState): Evaluation | null {
     mismatches.push(`needs human: expected ${c.needsHuman ? 'yes' : 'no'}`);
   return { text: expected.text, mismatches };
 }
+
+export function applyExpectedStep(prev: ScenarioState, steps?: readonly string[]): ScenarioState {
+  const nextIndex = prev.step_index + 1;
+  const c = TABLE[prev.scenario_id]?.[nextIndex - 1]?.check;
+  const nextStatus =
+    c?.status !== undefined
+      ? c.status
+      : c?.notStatus !== undefined && prev.journey_status === c.notStatus
+        ? null
+        : prev.journey_status;
+  return {
+    ...prev,
+    step_index: nextIndex,
+    done: nextIndex >= prev.total_steps,
+    last_step: steps?.[prev.step_index] ?? prev.last_step,
+    next_step: steps?.[nextIndex] ?? null,
+    journey_status: nextStatus,
+    flight: c?.flight !== undefined ? c.flight : prev.flight,
+    seat: c?.seat !== undefined ? c.seat : prev.seat,
+    offers_sent: c?.offer === 'sent' ? Math.max(prev.offers_sent, 1) : prev.offers_sent,
+    offer_status: c?.offer !== undefined ? c.offer : prev.offer_status,
+    charged: c?.charged !== undefined ? c.charged : prev.charged,
+    needs_human: c?.needsHuman !== undefined ? c.needsHuman : prev.needs_human,
+    last_message: null,
+  };
+}

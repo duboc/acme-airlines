@@ -8,7 +8,7 @@ import {
 } from '../whatsapp/api';
 import { listScenarios, startScenario, stepScenario } from './api';
 import './demo.css';
-import { evaluate } from './expectations';
+import { applyExpectedStep, evaluate } from './expectations';
 import type { PresetView, ScenarioState } from './types';
 
 const QUICK_REPLIES = [
@@ -136,17 +136,7 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
                   err.status === 503 &&
                   err.detail.includes('The step was applied')
                 ) {
-                  setState((prev) => {
-                    if (!prev) return prev;
-                    const nextIndex = prev.step_index + 1;
-                    return {
-                      ...prev,
-                      step_index: nextIndex,
-                      done: nextIndex >= prev.total_steps,
-                      last_step: preset?.steps[prev.step_index] ?? prev.last_step,
-                      next_step: preset?.steps[nextIndex] ?? null,
-                    };
-                  });
+                  setState((prev) => (prev ? applyExpectedStep(prev, preset?.steps) : prev));
                   onChanged();
                 }
                 throw err;
