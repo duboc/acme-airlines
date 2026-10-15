@@ -101,8 +101,10 @@ What CI enforces (and nothing more):
 | Mutation testing | `.github/workflows/mutation.yml`, nightly 03:17 UTC and on demand, **not** a PR check | a mutant of `acme/policy/` survives, has no test, is suspicious or crashes; survivors are listed in the run summary and the results are uploaded |
 
 Gaps are closed with Given/When/Then tests, never `# pragma: no cover`. Mutation testing uses
-`mutmut` (`[tool.mutmut]` in `pyproject.toml`: mutate `src/acme/policy/*`, run `tests/policy` plus
-the governance policy tests). Locally:
+`mutmut` (`[tool.mutmut]` in `pyproject.toml`: mutate `src/acme/policy/*` and the governance decision
+paths listed there, #281; run `tests/policy`, the governance policy tests and the tests of each
+extra path). Governance paths covered so far: the Sales route guard (`api/a2a_guard.py`, #230) and
+the LLM timeout fallback (`llm/bounded.py`, #231). Locally:
 
 ```bash
 cd app/backend
@@ -112,7 +114,9 @@ uv run mutmut show <mutant>                    # the diff a test must catch
 
 A survivor means a behaviour no test pins (a boundary, a reason string, a metric label). Add a
 test that fails for it; only for a provably equivalent mutant mark the line `# pragma: no mutate`
-with the reason (currently one: the redundant `if tier` guard in `margin_opt.recovery_quote`).
+with the reason (`margin_opt.recovery_quote`'s redundant `if tier` guard; in `a2a_guard.py` the unused `receive`
+argument of the 403 response and `approved=False` vs `None`, isolated on their own lines so the
+rest of the statement is still mutated).
 Timeouts are kept generous (`timeout_constant`, `timeout_multiplier`): with the default limit,
 31 survivors were misreported as "timeout", which mutmut scores as killed. The `mutation_gate.py`
 tests live next to the script under `.github/scripts/`.

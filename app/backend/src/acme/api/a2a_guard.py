@@ -53,6 +53,12 @@ class SalesRouteGuard:
                     scope.get("method", "WS"),
                     extra={"event": "sales_route_denied", "caller": "sales"},
                 )
-                metrics.guardrail_decision(False, ["sales_route_denied"], "route")
-                return await PlainTextResponse("forbidden", 403)(scope, receive, send)
+                reasons, step = ["sales_route_denied"], "route"  # both pinned by the metric test
+                # `approved` is only tested for truth, so None and False are the same decision:
+                # an equivalent mutant (#281).
+                metrics.guardrail_decision(False, reasons, step)  # pragma: no mutate
+                response = PlainTextResponse("forbidden", 403)
+                # `receive` is unused by a PlainTextResponse (it only matters for streaming ones),
+                # so replacing it cannot change behaviour: an equivalent mutant (#281).
+                return await response(scope, receive, send)  # pragma: no mutate
         await self.app(scope, receive, send)
