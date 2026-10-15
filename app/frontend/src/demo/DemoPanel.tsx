@@ -136,6 +136,17 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
                   err.status === 503 &&
                   err.detail.includes('The step was applied')
                 ) {
+                  setState((prev) => {
+                    if (!prev) return prev;
+                    const nextIndex = prev.step_index + 1;
+                    return {
+                      ...prev,
+                      step_index: nextIndex,
+                      done: nextIndex >= prev.total_steps,
+                      last_step: preset?.steps[prev.step_index] ?? prev.last_step,
+                      next_step: preset?.steps[nextIndex] ?? null,
+                    };
+                  });
                   onChanged();
                 }
                 throw err;

@@ -153,7 +153,7 @@ describe('DemoPanel', () => {
     expect(screen.queryByText(/next: occ cancels ac1234/i)).not.toBeInTheDocument();
   });
 
-  it('surfaces 429 Retry-After busy feedback and refreshes on 503 StepApplied', async () => {
+  it('surfaces 429 Retry-After busy feedback and advances step_index and done state on 503 StepApplied', async () => {
     render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
 
@@ -173,6 +173,7 @@ describe('DemoPanel', () => {
     );
     expect(onChanged).not.toHaveBeenCalled();
 
+    // Step 1 returns 503 StepApplied -> advances to Step 1 of 3 (Next: Time passes) and calls onChanged()
     fetchMock.mockImplementationOnce(() =>
       Promise.resolve(
         new Response(
@@ -188,5 +189,36 @@ describe('DemoPanel', () => {
       'Engine busy (503): The step was applied but its state could not be read: refresh. Retry in 5s.',
     );
     expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Step 1 of 3')).toBeInTheDocument();
+    expect(screen.getByText(/next: time passes/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next step' })).toBeEnabled();
+
+    // Advance normally to Step 2 of 3, then final Step 3 returns 503 StepApplied -> marks done and disables Next step
+    fetchMock.mockImplementationOnce(() =>
+      json({
+        ...base,
+        step_index: 2,
+        last_step: 'Time passes',
+        next_step: "Mariana: 'Can I leave after 10am?'",
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(await screen.findByText('Step 2 of 3')).toBeInTheDocument();
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            detail: 'The step was applied but its state could not be read: refresh.',
+          }),
+          { status: 503, headers: { 'Retry-After': '5' } },
+        ),
+      ),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(await screen.findByText('Step 3 of 3')).toBeInTheDocument();
+    expect(screen.getByText(/scenario finished/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled();
+    expect(onChanged).toHaveBeenCalledTimes(3);
   });
 });
