@@ -46,6 +46,12 @@ rebuild died with `NoSentOffer`. If a replay with a tape still raises, the rebui
 with no tape and the diag carries `tape_discarded` (0 or 1). The live proof reports only the class
 of a failing engine call, because the platform appends the request (the tape) to the error text.
 
+## Registry cache (#280)
+The simulators' tool registries are built once per process (`warm_registry()` in `set_up`) and
+shared across runs through a per-run world reference (`sim/current.py`), and a rebuild reuses its
+sim sessions. A replay no longer rebuilds the registries for every step, which is where most of the
+rebuild time went; isolation between runs is covered by `tests/unit/test_sim_session_reuse.py`.
+
 ## Known gap
 The offer text is composed on whichever container serves the Sales tick (`a2a_skill`), and the tape
 the caller holds is the one returned by the next Customer call. If that call lands on another
