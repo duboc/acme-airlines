@@ -67,7 +67,7 @@ async def verify_journey(rt: CustomerRuntime, rec: JourneyRecord) -> Verificatio
     expect = (
         (upgrade["seat"], upgrade["cabin"])
         if upgrade
-        else ((held["seat"], None) if held else (None, None))
+        else ((held["seat"], "economy") if held else (None, None))
     )
     seats = [s for s in pnr["seats"] if s["flight_number"] == flight]
     check(
@@ -93,7 +93,7 @@ async def verify_journey(rt: CustomerRuntime, rec: JourneyRecord) -> Verificatio
         routings.append((await rt.client.call("worldtracer", "bag.get", tag=bag["tag"]))["routing"])
     check(
         "baggage",
-        bool(routings) and all(r == flight for r in routings),
+        flight is not None and all(r == flight for r in routings),
         f"expected bags routed to {flight}, found {routings}",
     )
 

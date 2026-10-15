@@ -164,7 +164,7 @@ async def test_an_offer_proposed_after_closure_is_rejected_by_the_guardrail():
 async def test_failed_verification_does_not_close_and_retries_only_after_another_window():
     f = Flow()
     await acknowledged_on_ac1240(f)
-    f.rt.world.pnrs["MSLV42"].bags = []  # baggage check will fail: nothing to route
+    f.rt.world.pnrs["MSLV42"].seats = []  # seat check will fail: seat missing on PNR
     await after_window(f)
     assert f.state.status is S.RESOLVED
     assert types(f).count("verification_failed") == 1
