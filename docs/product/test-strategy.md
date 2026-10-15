@@ -103,8 +103,11 @@ What CI enforces (and nothing more):
 Gaps are closed with Given/When/Then tests, never `# pragma: no cover`. Mutation testing uses
 `mutmut` (`[tool.mutmut]` in `pyproject.toml`: mutate `src/acme/policy/*` and the governance decision
 paths listed there, #281; run `tests/policy`, the governance policy tests and the tests of each
-extra path). Governance paths covered so far: the Sales route guard (`api/a2a_guard.py`, #230) and
-the LLM timeout fallback (`llm/bounded.py`, #231). Locally:
+extra path). Governance paths covered: the Sales route guard (`api/a2a_guard.py`, #230), the LLM
+timeout fallback (`llm/bounded.py`, #231), the no-offer closure decision
+(`customer/service_closure.py`, #229) and the passenger intent decision (`customer/intent.py`,
+#231/#279; both were extracted from `closure.py` and `outreach.py` with no behaviour change so the
+mutated surface stays small). Locally:
 
 ```bash
 cd app/backend

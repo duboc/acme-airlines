@@ -36,6 +36,11 @@ class Broken(FakeLlm):
         return await super().parse_passenger_request(text)
 
 
+class RaisesForEverything(FakeLlm):
+    async def parse_passenger_request(self, text):
+        raise TimeoutError
+
+
 class AlwaysAck(FakeLlm):
     async def parse_passenger_request(self, text):
         return Acknowledge()
@@ -100,3 +105,29 @@ async def test_an_engine_call_failure_keeps_only_the_class_and_our_context():
     assert "RuntimeError" in text and "scenario_step" in text and "step 4" in text
     assert "Mariana" not in text and "tape" not in text
     assert err.value.__suppress_context__
+
+
+@pytest.mark.parametrize(
+    ("llm", "text", "kind", "source"),
+    [
+        (
+            RaisesForEverything(),
+            "I would like a refund",
+            "other",
+            "model",
+        ),  # fail closed: Other, same text
+        (OtherForAfter(), "I would like a refund", "other", "model"),
+        (FakeLlm(), "Perfect, thanks!", "ack", "model"),
+        (FakeLlm(), "Can I leave after 10am?", "departure_after", "model"),
+    ],
+)
+async def test_given_a_passenger_text_when_classified_then_the_result_and_the_diag_name_it(
+    llm, text, kind, source
+):
+    from acme.customer import outreach
+
+    app, _, _ = build(llm)
+    got = await outreach.classify(app.runtime, text)
+    if kind == "other":
+        assert got == Other(text=text)  # the passenger's own words go to a person
+    assert app.runtime.last_parse == {"parse_kind": kind, "parse_source": source}
