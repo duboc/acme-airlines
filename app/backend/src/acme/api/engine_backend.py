@@ -202,6 +202,8 @@ class EngineBackend:
         self._timelines: dict[tuple[int, str], tuple[float, list[dict], float]] = {}
         self._timeline_locks: dict[tuple[int, str], asyncio.Lock] = {}
         self._journeys_lock = asyncio.Lock()
+        self._stir_seq = 0  # bumped by every write: a poll in flight must not undo it (#356)
+        self._sales_pending = False  # the Sales tick of the last step has not run yet (#351)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> EngineBackend:
@@ -241,6 +243,7 @@ class EngineBackend:
 
     async def scenario_start(self, scenario_id: str) -> dict:
         self._run += 1  # before the call: a stream polling meanwhile stops using the old context
+        self._sales_pending = False
         self._stir()
         state = await self._customer.call("scenario_start", scenario_id=scenario_id)
         self._active, self._step = scenario_id, state["step_index"]
@@ -253,26 +256,60 @@ class EngineBackend:
         self._step = max(self._step, state["step_index"])
         return self._keep_tape(state)
 
+    @property
+    def done(self) -> bool:
+        """The active scenario has no step left (tracked locally: no engine query) (#351)."""
+        return self._active in BY_ID and self._step >= len(BY_ID[self._active].steps)
+
+    async def _tick_sales(self) -> bool:
+        """One Sales turn (the radar that proposes the offer). A transient failure is retried once
+        (not a quota error: that would burn more quota); if it still fails the tick stays pending
+        and is caught up before the next step. Returns whether the tick ran."""
+        for attempt in (0, 1):
+            try:
+                async for _ in self._sales.stream(message="tick", user_id="demo"):
+                    pass
+            except EngineQuotaExceeded as e:
+                log.warning("sales tick hit the quota: %s", type(e).__name__)
+                break
+            except Exception as e:  # noqa: BLE001
+                log.warning("sales tick failed (attempt %d): %s", attempt + 1, type(e).__name__)
+                if attempt == 0:
+                    await asyncio.sleep(RETRY_BACKOFF[0] * (0.5 + random.random()))
+                    continue
+                break
+            self._sales_pending = False
+            return True
+        self._sales_pending = True
+        return False
+
     async def scenario_step(self, scenario_id: str) -> dict:
         """Customer step, then one Sales engine turn (its own trace). `409` conditions are the
-        route's job: it checks `active` and `state["done"]` before calling this."""
+        route's job: it checks `active` and `done` before calling this."""
+        steps = BY_ID[scenario_id].steps
+        upcoming = steps[self._step].kind if self._step < len(steps) else None
+        if self._sales_pending:  # the previous step's tick failed: the offer may not exist yet
+            await self._tick_sales()
+            if self._sales_pending and upcoming in ("accept", "decline"):
+                # Not even trying the Customer step: it would fail with NoSentOffer and wedge here.
+                raise EngineUnavailable(
+                    "The Sales engine could not be reached to prepare the offer; try again."
+                )
         state = await self._customer.call("scenario_step", **self._ctx())
         self._keep_tape(state)  # the tape of the step just run, whatever worker answers next
         # The step is committed in the engine: the counter follows it, whatever comes next.
         self._step += 1
-        self._stir()
+        self._sales_pending = True
         try:
-            async for _ in self._sales.stream(message="tick", user_id="demo"):
-                pass
-        except Exception as e:  # noqa: BLE001 - the tick is best effort; the next step ticks again
-            # (The tick's own a2a_skill calls carry no preset/step context: Sales cannot send it.)
-            log.warning("sales tick failed after a committed step: %s", type(e).__name__)
-        try:
-            return await self.scenario_state()
-        except EngineUnavailable as e:
-            raise StepApplied(
-                "The step was applied but its state could not be read: refresh."
-            ) from e
+            await self._tick_sales()  # best effort: a failure is caught up before the next step
+            try:
+                return await self.scenario_state()
+            except EngineUnavailable as e:
+                raise StepApplied(
+                    "The step was applied but its state could not be read: refresh."
+                ) from e
+        finally:
+            self._stir()  # after the whole step (Customer and Sales): streams look once, now
 
     @property
     def active(self) -> str | None:
@@ -308,16 +345,21 @@ class EngineBackend:
                 key, (float("-inf"), [], TIMELINE_BASE_SECONDS)
             )
             if time.monotonic() - at >= interval:
+                seq = self._stir_seq
                 new = await self.journey_events(journey_id, len(events))
                 events = events + new
-                interval = (
-                    TIMELINE_BASE_SECONDS if new else min(interval * 1.5, TIMELINE_MAX_SECONDS)
-                )
-                self._timelines[key] = (time.monotonic(), events, interval)
+                if self._stir_seq != seq:  # a write landed while we asked: look again at once
+                    self._timelines[key] = (float("-inf"), events, TIMELINE_BASE_SECONDS)
+                else:
+                    interval = (
+                        TIMELINE_BASE_SECONDS if new else min(interval * 1.5, TIMELINE_MAX_SECONDS)
+                    )
+                    self._timelines[key] = (time.monotonic(), events, interval)
             return events
 
     def _stir(self) -> None:
         """Something happened (a step, a reply, an action): look again soon."""
+        self._stir_seq += 1
         self._journeys = (float("-inf"), [])
         self._timelines = {
             k: (float("-inf"), ev, TIMELINE_BASE_SECONDS)
@@ -331,6 +373,7 @@ class EngineBackend:
 
     async def reset(self) -> dict:
         self._run += 1
+        self._sales_pending = False
         self._stir()
         self._active = None
         self._tape = None  # the tape belongs to the run that is over (#279)
@@ -411,7 +454,7 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
             raise not_found("scenario", scenario_id)
         if backend.active != scenario_id:
             raise ApiError(409, "scenario_not_started", "scenario is not started")
-        if (await backend.scenario_state())["done"]:
+        if backend.done:  # tracked locally: no engine query before every step (#351)
             raise ApiError(409, "scenario_finished", "scenario is finished; start it again")
         return ScenarioState(**await backend.scenario_step(scenario_id))
 
@@ -425,7 +468,7 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
 
     @app.get("/journeys/{journey_id}", tags=["journeys"])
     async def journey_detail(journey_id: str) -> JourneyDetail:
-        known(await backend.journeys_list(), journey_id)
+        known(await backend.known_journeys(), journey_id)
         return JourneyDetail(**await backend.journey_detail(journey_id))
 
     @app.get(
