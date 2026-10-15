@@ -71,7 +71,7 @@ async def test_scenario_1_to_5_across_alternating_workers_never_loses_state(stat
         detail = await w.journey_detail(jid)
         assert detail["status"] == "CLOSED" and detail["seat"]["seat"] == "2A"
         assert detail["offer"]["status"] == "accepted"
-        events = [e["type"] for e in w.journey_events(jid)]
+        events = [e["type"] for e in await w.journey_events(jid)]
         assert events.count("upgrade_confirmed") == 1 and events.count("seat_released") == 1
 
 
@@ -145,7 +145,7 @@ async def test_accept_race_across_real_processes_charges_once(state_env):
     partners = c.runtime.sim.partners
     assert len(partners.charges) == 1 and str(partners.net_charged("MSLV42")) == "135.00"
     assert detail["seat"]["seat"] == "2A" and detail["status"] == "CLOSED"
-    events = [e["type"] for e in c.journey_events(jid)]
+    events = [e["type"] for e in await c.journey_events(jid)]
     assert events.count("upgrade_confirmed") == 1 and events.count("seat_released") == 1
     assert events.count("accept_offer") >= 1
 
@@ -163,7 +163,7 @@ async def test_duplicate_notification_across_real_processes_sends_one_message(st
         _, err = p.communicate(timeout=180)
         assert p.returncode == 0, err[-2000:]
     c = worker()
-    events = [e["type"] for e in c.journey_events(jid)]
+    events = [e["type"] for e in await c.journey_events(jid)]
     assert events.count("notification_sent") == 1
     outbound = [m for m in (await c.whatsapp_messages(PID)) if m["direction"] == "outbound"]
     assert len(outbound) == 1

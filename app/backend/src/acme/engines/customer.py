@@ -603,7 +603,7 @@ class CustomerEngineApp:
         return journey_detail_view(self.runtime, rec).model_dump(mode="json")
 
     @shared
-    def journey_events(
+    async def journey_events(
         self,
         journey_id: str,
         since: int = 0,
@@ -612,6 +612,7 @@ class CustomerEngineApp:
         tape: list[Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Timeline events from index ``since`` (a poll-friendly form of the SSE stream)."""
+        await self.runtime.tick()  # a poll is what moves time-triggered steps on (#395)
         timeline = self._journey(journey_id).state.timeline
         return [e.model_dump(mode="json") for e in timeline[max(integral(since, "since"), 0) :]]
 
@@ -662,6 +663,7 @@ class CustomerEngineApp:
     ):
         from acme.api.app import do_messages
 
+        await self.runtime.tick()  # the 6 min outreach is due when the phone polls (#395)
         return await self._api(do_messages, passenger_id)
 
     def _after_manual(
@@ -712,7 +714,6 @@ class CustomerEngineApp:
                 "scenario_start",
                 "scenario_state",
                 "journeys_list",
-                "journey_events",
                 "reset",
             ],
             "stream": ["stream_query"],
@@ -721,6 +722,7 @@ class CustomerEngineApp:
                 "a2a_skill",
                 "scenario_step",
                 "journey_detail",
+                "journey_events",
                 "trigger_cancellation",
                 "whatsapp_messages",
                 "whatsapp_reply",

@@ -57,7 +57,7 @@ async def test_engine_rpc_unknown_journey_is_generic():
     app = build_customer_engine_app()
     app.set_up()
     with pytest.raises(EngineOperationError) as e:
-        app.journey_events(JID)
+        await app.journey_events(JID)
     assert JID not in str(e.value)
 
 
