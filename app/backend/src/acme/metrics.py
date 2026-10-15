@@ -29,8 +29,14 @@ _needs_human = _meter.create_counter("acme.needs_human", description="needs_huma
 _notify_latency = _meter.create_histogram(
     "acme.notification.latency", unit="s", description="RESOLVED to notification_sent"
 )
+# A rebuild takes tenths of a second: the SDK's default boundaries (0, 5, 10, ...) would put every
+# one of them in the first bucket, and Cloud Monitoring would report p50 2.5 s (#344).
+REBUILD_BUCKETS_S = (0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0)
 _rebuild_duration = _meter.create_histogram(
-    "acme.scenario.rebuild.duration", unit="s", description="Scenario rebuild by replay (#266)"
+    "acme.scenario.rebuild.duration",
+    unit="s",
+    description="Scenario rebuild by replay (#266)",
+    explicit_bucket_boundaries_advisory=list(REBUILD_BUCKETS_S),
 )
 _http_5xx = _meter.create_counter("acme.http.server.errors", description="HTTP 5xx responses")
 
@@ -98,6 +104,26 @@ def add_http_metrics(app) -> None:
         return response
 
 
+def build_meter_provider(service_name: str, readers: list):
+    """The provider: our `acme.*` metrics only. The SDK's own `otel.sdk.*` self-metrics are
+    dropped: Cloud Monitoring rejects some (`InvalidArgument`, #337) and nobody reads them."""
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.view import DropAggregation, View
+    from opentelemetry.sdk.resources import Resource
+
+    return MeterProvider(
+        metric_readers=readers,
+        resource=Resource.create({"service.name": service_name}),
+        views=[View(instrument_name="otel.sdk.*", aggregation=DropAggregation())],
+    )
+
+
+def seed_counters() -> None:
+    """Export `acme.http.server.errors` as 0 from the start: a counter that never moved is
+    otherwise absent, and the dashboard cannot tell "no errors" from "no data" (#344)."""
+    _http_5xx.add(0, {"status_code": "500"})
+
+
 def configure_cloud_monitoring(service_name: str, exporter_factory=None) -> bool:
     """Install a Cloud Monitoring metric reader when tracing/telemetry is enabled and no SDK
     provider exists yet (same switch as `configure_cloud_trace`). Never raises."""
@@ -111,26 +137,27 @@ def configure_cloud_monitoring(service_name: str, exporter_factory=None) -> bool
     try:
         from opentelemetry.sdk.metrics import MeterProvider
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-        from opentelemetry.sdk.resources import Resource
 
         if isinstance(metrics.get_meter_provider(), MeterProvider):
             return False
         if exporter_factory is None:
             from opentelemetry.exporter.cloud_monitoring import CloudMonitoringMetricsExporter
 
-            exporter_factory = CloudMonitoringMetricsExporter
+            def exporter_factory(project_id):  # noqa: F811
+                # Several worker processes of one container export the same series: without an
+                # identifier per exporter Cloud Monitoring rejects the colliding writes (#337).
+                return CloudMonitoringMetricsExporter(
+                    project_id=project_id, add_unique_identifier=True
+                )
+
         from acme.llm import config as llm_config
 
         project_id = os.environ.get("ACME_GENAI_PROJECT") or llm_config.PROJECT
         reader = PeriodicExportingMetricReader(
             exporter_factory(project_id=project_id), export_interval_millis=30000
         )
-        metrics.set_meter_provider(
-            MeterProvider(
-                metric_readers=[reader],
-                resource=Resource.create({"service.name": service_name}),
-            )
-        )
+        metrics.set_meter_provider(build_meter_provider(service_name, [reader]))
+        seed_counters()
     except Exception:  # noqa: BLE001 - metrics must never stop an engine from starting
         logging.getLogger(__name__).warning("Cloud Monitoring not configured", exc_info=True)
         return False

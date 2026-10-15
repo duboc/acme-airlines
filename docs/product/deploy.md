@@ -184,6 +184,25 @@ ids/enums only, never passenger data. In deploy, `configure_cloud_monitoring` (c
 | `acme.scenario.rebuild.duration` | histogram (s) | `preset`, `reason` | Scenario rebuild by replay on a container (#280) |
 | `acme.http.server.errors` | counter | `status_code` | HTTP 5xx responses from the API |
 
+Export details (#337, #344):
+
+- Each worker process of a container runs its own exporter; every `acme.*` time series therefore
+  carries an `opentelemetry_id` label (`add_unique_identifier=True`; without it Cloud Monitoring
+  rejects the colliding writes with `InvalidArgument`). **Aggregate across it**: queries and alert
+  conditions use `REDUCE_SUM` (counters, histogram counts) or `REDUCE_PERCENTILE_*` over the
+  series and must not group by `opentelemetry_id` (the Observatory dashboard queries already group
+  only by the labels they show).
+- The SDK's own `otel.sdk.*` self-metrics are dropped by a view; only `acme.*` is exported.
+- `acme.http.server.errors` is seeded at 0 when the provider is installed, so "no errors" is a
+  series of zeros rather than missing data. The Customer engine also counts its own failures (an
+  unhandled error in an operation, a 5xx `HTTPException`), as the HTTP middleware only covers the
+  API process. The Cloud Run service `acme-irrops-demo` only exports if its service account may
+  write metrics (`roles/monitoring.metricWriter`): not granted today (an IAM decision for the PO),
+  so its own 5xx counter stays unexported until then.
+- `acme.scenario.rebuild.duration` uses sub-second bucket boundaries
+  (0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1, 2, 5 s): with the SDK's default ones every rebuild fell in
+  the first bucket and the percentiles read 2.5 s / 4.75 s.
+
 ## Proposed alert policies (operator creates them; needs infra access)
 
 1. **5xx rate**: `acme.http.server.errors` rate > 0.1/s for 5 min, or any 5xx for 10 min on the
