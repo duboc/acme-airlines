@@ -21,22 +21,30 @@ vertex_all_ok() {
   ! grep -vE ' 200$' <<<"${lines}" | grep -q .
 }
 
-# topology_ok <rows> [min-children]
-# rows: one "name|id|ancestry-json" line per live agent. Passes when acme-lead
-# exists, every other project agent's ancestry chain contains the lead's id
-# (child or deeper, e.g. via an eng-manager), and at least <min-children> (default 0)
-# such descendants exist. smoke-* test agents are ignored.
+# topology_ok <rows> [min-children] [lead-name]
+# rows: one "name|id|ancestry-json" line per live agent. Passes when the project
+# lead (<lead-name>, or lead / acme-lead by default) exists, every other project
+# agent's ancestry chain contains the lead's id (child or deeper), and at least
+# <min-children> (default 0) such descendants exist. smoke-* test agents are ignored.
 topology_ok() {
-  local rows="$1" min="${2:-0}" lead_id name anc n=0 bad=""
-  lead_id="$(awk -F'|' '$1=="acme-lead"{print $2}' <<<"${rows}")"
-  [[ -n "${lead_id}" ]] || { echo "no live acme-lead"; return 1; }
-  while IFS='|' read -r name _ anc; do
-    [[ -n "${name}" && "${name}" != "acme-lead" && "${name}" != smoke-* ]] || continue
+  local rows="$1" min="${2:-0}" want_lead="${3:-}" lead_name="" lead_id="" name anc n=0 bad=""
+  if [[ -n "${want_lead}" ]]; then
+    lead_name="${want_lead}"
+    lead_id="$(awk -F'|' -v l="${want_lead}" '$1==l{print $2; exit}' <<<"${rows}")"
+  else
+    for cand in lead acme-lead eval-lead; do
+      lead_id="$(awk -F'|' -v l="${cand}" '$1==l{print $2; exit}' <<<"${rows}")"
+      if [[ -n "${lead_id}" ]]; then lead_name="${cand}"; break; fi
+    done
+  fi
+  [[ -n "${lead_id}" ]] || { echo "no live ${want_lead:-lead}"; return 1; }
+  while IFS='|' read -r name _ anc _; do
+    [[ -n "${name}" && "${name}" != "${lead_name}" && "${name}" != smoke-* ]] || continue
     if [[ "${anc}" == *"\"${lead_id}\""* ]]; then n=$((n+1)); else bad+=" ${name}"; fi
   done <<<"${rows}"
-  [[ -z "${bad}" ]] || { echo "not under acme-lead:${bad}"; return 1; }
-  (( n >= min )) || { echo "only ${n} agents under acme-lead (want >= ${min})"; return 1; }
-  echo "acme-lead + ${n} active workers under lead"
+  [[ -z "${bad}" ]] || { echo "not under ${lead_name}:${bad}"; return 1; }
+  (( n >= min )) || { echo "only ${n} agents under ${lead_name} (want >= ${min})"; return 1; }
+  echo "${lead_name} + ${n} active workers under ${lead_name}"
 }
 
 # 12-template model mapping: role -> "harness model".
@@ -89,6 +97,34 @@ caps_ok() {
   (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
   [[ -z "${bad}" ]] || { echo "unexpected caps on standing templates:${bad}"; return 1; }
   echo "no artificial caps on standing templates"
+}
+
+# eval_prompts_ok <templates-dir>: eval templates target the real ACME IRROPS application & Gemini model
+# (VertexLlm, intent.py, outreach.py, scenarios.py, agent_engine_proof.py, ACME_DIAG, IrropsPanel/AgentEnginePanel/ModelsPanel)
+# and never reference phantom modules like acme.evals.runner.
+eval_prompts_ok() {
+  local dir="$1" r f bad="" token
+  for r in eval-lead search-evaluator factory-analyst ui-craftsman eval-deployer; do
+    f="${dir}/${r}/system-prompt.md"
+    [[ -f "${f}" ]] || { echo "missing ${r}/system-prompt.md"; return 1; }
+    if grep -q "acme\.evals\.runner" "${f}"; then
+      bad+=" ${r}(phantom:acme.evals.runner)"
+    fi
+  done
+  for token in "VertexLlm" "intent.py" "outreach.py" "scenarios.py" "agent_engine_proof.py" "acme.llm.template_fallbacks" "STRUCTURAL"; do
+    grep -q "${token}" "${dir}/search-evaluator/system-prompt.md" || bad+=" search-evaluator(missing:${token})"
+  done
+  for token in "ACME_DIAG" "acme.guardrail.decisions" "observatory/collector"; do
+    grep -q "${token}" "${dir}/factory-analyst/system-prompt.md" || bad+=" factory-analyst(missing:${token})"
+  done
+  for token in "IrropsPanel.tsx" "AgentEnginePanel.tsx" "ModelsPanel.tsx"; do
+    grep -q "${token}" "${dir}/ui-craftsman/system-prompt.md" || bad+=" ui-craftsman(missing:${token})"
+  done
+  for token in "VertexLlm" "agent_engine_proof.py" "IrropsPanel.tsx"; do
+    grep -q "${token}" "${dir}/eval-lead/system-prompt.md" || bad+=" eval-lead(missing:${token})"
+  done
+  [[ -z "${bad}" ]] || { echo "generic/incomplete eval prompts:${bad}"; return 1; }
+  echo "eval prompts specialized for ACME IRROPS app & Gemini model"
 }
 
 # cron_interval_ok <cron> <min-minutes>: the minute field fires at most every
@@ -255,27 +291,36 @@ check_team() {
   pass "team (12 templates across ${BUILD_PROJECT} and ${EVAL_PROJECT})"
 }
 check_topology() {
-  # 2-project, 12-agent topology (7 in BUILD_PROJECT + 5 in EVAL_PROJECT).
-  local rows r missing=""
+  # 2-project, 12-agent hierarchical topology:
+  # - BUILD_PROJECT: lead at top -> 6 child workers (researcher, product-manager, backend, frontend, reviewer, deployer), message_mode=branch
+  # - EVAL_PROJECT:  eval-lead at top -> 4 child workers (factory-analyst, search-evaluator, ui-craftsman, eval-deployer), message_mode=branch
+  local rows r missing="" build_rows eval_rows b_msg e_msg bad_mode=""
   rows="$(printf '%s\n' ".separator '|'" \
-    "SELECT p.slug, a.name FROM agents a JOIN projects p ON a.project_id = p.id WHERE a.deleted_at IS NULL;" | \
+    "SELECT p.slug, a.name, a.id, a.ancestry, a.message_mode FROM agents a JOIN projects p ON a.project_id = p.id WHERE a.deleted_at IS NULL;" | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
       --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
   for r in lead researcher product-manager backend frontend reviewer deployer; do
-    grep -qx "${BUILD_PROJECT}|${r}" <<<"${rows}" || missing+=" ${BUILD_PROJECT}/${r}"
+    grep -q "^${BUILD_PROJECT}|${r}|" <<<"${rows}" || missing+=" ${BUILD_PROJECT}/${r}"
   done
   for r in eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer; do
-    grep -qx "${EVAL_PROJECT}|${r}" <<<"${rows}" || missing+=" ${EVAL_PROJECT}/${r}"
+    grep -q "^${EVAL_PROJECT}|${r}|" <<<"${rows}" || missing+=" ${EVAL_PROJECT}/${r}"
   done
   [[ -z "${missing}" ]] || { fail topology "missing agents:${missing}"; return 1; }
-  pass "topology (7 build agents in ${BUILD_PROJECT} + 5 eval agents in ${EVAL_PROJECT})"
+  build_rows="$(awk -F'|' -v p="${BUILD_PROJECT}" '$1==p{print $2"|"$3"|"$4}' <<<"${rows}")"
+  eval_rows="$(awk -F'|' -v p="${EVAL_PROJECT}" '$1==p{print $2"|"$3"|"$4}' <<<"${rows}")"
+  b_msg="$(topology_ok "${build_rows}" 6 "lead")" || { fail topology "${BUILD_PROJECT}: ${b_msg}"; return 1; }
+  e_msg="$(topology_ok "${eval_rows}" 4 "eval-lead")" || { fail topology "${EVAL_PROJECT}: ${e_msg}"; return 1; }
+  bad_mode="$(awk -F'|' '$5 != "branch" && $2 !~ /^smoke-/ {print $1"/"$2"("$5")"}' <<<"${rows}" | tr '\n' ' ')"
+  [[ -z "${bad_mode// /}" ]] || { fail topology "agents not in hierarchical branch message_mode: ${bad_mode}"; return 1; }
+  pass "topology (${b_msg} in ${BUILD_PROJECT}; ${e_msg} in ${EVAL_PROJECT}; message_mode=branch)"
 }
 check_cost() {
-  # Committed templates follow the model mapping and carry caps.
-  local m c
+  # Committed templates follow the model mapping, carry no artificial caps, and have app/model-specific eval prompts.
+  local m c e
   m="$(models_ok "${REPO_ROOT}/docs/scion/templates")" || { fail cost "${m}"; return 1; }
   c="$(caps_ok "${REPO_ROOT}/docs/scion/templates")" || { fail cost "${c}"; return 1; }
-  pass "cost (${m}; ${c})"
+  e="$(eval_prompts_ok "${REPO_ROOT}/docs/scion/templates")" || { fail cost "${e}"; return 1; }
+  pass "cost (${m}; ${c}; ${e})"
 }
 check_skills() {
   # The hub-stored frontend and ui-craftsman templates carry a template-mounted impeccable skill.

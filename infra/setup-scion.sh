@@ -442,7 +442,7 @@ gcloud auth print-identity-token 2>/dev/null | vm_ssh "
       phase=\"\"
     fi
     if [[ -z \"\${phase}\" ]]; then
-      local -a extra_flags=(\"--service-account\" \"\${sa_id}\")
+      local -a extra_flags=(\"--service-account\" \"\${sa_id}\" \"--message-mode\" \"branch\")
       [[ \"\${role_flag}\" == \"full\" ]] && extra_flags+=(\"--role\" \"full\")
       [[ \"\${wait_flag}\" == \"nowait\" ]] && extra_flags+=(\"--no-wait\")
       scion --project \"\${proj}\" start \"\${name}\" --type \"\${name}\" \"\${extra_flags[@]}\" \"\${prompt}\"
@@ -467,6 +467,83 @@ gcloud auth print-identity-token 2>/dev/null | vm_ssh "
   ensure_agent '${EVAL_PROJECT}'  'search-evaluator' 'base' '${EVAL_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from eval-lead. End your turn with sciontool status blocked \"waiting: brief from eval-lead\".'
   ensure_agent '${EVAL_PROJECT}'  'ui-craftsman'     'base' '${EVAL_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from eval-lead. End your turn with sciontool status blocked \"waiting: brief from eval-lead\".'
   ensure_agent '${EVAL_PROJECT}'  'eval-deployer'    'base' '${EVAL_DEPLOYER_SA_ID}' 'nowait' 'Stand by for deploy requests from eval-lead. End your turn with sciontool status blocked \"waiting: deploy request from eval-lead\".'
+
+  # Enforce User -> lead -> subagents and User -> eval-lead -> subagents hierarchy + message_mode=branch in hub.db
+  sudo -u scion python3 - '${BUILD_PROJECT}' '${EVAL_PROJECT}' '${ADMIN_EMAIL}' <<'PY'
+import datetime, json, sqlite3, sys, uuid
+
+build_slug, eval_slug, admin_email = sys.argv[1:4]
+con = sqlite3.connect('/home/scion/.scion/hub.db')
+cur = con.cursor()
+now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+cur.execute('SELECT id FROM users WHERE lower(email) = lower(?) LIMIT 1', (admin_email,))
+urow = cur.fetchone()
+if not urow:
+    cur.execute('SELECT id FROM users ORDER BY created ASC LIMIT 1')
+    urow = cur.fetchone()
+user_id = urow[0]
+
+for slug, lead_name, workers in [
+    (build_slug, 'lead', ['researcher', 'product-manager', 'backend', 'frontend', 'reviewer', 'deployer']),
+    (eval_slug, 'eval-lead', ['factory-analyst', 'search-evaluator', 'ui-craftsman', 'eval-deployer']),
+]:
+    cur.execute('SELECT id FROM projects WHERE slug = ?', (slug,))
+    proj_id = cur.fetchone()[0]
+    cur.execute(
+        'SELECT id, applied_config FROM agents WHERE project_id = ? AND name = ? AND deleted_at IS NULL',
+        (proj_id, lead_name),
+    )
+    lead_id, lead_ac_raw = cur.fetchone()
+    lead_ac = json.loads(lead_ac_raw or '{}')
+    lead_ac['creatorName'] = admin_email
+    lead_ic = lead_ac.get('inlineConfig') or {}
+    lead_ic['message_mode'] = 'branch'
+    lead_ac['inlineConfig'] = lead_ic
+    cur.execute(
+        '''UPDATE agents
+           SET owner_id = ?, created_by = ?, ancestry = ?, message_mode = 'branch', applied_config = ?, updated = ?
+           WHERE id = ?''',
+        (user_id, user_id, json.dumps([user_id]), json.dumps(lead_ac), now, lead_id),
+    )
+    for wname in workers:
+        cur.execute(
+            'SELECT id, applied_config FROM agents WHERE project_id = ? AND name = ? AND deleted_at IS NULL',
+            (proj_id, wname),
+        )
+        wrow = cur.fetchone()
+        if not wrow:
+            continue
+        wid, w_ac_raw = wrow
+        w_ac = json.loads(w_ac_raw or '{}')
+        w_ac['creatorName'] = lead_name
+        w_ic = w_ac.get('inlineConfig') or {}
+        w_ic['message_mode'] = 'branch'
+        w_ac['inlineConfig'] = w_ic
+        cur.execute(
+            '''UPDATE agents
+               SET owner_id = ?, created_by = ?, ancestry = ?, message_mode = 'branch', applied_config = ?, updated = ?
+               WHERE id = ?''',
+            (lead_id, lead_id, json.dumps([user_id, lead_id]), json.dumps(w_ac), now, wid),
+        )
+        cur.execute(
+            '''UPDATE delegation_edges
+               SET delegator_type = 'agent', delegator_id = ?, updated = ?
+               WHERE scope_type = 'project' AND scope_id = ? AND delegate_type = 'agent' AND delegate_id = ? AND active = 1''',
+            (lead_id, now, proj_id, wid),
+        )
+        if cur.rowcount == 0:
+            cur.execute(
+                '''INSERT INTO delegation_edges (id, delegator_type, delegator_id, delegate_type, delegate_id, scope_type, scope_id, role, active, grandfathered, created, updated)
+                   VALUES (?, 'agent', ?, 'agent', ?, 'project', ?, 'baseline', 1, 0, ?, ?)''',
+                (str(uuid.uuid4()), lead_id, wid, proj_id, now, now),
+            )
+
+con.commit()
+PY
+
+  scion --project '${BUILD_PROJECT}' set-message-mode lead branch --cascade >/dev/null 2>&1 || true
+  scion --project '${EVAL_PROJECT}'  set-message-mode eval-lead branch --cascade >/dev/null 2>&1 || true
 "
 
 

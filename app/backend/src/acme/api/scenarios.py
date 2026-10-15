@@ -161,9 +161,13 @@ class ScenarioRunner:
         self.active: Preset | None = None
         self.index = 0
 
-    def start(self, preset: Preset) -> ScenarioState:
-        self.rt.clock = FixedClock(DISRUPTION_DETECTED_AT)
+    def reset(self) -> None:
+        """Back to no preset, the initial clock and an empty world (#321)."""
+        self.active, self.index = None, 0
         self.rt.reset()
+
+    def start(self, preset: Preset) -> ScenarioState:
+        self.rt.reset(FixedClock(DISRUPTION_DETECTED_AT))
         self.active, self.index = preset, 0
         if preset.seed:
             preset.seed(self.rt)
