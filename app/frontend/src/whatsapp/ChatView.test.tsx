@@ -171,4 +171,25 @@ describe('ChatView', () => {
     render(<ChatView passengerId="P-MARIANA" />);
     expect(await screen.findByRole('alert')).toHaveTextContent(/cannot reach/i);
   });
+
+  it('surfaces 429 Retry-After feedback and pauses background polling during cooldown', async () => {
+    let pollCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        pollCalls += 1;
+        return new Response(JSON.stringify({ detail: 'Quota exhausted.' }), {
+          status: 429,
+          headers: { 'Retry-After': '20' },
+        });
+      }),
+    );
+    render(<ChatView passengerId="P-MARIANA" pollMs={30} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Engine busy (429): Quota exhausted. Retry in 20s.',
+    );
+    expect(pollCalls).toBe(1);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(pollCalls).toBe(1);
+  });
 });

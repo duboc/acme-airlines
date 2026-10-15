@@ -24,9 +24,55 @@ export type PassengerActionName = 'accept_offer' | 'decline_offer';
 
 export const API_BASE = '/api';
 
+export class ApiHttpError extends Error {
+  readonly status: number;
+  readonly detail: string;
+  readonly retryAfterSeconds: number | null;
+
+  constructor(
+    status: number,
+    detail: string,
+    retryAfterSeconds: number | null,
+    fallbackMessage = `Request failed (${status})`,
+  ) {
+    super(detail || fallbackMessage);
+    this.name = 'ApiHttpError';
+    this.status = status;
+    this.detail = detail;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+
+  get isTransient(): boolean {
+    return this.status === 429 || this.status === 503;
+  }
+}
+
+export async function throwApiError(res: Response, fallbackMessage?: string): Promise<never> {
+  const retryHeader = res.headers?.get?.('Retry-After') ?? null;
+  const parsedRetry = retryHeader !== null ? Number.parseInt(retryHeader, 10) : Number.NaN;
+  const retryAfterSeconds = Number.isFinite(parsedRetry) && parsedRetry > 0 ? parsedRetry : null;
+  let detail = '';
+  try {
+    const body = (await res.json()) as { detail?: unknown };
+    if (typeof body?.detail === 'string') detail = body.detail;
+  } catch {
+    // Non-JSON error response
+  }
+  throw new ApiHttpError(res.status, detail, retryAfterSeconds, fallbackMessage);
+}
+
+export function formatTransientError(err: unknown, fallback: string): string {
+  if (err instanceof ApiHttpError && err.isTransient) {
+    const base = err.detail || 'Engine is temporarily busy.';
+    const wait = err.retryAfterSeconds ? ` Retry in ${err.retryAfterSeconds}s.` : '';
+    return `Engine busy (${err.status}): ${base}${wait}`;
+  }
+  return fallback;
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
-  if (!res.ok) throw new Error(`Request failed (${res.status})`);
+  if (!res.ok) return throwApiError(res, `Request failed (${res.status})`);
   return (await res.json()) as T;
 }
 

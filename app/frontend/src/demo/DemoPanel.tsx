@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { postAction, sendReply, type PassengerActionName } from '../whatsapp/api';
+import {
+  ApiHttpError,
+  formatTransientError,
+  postAction,
+  sendReply,
+  type PassengerActionName,
+} from '../whatsapp/api';
 import { listScenarios, startScenario, stepScenario } from './api';
 import './demo.css';
 import { evaluate } from './expectations';
@@ -43,7 +49,14 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
         setPresets(p);
         setSelected((cur) => cur || p[0]?.id || '');
       })
-      .catch(() => setError('Scenarios are unavailable. They only run with the fake LLM mode.'));
+      .catch((err: unknown) =>
+        setError(
+          formatTransientError(
+            err,
+            'Scenarios are unavailable. They only run with the fake LLM mode.',
+          ),
+        ),
+      );
   }, []);
 
   async function run(fn: () => Promise<void>, failure: string) {
@@ -52,8 +65,8 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
     setError('');
     try {
       await fn();
-    } catch {
-      setError(failure);
+    } catch (err) {
+      setError(formatTransientError(err, failure));
     } finally {
       setBusy(false);
     }
@@ -110,9 +123,20 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
           disabled={busy || !active || state.done}
           onClick={() =>
             run(async () => {
-              const s = await stepScenario(selected);
-              setState(s);
-              onChanged(s);
+              try {
+                const s = await stepScenario(selected);
+                setState(s);
+                onChanged(s);
+              } catch (err) {
+                if (
+                  err instanceof ApiHttpError &&
+                  err.status === 503 &&
+                  err.detail.includes('The step was applied')
+                ) {
+                  onChanged();
+                }
+                throw err;
+              }
             }, 'Could not run the step. Start the scenario again.')
           }
         >

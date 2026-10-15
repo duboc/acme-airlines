@@ -1,4 +1,7 @@
+import { ApiHttpError, formatTransientError, throwApiError } from '../whatsapp/api';
 import type { JourneyDetail } from './types';
+
+export { ApiHttpError, formatTransientError };
 
 const BASE = '/api';
 
@@ -7,7 +10,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { 'Content-Type': 'application/json' },
   });
-  if (!res.ok) throw new Error(`${path} failed with ${res.status}`);
+  if (!res.ok) return throwApiError(res, `${path} failed with ${res.status}`);
   return (await res.json()) as T;
 }
 

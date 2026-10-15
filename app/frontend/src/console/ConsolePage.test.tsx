@@ -121,6 +121,39 @@ describe('ConsolePage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not trigger/i);
   });
 
+  it('surfaces 429 Retry-After busy feedback and reconnects a closed EventSource', async () => {
+    render(<ConsolePage />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/journeys', expect.anything()));
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ detail: 'Quota exhausted.' }), {
+          status: 429,
+          headers: { 'Retry-After': '20' },
+        }),
+      ),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Engine busy (429): Quota exhausted. Retry in 20s.',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' }));
+    await screen.findByText('Detected');
+    expect(FakeEventSource.instances).toHaveLength(1);
+    const firstEs = FakeEventSource.instances[0]! as FakeEventSource & { readyState?: number };
+    vi.useFakeTimers();
+    try {
+      firstEs.readyState = 2;
+      act(() => firstEs.onerror?.());
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(FakeEventSource.instances).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reset closes the stream and clears the view', async () => {
     render(<ConsolePage />);
     await userEvent.click(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' }));
