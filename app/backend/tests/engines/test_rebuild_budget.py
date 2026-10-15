@@ -8,6 +8,7 @@ ceiling needs about 2x headroom: 1000 ms against a median of 514 ms and a max of
 """
 
 import math
+import sys
 
 import pytest
 
@@ -23,6 +24,19 @@ def fake_mode(monkeypatch):
     monkeypatch.setenv("LLM_MODE", "fake")
     monkeypatch.delenv("ACME_STATE_DB", raising=False)
     monkeypatch.delenv("ENGINE_MODE", raising=False)
+
+
+def measured_under_tracing() -> bool:
+    """Coverage (or a debugger) slows every Python line about 2x: the timing would measure the
+    tracer. CI runs this file again without coverage (`--no-cov`, see ci.yml) for the real check."""
+    try:
+        import coverage
+
+        if coverage.Coverage.current() is not None:
+            return True
+    except ImportError:  # pragma: no cover
+        pass
+    return sys.gettrace() is not None
 
 
 def p95(values: list[float]) -> float:
@@ -52,6 +66,8 @@ async def test_rebuild_p95_per_preset_stays_under_the_interim_ceiling(capsys):
             "\nrebuild latency (target p95 < 500 ms, interim ceiling 1000 ms):\n  "
             + "\n  ".join(rows)
         )
+    if measured_under_tracing():
+        pytest.skip("timing is not asserted under coverage/tracing; the no-coverage CI step does")
     assert not failures, failures
 
 
