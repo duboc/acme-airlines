@@ -478,3 +478,23 @@ async def test_a_step_index_that_is_not_whole_is_an_engine_fault_not_a_500():
     for bad in (True, "5", None, 5.5):
         with pytest.raises(EngineUnavailable):
             engine_backend.whole(bad)
+
+
+async def test_an_api_error_from_the_engine_keeps_an_integer_http_status_over_asgi():
+    """#327: the engine's `{"error": {"status": 409.0}}` reached h11 as a float ("status code must
+    be integer") and the demo answered 500 to a stale Accept tap."""
+    backend = local_backend()
+    backend._customer = DoublesEngine(backend._customer)  # noqa: SLF001
+    async with client(create_engine_app(backend)) as c:
+        await c.post("/scenarios/happy-path/start")  # no offer has been sent yet
+        r = await c.post("/whatsapp/P-MARIANA/actions", json={"action": "accept_offer"})
+    assert isinstance(r.status_code, int) and r.status_code == 409
+    assert r.json()["detail"]
+
+
+def test_ok_turns_a_double_status_into_an_integer_api_error():
+    from acme.api.errors import ApiError
+
+    with pytest.raises(ApiError) as err:
+        engine_backend.ok({"error": {"status": 409.0, "detail": "no offer", "code": "x"}})
+    assert err.value.status_code == 409 and isinstance(err.value.status_code, int)

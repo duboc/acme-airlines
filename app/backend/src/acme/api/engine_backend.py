@@ -194,7 +194,8 @@ def ok(reply: Any) -> Any:
     """Engine ops return API errors as data (`{"error": {"status", "detail"}}`): re-raise them."""
     if isinstance(reply, dict) and "error" in reply:
         err = reply["error"]
-        raise ApiError(err["status"], err.get("code", "error"), err["detail"])
+        # The status arrives as a double (409.0): h11 refuses a non-integer status code (#327).
+        raise ApiError(whole(err["status"]), err.get("code", "error"), err["detail"])
     return reply
 
 
