@@ -9,7 +9,8 @@ of another run (a `journey not found` storm). Now it stops
 - on a typed, temporary engine error (quota, unavailable): a `retry: <ms>` hint, then a clean end
   (the client reconnects after that delay instead of the stream crashing or looping),
 - when the run it was opened for is over (`still_open` turns false),
-- after `SSE_MAX_SECONDS`, below the Cloud Run request timeout (300 s), with a clean end.
+- after `SSE_MAX_SECONDS` (60 s, far below the Cloud Run request timeout of 300 s), with a clean
+  end: a stream whose client vanished without the platform saying so cannot outlive it.
 
 EventSource clients reconnect on their own after that (or a dropped connection), so every event
 carries `id: <number of events up to and including it>` and a reconnect that sends
@@ -27,7 +28,7 @@ from typing import Any
 
 SSE_KEEPALIVE_SECONDS = 3.0  # a write, not an engine query: it is how a dead client is noticed
 RECONNECT_MS = 3000  # `retry:` hint: how soon an EventSource reconnects after a drop
-SSE_MAX_SECONDS = 270.0
+SSE_MAX_SECONDS = 60.0  # short: Cloud Run does not tell the app that a client left (engines.md)
 KEEPALIVE = ": keep-alive\n\n"  # an SSE comment: ignored by clients, a write that detects a proxy
 
 
