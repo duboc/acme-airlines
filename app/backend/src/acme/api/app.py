@@ -251,11 +251,13 @@ def create_local_app(clock: Clock | None = None, sales_token: str | None = None)
 
     @app.post("/scenario/reset", tags=["scenario"])
     async def reset() -> dict[str, str]:
-        rt.reset()
+        runner.reset()
         return {"status": "reset"}
 
     @app.post("/scenario/trigger-cancellation", tags=["scenario"])
     async def trigger_cancellation(body: TriggerCancellation) -> TriggerResult:
+        if runner.active is not None:  # a manual trigger ends the preset and its fixed clock
+            runner.reset()
         return await do_trigger(rt, body.flight, body.reason)
 
     runner = ScenarioRunner(rt)
