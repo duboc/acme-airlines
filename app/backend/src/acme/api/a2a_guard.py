@@ -38,17 +38,27 @@ def _is_sales(scope: Scope, token: str) -> bool:
     return found
 
 
+def _valid_sales_bearer(scope: Scope, token: str) -> bool:
+    """Fail closed on `/a2a`: only a single exact `Authorization: Bearer <token>` header qualifies."""
+    wanted = b"Bearer " + token.encode()
+    auths = [v for k, v in scope["headers"] if k.lower() == b"authorization"]
+    return len(auths) == 1 and hmac.compare_digest(auths[0], wanted)
+
+
 class SalesRouteGuard:
     def __init__(self, app: ASGIApp, sales_token: str | None) -> None:
         self.app, self._token = app, sales_token
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if self._token and scope["type"] in ("http", "websocket"):
-            is_sales = _is_sales(scope, self._token)
             if scope["path"] == A2A_PATH:
-                denied = not (is_sales and scope["type"] == "http" and scope["method"] == "POST")
+                denied = not (
+                    scope["type"] == "http"
+                    and scope["method"] == "POST"
+                    and _valid_sales_bearer(scope, self._token)
+                )
             else:
-                denied = is_sales
+                denied = _is_sales(scope, self._token)
             if denied:
                 audit.warning(
                     "guardrail audit: sales caller denied route=%s method=%s",
