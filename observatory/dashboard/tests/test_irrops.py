@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from conftest import make_client
 from fastapi.testclient import TestClient
+from google.api_core.exceptions import NotFound
 
 from dashboard.app import create_app
 from dashboard.gcp import GcpDataSource
@@ -84,38 +85,58 @@ def series(labels, **value):
 
 def gcp(responses):
     mon = MagicMock()
-    mon.list_time_series.side_effect = lambda request: responses(request["filter"])
+    mon.list_time_series.side_effect = lambda request: responses(
+        request["filter"], "view" in request
+    )
     return GcpDataSource("proj", MagicMock(), mon, MagicMock(), now=lambda: NOW)
 
 
 def test_gcp_reads_the_documented_metric_names():
-    def responses(flt):
-        if "starts_with" in flt:
-            return [series({}, n=1)]
+    filters = []
+
+    def responses(flt, recent=False):
+        filters.append(flt)
         if "acme.guardrail.decisions" in flt:
             return [series({"rule": "margin_negative", "outcome": "reject"}, n=2)]
         if "acme.offers" in flt:
             return [series({"status": "proposed"}, n=5), series({"status": "accepted"}, n=3)]
         if "acme.notification.latency" in flt:
             return [series({}, n=9, d=12.5)]
+        if "acme.scenario.rebuild.duration" in flt:
+            return [series({}, n=2, d=0.15)]
         if "acme.needs_human" in flt:
             return [series({}, n=1)]
-        return []  # no template fallbacks / 5xx series yet
+        if "acme.http.server.errors" in flt:
+            raise NotFound("descriptor not created yet")
+        return []  # no template fallbacks series yet
 
     raw = gcp(responses).irrops_metrics(24)
     assert raw["guardrail"] == [{"rule": "margin_negative", "outcome": "reject", "count": 2}]
     assert raw["offers"] == {"proposed": 5, "accepted": 3}
     assert raw["notification"] == {"count": 9, "p50_s": 12.5, "p95_s": 12.5}
+    assert raw["engine_rebuilds"] == 2
+    assert raw["engine_latency"] == {"p50_ms": 150.0, "p95_ms": 150.0}
     assert raw["needs_human"] == 1 and raw["template_fallbacks"] is None
     assert raw["errors_5xx"] is None and raw["alive"] is True
+    assert raw["last_point_at"] == NOW.isoformat()
+    assert filters and all(
+        f.startswith('metric.type="workload.googleapis.com/acme.') and "starts_with" not in f
+        for f in filters
+    )
 
 
 def test_gcp_without_any_series_is_empty_and_without_recent_points_is_not_alive():
     with pytest.raises(SourceEmpty, match="No IRROPS metrics yet"):
-        gcp(lambda flt: []).irrops_metrics(24)
+        gcp(lambda flt, recent=False: []).irrops_metrics(24)
 
-    def old(flt):
-        return [] if "starts_with" in flt else ([series({}, n=2)] if "needs_human" in flt else [])
+    def missing(flt, recent=False):
+        raise NotFound("descriptor not created yet")
+
+    with pytest.raises(SourceEmpty, match="No IRROPS metrics yet"):
+        gcp(missing).irrops_metrics(24)
+
+    def old(flt, recent=False):
+        return [] if recent else ([series({}, n=2)] if "needs_human" in flt else [])
 
     raw = gcp(old).irrops_metrics(24)
     assert raw["alive"] is False and raw["last_point_at"] is None

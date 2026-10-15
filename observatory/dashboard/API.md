@@ -116,13 +116,17 @@ log lines, newest first; `action` is `no action | agents suspended`. `budget_usd
  "offers_proposed":7,"offers_accepted":4,"offers_declined":2,
  "template_fallbacks":3,"template_fallback_rate":0.25,"needs_human":1,
  "notification_count":12,"notification_p50_s":8.0,"notification_p95_s":41.5,
- "errors_5xx":0,"errors_5xx_per_hour":0.0,"demo_health":"healthy","last_metric_at":"2026-10-10T12:00:00Z"}
+ "errors_5xx":0,"errors_5xx_per_hour":0.0,
+ "engine_rebuilds":2,"engine_latency_p50_ms":150.0,"engine_latency_p95_ms":400.0,
+ "demo_health":"healthy","last_metric_at":"2026-10-10T12:00:00Z"}
 ```
 The IRROPS product metrics emitted by the runtime (#235, names in `docs/observatory/product-metrics.md`).
 - **Real source:** Cloud Monitoring `workload.googleapis.com/acme.guardrail.decisions` (labels `rule`, `outcome`),
   `acme.offers` (`status`), `acme.llm.template_fallbacks`, `acme.needs_human`, `acme.notification.latency`
-  (delta distribution, seconds; p50/p95 via `REDUCE_PERCENTILE_50/95`, worst series) and `acme.http.server.errors`,
-  each `ALIGN_DELTA` over the window. Confirm the metric types against the live project on first deploy.
+  (delta distribution, seconds; p50/p95 via `REDUCE_PERCENTILE_50/95`, worst series),
+  `acme.scenario.rebuild.duration` (delta distribution, seconds -> count and ms p50/p95) and
+  `acme.http.server.errors`, each `ALIGN_DELTA` over the window. Uncreated metric descriptors (`NotFound`) read
+  as pending (`null`).
 - **Pending, not zero:** a metric with no series yet is `null` (and `guardrail` is `[]`). No series at all is
   `state: "empty"` ("No IRROPS metrics yet"). Zero means the series exists and is zero.
 - `template_fallback_rate` = fallbacks / notifications (null without notifications). `errors_5xx_per_hour` = `errors_5xx / hours`.

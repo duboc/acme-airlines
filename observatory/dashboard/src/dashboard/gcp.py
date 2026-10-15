@@ -262,6 +262,13 @@ class GcpDataSource:
         end = self.now()
         interval = monitoring_v3.TimeInterval(end_time=end, start_time=end - timedelta(hours=hours))
         agg_mod = monitoring_v3.Aggregation
+        seen: list[str] = []
+
+        def list_series(request):
+            try:
+                return list(self._mon.list_time_series(request=request))
+            except NotFound:
+                return []
 
         def series(name, reducer, group=()):
             agg = agg_mod(
@@ -276,7 +283,10 @@ class GcpDataSource:
                 "interval": interval,
                 "aggregation": agg,
             }
-            return list(self._mon.list_time_series(request=request))
+            found = list_series(request)
+            if found and name not in seen:
+                seen.append(name)
+            return found
 
         def total(name):
             found = series(name, agg_mod.Reducer.REDUCE_SUM)
@@ -312,19 +322,26 @@ class GcpDataSource:
                     for p in ts.points
                 ]
                 notification[key] = max(vals) if vals else None
-                
+
+        engine_rebuilds = None
         engine_latency = None
-        lat_counts = series("engine.latency", agg_mod.Reducer.REDUCE_SUM)
-        if lat_counts:
+        rebuilds = series("scenario.rebuild.duration", agg_mod.Reducer.REDUCE_SUM)
+        if rebuilds:
+            engine_rebuilds = sum(
+                p.value.distribution_value.count for ts in rebuilds for p in ts.points
+            )
             engine_latency = {}
-            for key, red in (("p50_ms", "REDUCE_PERCENTILE_50"), ("p95_ms", "REDUCE_PERCENTILE_95")):
+            for key, red in (
+                ("p50_ms", "REDUCE_PERCENTILE_50"),
+                ("p95_ms", "REDUCE_PERCENTILE_95"),
+            ):
                 vals = [
-                    p.value.double_value
-                    for ts in series("engine.latency", getattr(agg_mod.Reducer, red))
+                    p.value.double_value * 1000
+                    for ts in series("scenario.rebuild.duration", getattr(agg_mod.Reducer, red))
                     for p in ts.points
                 ]
                 engine_latency[key] = max(vals) if vals else None
-                
+
         raw = {
             "guardrail": guardrail,
             "offers": offers or None,
@@ -332,27 +349,30 @@ class GcpDataSource:
             "needs_human": total("needs_human"),
             "notification": notification,
             "errors_5xx": total("http.server.errors"),
-            "engine_rebuilds": total("engine.rebuilds"),
+            "engine_rebuilds": engine_rebuilds,
             "engine_latency": engine_latency,
         }
         if not (guardrail or offers or notification or engine_latency) and all(
-            raw[k] is None for k in ("template_fallbacks", "needs_human", "errors_5xx", "engine_rebuilds")
+            raw[k] is None
+            for k in ("template_fallbacks", "needs_human", "errors_5xx", "engine_rebuilds")
         ):
             raise SourceEmpty(
                 "No IRROPS metrics yet: the runtime has not exported to Cloud Monitoring."
             )
-        # Freshness: the newest point of any acme.* series in the last 15 minutes (counters are
-        # cumulative, so a live runtime keeps writing points even when nothing happened).
+        # Freshness: the newest point of any active acme.* series in the last 15 minutes (counters
+        # are cumulative, so a live runtime keeps writing points even when nothing happened).
         recent = monitoring_v3.TimeInterval(end_time=end, start_time=end - timedelta(minutes=15))
-        request = {
-            "name": f"projects/{self._project}",
-            "filter": f'metric.type=starts_with("{IRROPS_PREFIX}")',
-            "interval": recent,
-            "view": monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.FULL,
-        }
         ends = [
             p.interval.end_time
-            for ts in self._mon.list_time_series(request=request)
+            for name in seen
+            for ts in list_series(
+                {
+                    "name": f"projects/{self._project}",
+                    "filter": f'metric.type="{IRROPS_PREFIX}{name}"',
+                    "interval": recent,
+                    "view": monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.FULL,
+                }
+            )
             for p in ts.points
         ]
         raw["last_point_at"] = max(ends).isoformat() if ends else None
