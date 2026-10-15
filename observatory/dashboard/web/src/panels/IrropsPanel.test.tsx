@@ -86,6 +86,9 @@ describe('IrropsPanel', () => {
     expect(await p.findByText('Offers proposed')).toBeInTheDocument();
     expect(p.getByText('Offers proposed').nextElementSibling).toHaveTextContent('No data yet');
     expect(p.getByText('Needs human').nextElementSibling).toHaveTextContent('No data yet');
+    expect(p.getByText('Engine rebuilds').nextElementSibling).toHaveTextContent('No data yet');
+    expect(p.getByText('Engine latency p50').nextElementSibling).toHaveTextContent('No data yet');
+    expect(p.getByText('Engine latency p95').nextElementSibling).toHaveTextContent('No data yet');
     expect(p.getByText('Notification p95').nextElementSibling).toHaveTextContent('No data yet');
     expect(p.getByText('Unknown')).toBeInTheDocument();
     expect(p.getByText('No guardrail decisions yet.')).toBeInTheDocument();

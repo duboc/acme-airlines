@@ -28,6 +28,7 @@ function Stat({ label, value }: { label: string; value: string | null }) {
 // `?? null`: a field the API omits is pending, never a crash or a zero.
 const count = (n?: number | null) => (n == null ? null : num(n));
 const secs = (n?: number | null) => (n == null ? null : `${n.toFixed(1)} s`);
+const ms = (n?: number | null) => (n == null ? null : `${Math.round(n)} ms`);
 
 function IrropsBody({ data: d }: { data: IrropsResponse }) {
   const [glyph, health] = HEALTH[d.demo_health];
@@ -63,14 +64,8 @@ function IrropsBody({ data: d }: { data: IrropsResponse }) {
         />
         <Stat label="Needs human" value={count(d.needs_human)} />
         <Stat label="Engine rebuilds" value={count(d.engine_rebuilds)} />
-        <Stat
-          label="Engine latency p50"
-          value={d.engine_latency_p50_ms == null ? null : `${Math.round(d.engine_latency_p50_ms)} ms`}
-        />
-        <Stat
-          label="Engine latency p95"
-          value={d.engine_latency_p95_ms == null ? null : `${Math.round(d.engine_latency_p95_ms)} ms`}
-        />
+        <Stat label="Engine latency p50" value={ms(d.engine_latency_p50_ms)} />
+        <Stat label="Engine latency p95" value={ms(d.engine_latency_p95_ms)} />
       </dl>
       {d.guardrail.length === 0 ? (
         <p className="pending">No guardrail decisions yet.</p>

@@ -140,3 +140,9 @@ def test_gcp_without_any_series_is_empty_and_without_recent_points_is_not_alive(
 
     raw = gcp(old).irrops_metrics(24)
     assert raw["alive"] is False and raw["last_point_at"] is None
+
+    def zero_rebuilds(flt, recent=False):
+        return [series({}, n=0, d=0.0)] if "acme.scenario.rebuild.duration" in flt else []
+
+    raw_zero = gcp(zero_rebuilds).irrops_metrics(24)
+    assert raw_zero["engine_rebuilds"] == 0 and raw_zero["engine_latency"] is None

@@ -324,7 +324,8 @@ def collector_health(src: DataSource) -> CollectorHealthResponse:
 
 def irrops(src: DataSource, hours: int) -> IrropsResponse:
     """Raw: ``{last_point_at, guardrail:[{rule,outcome,count}], offers:{proposed,accepted,declined},
-    template_fallbacks, needs_human, notification:{count,p50_s,p95_s}, errors_5xx, alive?}``.
+    template_fallbacks, needs_human, notification:{count,p50_s,p95_s}, errors_5xx,
+    engine_rebuilds, engine_latency:{p50_ms,p95_ms}, alive?}``.
     A missing key or null means the metric has no series yet (shown as pending, not zero)."""
     try:
         raw = src.irrops_metrics(hours)

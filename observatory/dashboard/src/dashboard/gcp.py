@@ -247,7 +247,9 @@ class GcpDataSource:
         return [
             {
                 "ts": e.timestamp.isoformat(),
-                "status": "failed" if "Container called exit(" in e.payload else "succeeded",
+                "status": "failed"
+                if "Container called exit(" in e.payload and "exit(0)" not in e.payload
+                else "succeeded",
                 "detail": e.payload[:200],
             }
             for e in entries
@@ -330,17 +332,18 @@ class GcpDataSource:
             engine_rebuilds = sum(
                 p.value.distribution_value.count for ts in rebuilds for p in ts.points
             )
-            engine_latency = {}
-            for key, red in (
-                ("p50_ms", "REDUCE_PERCENTILE_50"),
-                ("p95_ms", "REDUCE_PERCENTILE_95"),
-            ):
-                vals = [
-                    p.value.double_value * 1000
-                    for ts in series("scenario.rebuild.duration", getattr(agg_mod.Reducer, red))
-                    for p in ts.points
-                ]
-                engine_latency[key] = max(vals) if vals else None
+            if engine_rebuilds > 0:
+                engine_latency = {}
+                for key, red in (
+                    ("p50_ms", "REDUCE_PERCENTILE_50"),
+                    ("p95_ms", "REDUCE_PERCENTILE_95"),
+                ):
+                    vals = [
+                        p.value.double_value * 1000
+                        for ts in series("scenario.rebuild.duration", getattr(agg_mod.Reducer, red))
+                        for p in ts.points
+                    ]
+                    engine_latency[key] = max(vals) if vals else None
 
         raw = {
             "guardrail": guardrail,

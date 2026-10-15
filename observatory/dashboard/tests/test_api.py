@@ -5,6 +5,8 @@ ENDPOINTS = ["/api/spend", "/api/models", "/api/agents", "/api/github", "/api/bu
 
 def test_healthz(client):
     assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/api/healthz").json() == {"status": "ok"}
+    assert client.get("/api/overview").json()["state"] == "ok"
 
 
 @pytest.mark.parametrize("path", ENDPOINTS)

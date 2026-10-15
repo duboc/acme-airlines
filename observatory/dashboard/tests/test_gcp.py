@@ -191,10 +191,11 @@ def test_collector_runs_map_log_lines_to_status():
     log = MagicMock()
     log.list_entries.return_value = [
         NS(timestamp=NOW, payload="Container called exit(2)."),
+        NS(timestamp=NOW, payload="Container called exit(0)."),
         NS(timestamp=NOW, payload="wrote 12 rows to agent_snapshots"),
     ]
-    rows = make(log=log).collector_runs(2)
-    assert [r["status"] for r in rows] == ["failed", "succeeded"]
+    rows = make(log=log).collector_runs(3)
+    assert [r["status"] for r in rows] == ["failed", "succeeded", "succeeded"]
     assert "acme-observatory-collector" in log.list_entries.call_args.kwargs["filter_"]
 
 

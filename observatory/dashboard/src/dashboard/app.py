@@ -41,8 +41,13 @@ def create_app(
     app = FastAPI(title="ACME Observatory", docs_url=None, redoc_url=None)
 
     @app.get("/healthz")
+    @app.get("/api/healthz")
     def healthz() -> dict:
         return {"status": "ok"}
+
+    @app.get("/api/overview")
+    def overview() -> CollectorHealthResponse:
+        return service.collector_health(source)
 
     @app.get("/api/spend")
     def spend(days: int = Query(30, ge=1, le=365)) -> SpendResponse:

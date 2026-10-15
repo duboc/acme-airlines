@@ -13,8 +13,14 @@
   font-family: 'IBM Plex Sans Variable', system-ui, sans-serif;
   color: var(--ink);
   background: var(--surface);
+  caret-color: var(--navy);
+  scrollbar-color: var(--ink-soft) var(--panel);
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
+}
+::selection {
+  background: var(--navy);
+  color: var(--surface);
 }
 * {
   box-sizing: border-box;
@@ -225,7 +231,7 @@ details summary {
   color: var(--warn);
   background: var(--warn-bg);
   padding: 0.25rem 0.5rem;
-  border-left: 4px solid var(--warn);
+  border-left: 1px solid var(--warn);
 }
 .meter {
   position: relative;
@@ -303,8 +309,8 @@ details summary {
   font-weight: 600;
 }
 .health-red {
-  background: #7a1414;
-  color: #fff;
+  background: var(--bad);
+  color: var(--surface);
 }
 .health-ok {
   color: var(--muted, inherit);

@@ -44,7 +44,10 @@ describe('AgentEnginePanel', () => {
   });
 
   it('renders metrics and trace links per engine', async () => {
-    mock({ ...env, engines: [engine('acme-customer-agent'), engine('acme-sales-agent')] });
+    mock({
+      ...env,
+      engines: [engine('acme-customer-agent'), engine('acme-sales-agent', { engine_id: '2' })],
+    });
     render(<AgentEnginePanel />);
     expect(await within(panel()).findByText('acme-customer-agent')).toBeInTheDocument();
     expect(within(panel()).getByText('acme-sales-agent')).toBeInTheDocument();

@@ -20,8 +20,11 @@ Invalid query values return `422`. All timestamps are UTC ISO-8601 with `Z` (`20
 
 Payload fields below are always present (empty list / zero / null when there is no data).
 
-## `GET /healthz`
+## `GET /healthz` and `GET /api/healthz`
 `{"status": "ok"}`
+
+## `GET /api/overview`
+Alias for `GET /api/collector-health` returning the pipeline health envelope from real sources.
 
 ## `GET /api/collector-health`
 ```json
