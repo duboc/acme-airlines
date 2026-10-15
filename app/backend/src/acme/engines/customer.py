@@ -594,6 +594,7 @@ class CustomerEngineApp:
     @shared
     def reset(self) -> dict[str, str]:
         self.runtime.reset()
+        self.runtime.llm.reset()  # a reset drops the tape with the state (#279)
         return {"status": "reset"}
 
     @shared
