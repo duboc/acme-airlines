@@ -10,7 +10,6 @@ response bodies (they carry passenger data).
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import re
@@ -33,6 +32,7 @@ from acme.api.app import (
 from acme.api.errors import ApiError, add_error_handlers, not_found
 from acme.api.events import TimelineEvent
 from acme.api.scenarios import BY_ID, PresetView, ScenarioState
+from acme.api.sse import event_stream, resume_from
 from acme.customer.runtime import WhatsAppMessage
 
 ENV_CUSTOMER, ENV_SALES = "AGENT_ENGINE_CUSTOMER", "AGENT_ENGINE_SALES"
@@ -129,6 +129,7 @@ class EngineBackend:
         self._active: str | None = None
         self._step = 0  # the caller-side step counter sent with every call (#266)
         self._tape: list[Any] | None = None  # the replay tape the engine returned (#279)
+        self._run = 0  # bumped by every scenario start and reset: ends the open streams (#305)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> EngineBackend:
@@ -162,7 +163,12 @@ class EngineBackend:
         self._tape = tape if isinstance(tape, list) else None
         return state
 
+    @property
+    def run(self) -> int:
+        return self._run
+
     async def scenario_start(self, scenario_id: str) -> dict:
+        self._run += 1  # before the call: a stream polling meanwhile stops using the old context
         state = await self._customer.call("scenario_start", scenario_id=scenario_id)
         self._active, self._step = scenario_id, state["step_index"]
         return self._keep_tape(state)
@@ -199,6 +205,7 @@ class EngineBackend:
         )
 
     async def reset(self) -> dict:
+        self._run += 1
         self._active = None
         return await self._customer.call("reset")
 
@@ -291,20 +298,18 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
         responses={200: {"content": {"text/event-stream": {}}}},
     )
     async def journey_events(
-        journey_id: str, limit: int | None = Query(None, ge=1)
+        request: Request, journey_id: str, limit: int | None = Query(None, ge=1)
     ) -> StreamingResponse:
         known(await backend.journeys_list(), journey_id)
-
-        async def stream() -> AsyncIterator[str]:
-            sent = 0
-            while limit is None or sent < limit:
-                batch = await backend.journey_events(journey_id, sent)
-                for event in batch[: None if limit is None else limit - sent]:
-                    sent += 1
-                    yield f"data: {json.dumps(event)}\n\n"
-                if not batch:
-                    await asyncio.sleep(POLL_SECONDS)
-
-        return StreamingResponse(stream(), media_type="text/event-stream")
+        run = backend.run  # the stream belongs to this run: a restart ends it (#305)
+        stream = event_stream(
+            request,
+            lambda sent: backend.journey_events(journey_id, sent),
+            limit=limit,
+            poll_seconds=POLL_SECONDS,
+            still_open=lambda: backend.run == run,
+            start_after=resume_from(request.headers.get("last-event-id")),
+        )
+        return StreamingResponse(stream, media_type="text/event-stream")
 
     return app

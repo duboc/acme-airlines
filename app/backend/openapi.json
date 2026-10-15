@@ -2720,7 +2720,7 @@
     },
     "/journeys/{journey_id}/events": {
       "get": {
-        "description": "SSE stream: one `data:` frame per timeline event (a `TimelineEvent`, by `type`).",
+        "description": "SSE stream: one `data:` frame per timeline event (a `TimelineEvent`, by `type`).\n\nIt ends when the client goes away, when a new scenario replaced this journey, and after a\nbounded time; idle, it sends `: keep-alive` comments (#305).",
         "operationId": "journey_events_journeys__journey_id__events_get",
         "parameters": [
           {

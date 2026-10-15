@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
-import json
 import os
-from collections.abc import AsyncIterator
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -27,6 +24,7 @@ from acme.api.scenarios import (
     ScenarioState,
     preset_view,
 )
+from acme.api.sse import event_stream, resume_from
 from acme.customer.adk_agent import CARD_PATH, customer_agent_card
 from acme.customer.conversion import NoSentOffer, accept_offer, decline_offer
 from acme.customer.loop import CustomerLoop
@@ -291,24 +289,28 @@ def create_local_app(clock: Clock | None = None, sales_token: str | None = None)
         responses={200: {"content": {"text/event-stream": {}}}},
     )
     async def journey_events(
+        request: Request,
         journey_id: str,
         limit: int | None = Query(None, ge=1, description="Close the stream after N events."),
     ) -> StreamingResponse:
-        """SSE stream: one `data:` frame per timeline event (a `TimelineEvent`, by `type`)."""
+        """SSE stream: one `data:` frame per timeline event (a `TimelineEvent`, by `type`).
+
+        It ends when the client goes away, when a new scenario replaced this journey, and after a
+        bounded time; idle, it sends `: keep-alive` comments (#305)."""
         rec = get_journey(journey_id)
 
-        async def stream() -> AsyncIterator[str]:
-            sent = 0
-            while limit is None or sent < limit:
-                timeline = rec.state.timeline
-                if sent < len(timeline):
-                    event = timeline[sent]
-                    sent += 1
-                    yield f"data: {json.dumps(event.model_dump(mode='json'))}\n\n"
-                else:
-                    await asyncio.sleep(SSE_POLL_SECONDS)
+        async def events(sent: int) -> list[dict]:
+            return [e.model_dump(mode="json") for e in rec.state.timeline[sent:]]
 
-        return StreamingResponse(stream(), media_type="text/event-stream")
+        stream = event_stream(
+            request,
+            events,
+            limit=limit,
+            poll_seconds=SSE_POLL_SECONDS,
+            still_open=lambda: rt.journeys.get(journey_id) is rec,
+            start_after=resume_from(request.headers.get("last-event-id")),
+        )
+        return StreamingResponse(stream, media_type="text/event-stream")
 
     @app.get("/whatsapp/{passenger_id}/messages", tags=["whatsapp"])
     async def whatsapp_messages(passenger_id: str) -> list[WhatsAppMessage]:
