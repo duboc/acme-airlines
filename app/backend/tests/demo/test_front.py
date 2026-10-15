@@ -64,12 +64,23 @@ async def test_scenario_resolves_end_to_end(client):
         "/api/mcp/pss/",
         "/api/A2A",
         "/api/%61%32a",
+        "/api/%2525612a",
         "/api//a2a",
+        "/api/./a2a",
+        "/api/%2e/a2a",
+        "/api/%252e/a2a",
+        "/api/%252e/.well-known/agent-card.json",
+        "/api/x/../a2a",
+        "/api/x/%252e%252e/a2a",
+        "/api/x/%252e%252e/.well-known/agent-card.json",
+        "/api/%252e%252e/a2a",
+        "/%252e/.well-known/agent-card.json",
     ],
 )
 @pytest.mark.parametrize("method", ["GET", "POST"])
 async def test_internal_endpoints_are_404(client, path, method):
-    assert (await client.request(method, path)).status_code == 404
+    r = await client.request(method, path)
+    assert r.status_code == 404 and r.text == "Not Found"
 
 
 def test_blocked_prefixes_documented():
