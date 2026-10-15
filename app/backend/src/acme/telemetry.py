@@ -157,9 +157,25 @@ def flush(timeout_ms: int = 5000) -> FlushResult:
 DIAG = logging.getLogger("acme.diag")
 
 
+class _StderrHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """Writes to the CURRENT `sys.stderr`. A handler bound to the stream of the first call writes
+    to a closed file once that stream is replaced (pytest capture) and logging prints tracebacks."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @property
+    def stream(self):  # type: ignore[override]
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, _value) -> None:
+        pass
+
+
 def diag(event: str, **fields: object) -> None:
     if not DIAG.handlers:
-        handler = logging.StreamHandler(sys.stderr)
+        handler = _StderrHandler()
         handler.setFormatter(logging.Formatter("%(message)s"))
         DIAG.addHandler(handler)
         DIAG.propagate = False
