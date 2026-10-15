@@ -119,4 +119,27 @@ describe('DemoPanel', () => {
     render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
     expect(await screen.findByRole('alert')).toHaveTextContent(/scenarios are unavailable/i);
   });
+
+  it('clears active scenario state and error when resetToken increments', async () => {
+    const { rerender } = render(
+      <DemoPanel
+        passengerId="P-MARIANA"
+        onStarted={onStarted}
+        onChanged={onChanged}
+        resetToken={0}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+    expect(screen.getByRole('button', { name: 'Next step' })).toBeEnabled();
+
+    rerender(
+      <DemoPanel
+        passengerId="P-MARIANA"
+        onStarted={onStarted}
+        onChanged={onChanged}
+        resetToken={1}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled());
+  });
 });

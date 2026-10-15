@@ -6,6 +6,8 @@ of another run (a `journey not found` storm). Now it stops
 
 - when the client is gone (checked on every turn of the loop; the keep-alive comment makes a dead
   connection fail a write even through a proxy),
+- on a typed, temporary engine error (quota, unavailable): a `retry: <ms>` hint, then a clean end
+  (the client reconnects after that delay instead of the stream crashing or looping),
 - when the run it was opened for is over (`still_open` turns false),
 - after `SSE_MAX_SECONDS`, below the Cloud Run request timeout (300 s), with a clean end.
 
@@ -56,10 +58,14 @@ async def event_stream(
             return
         try:
             batch = await fetch(sent)
-        except Exception:
+        except Exception as e:
             if not still_open():  # the run ended while the call was in flight: not an error
                 return
-            raise
+            retry_after = getattr(e, "retry_after", None)  # a typed, temporary engine error
+            if retry_after is None:
+                raise
+            yield f"retry: {int(retry_after * 1000)}\n\n"  # EventSource reconnects after this
+            return
         if not still_open():
             return
         for event in batch[: None if limit is None else limit - emitted]:

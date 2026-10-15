@@ -100,6 +100,69 @@ describe('ChatView', () => {
     );
   });
 
+  it('renders human-readable attachment chips on outbound messages', async () => {
+    transcript = [
+      {
+        message_id: 'm1',
+        direction: 'outbound',
+        text: RESOLUTION,
+        timestamp: '2026-10-10T21:05:00Z',
+        attachments: ['hotel_voucher', 'meal_voucher'],
+      },
+      {
+        message_id: 'm2',
+        direction: 'outbound',
+        text: 'Seat 2A confirmed.',
+        timestamp: '2026-10-10T21:08:00Z',
+        attachments: ['boarding_pass', 'hotel_voucher'],
+      },
+    ];
+    render(<ChatView passengerId="P-MARIANA" />);
+    expect(await screen.findByText('Meal voucher')).toBeInTheDocument();
+    expect(screen.getByText('Boarding pass')).toBeInTheDocument();
+    expect(screen.getAllByText('Hotel voucher')).toHaveLength(2);
+  });
+
+  it('notifies onChanged after sending a reply or tapping an offer button', async () => {
+    const onChanged = vi.fn();
+    render(<ChatView passengerId="P-MARIANA" onChanged={onChanged} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Accept upgrade $135' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+
+    await userEvent.type(screen.getByLabelText('Message'), 'Can I leave after 10am?');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2));
+  });
+
+  it('disables offer buttons once a newer message supersedes the offer', async () => {
+    transcript.push({
+      message_id: 'm3',
+      direction: 'outbound',
+      text: 'This offer is no longer available after your flight change.',
+      timestamp: '2026-10-10T21:07:00Z',
+    });
+    render(<ChatView passengerId="P-MARIANA" />);
+    expect(await screen.findByRole('button', { name: 'Accept upgrade $135' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'No thanks' })).toBeDisabled();
+  });
+
+  it('clears answered button state when messages reset to empty', async () => {
+    render(<ChatView passengerId="P-MARIANA" pollMs={40} />);
+    const accept = await screen.findByRole('button', { name: 'Accept upgrade $135' });
+    await userEvent.click(accept);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '✓ Accept upgrade $135' })).toBeDisabled(),
+    );
+
+    const saved = [...transcript];
+    transcript = [];
+    await screen.findByText('No messages yet.');
+
+    transcript = saved;
+    const restored = await screen.findByRole('button', { name: 'Accept upgrade $135' });
+    expect(restored).toBeEnabled();
+  });
+
   it('shows an error when the service is unreachable', async () => {
     vi.stubGlobal(
       'fetch',

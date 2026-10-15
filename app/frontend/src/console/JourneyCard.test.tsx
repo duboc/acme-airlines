@@ -47,11 +47,36 @@ describe('JourneyCard', () => {
 
   it('says what is not yet arranged', () => {
     render(<JourneyCard journey={detected} />);
-    expect(screen.getAllByText('Not arranged yet').length).toBe(2);
+    expect(screen.getAllByText('Not arranged yet').length).toBe(3);
   });
 
   it('shows acknowledgement state', () => {
     render(<JourneyCard journey={{ ...resolved, resolution_acknowledged: true }} />);
     expect(screen.getByText(/passenger acknowledged/i)).toBeInTheDocument();
+  });
+
+  it('renders closed-loop verification checks when present and Not arranged yet when null', () => {
+    const { rerender } = render(<JourneyCard journey={{ ...resolved, verification: null }} />);
+    expect(screen.getByText('Verification').nextElementSibling).toHaveTextContent(
+      'Not arranged yet',
+    );
+
+    rerender(
+      <JourneyCard
+        journey={{
+          ...resolved,
+          verification: {
+            flight: true,
+            seat: true,
+            hotel: true,
+            baggage: true,
+            upgrade: false,
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText('Verification').nextElementSibling).toHaveTextContent(
+      'flight: ✓ · seat: ✓ · hotel: ✓ · baggage: ✓ · upgrade: ✗',
+    );
   });
 });

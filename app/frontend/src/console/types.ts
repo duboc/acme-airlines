@@ -43,6 +43,7 @@ export interface JourneyDetail {
   hotel: HotelBooking | null;
   vouchers: Voucher[];
   offer: OfferView | null;
+  verification?: Record<string, boolean> | null;
 }
 export interface JourneyEvent {
   actor: string;

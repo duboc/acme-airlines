@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import re
+import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any, Protocol
 
@@ -45,7 +47,17 @@ ASYNC_OPS = {
     "whatsapp_reply",
     "whatsapp_action",
 }  # registered with mode "async"
-POLL_SECONDS = 0.5
+POLL_SECONDS = 2.0  # a stream looks for news this often; the engine is asked less (#335)
+TIMELINE_BASE_SECONDS = 1.6  # the engine is asked for a journey's news at most this often...
+TIMELINE_MAX_SECONDS = 6.0  # ...backing off to this when nothing changes: <= 30 queries/minute
+RETRY_BACKOFF = (0.2, 0.6)  # seconds between the attempts of an idempotent read (#306), jittered
+RETRY_AFTER_SECONDS = 5  # what a client is told to wait after an engine error (HTTP Retry-After)
+QUOTA_RETRY_AFTER_SECONDS = 20  # the per-minute Agent Engine query quota refills within a minute
+JOURNEYS_TTL_SECONDS = 2.0  # how long a journeys list is reused to validate an id (#335)
+READ_OPS = {
+    "scenarios_list", "scenario_state", "journeys_list", "journey_detail", "journey_events",
+    "whatsapp_messages",
+}  # fmt: skip  # safe to repeat; everything else may have had an effect and is never retried
 log = logging.getLogger(__name__)
 
 
@@ -60,6 +72,31 @@ class EngineHandle(Protocol):
 
 class EngineUnavailable(RuntimeError):
     """An engine could not be reached or resolved (credentials, network); no detail is leaked."""
+
+    retry_after = RETRY_AFTER_SECONDS
+
+
+class EngineQuotaExceeded(EngineUnavailable):
+    """gRPC RESOURCE_EXHAUSTED (the per-minute Agent Engine query quota): HTTP 429. The request
+    never reached the engine, so it is safe to repeat later; retrying at once would only burn more
+    quota, so it is not retried here."""
+
+    retry_after = QUOTA_RETRY_AFTER_SECONDS
+
+
+def is_quota_error(exc: BaseException) -> bool:
+    """gRPC RESOURCE_EXHAUSTED or HTTP 429, whatever client library raised it (duck-typed)."""
+    code = getattr(exc, "code", None)
+    code = code() if callable(code) else code
+    return (
+        type(exc).__name__ in ("ResourceExhausted", "TooManyRequests")
+        or "RESOURCE_EXHAUSTED" in str(code)
+        or code == 429
+    )
+
+
+class StepApplied(EngineUnavailable):
+    """The Customer step committed but its new state could not be read: refresh, do not repeat."""
 
 
 class _AdcEngine:
@@ -89,14 +126,44 @@ class _AdcEngine:
         return self._engine
 
     async def call(self, op: str, **kwargs: Any) -> Any:
-        method = getattr(await self._get(), op)
-        if op in ASYNC_OPS:
-            return await method(**kwargs)
-        return await asyncio.to_thread(method, **kwargs)
+        """One engine op. Reads are retried with a short bounded backoff (a transient RPC error is
+        common on Agent Engine); any other op is never repeated, as it may have taken effect. A
+        failure is an `EngineUnavailable` (503), never a raw exception (500) (#306)."""
+        attempts = len(RETRY_BACKOFF) + 1 if op in READ_OPS else 1
+        for attempt in range(attempts):
+            try:
+                method = getattr(await self._get(), op)
+                if op in ASYNC_OPS:
+                    return await method(**kwargs)
+                return await asyncio.to_thread(method, **kwargs)
+            except (EngineUnavailable, EngineConfigError):
+                raise
+            except Exception as e:
+                log.warning("engine %s failed (attempt %d): %s", op, attempt + 1, type(e).__name__)
+                if is_quota_error(e):  # a retry burns more quota: tell the client to wait
+                    raise EngineQuotaExceeded(
+                        f"The Agent Engine query quota is exhausted ({op}); retry shortly."
+                    ) from e
+                if attempt + 1 >= attempts:
+                    raise EngineUnavailable(
+                        f"The Agent Engine call {op} failed ({type(e).__name__}); try again."
+                    ) from e
+                await asyncio.sleep(RETRY_BACKOFF[attempt] * (0.5 + random.random()))  # jitter
+        raise AssertionError("unreachable")  # pragma: no cover
 
     async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
-        async for item in (await self._get()).async_stream_query(**kwargs):
-            yield item
+        try:
+            async for item in (await self._get()).async_stream_query(**kwargs):
+                yield item
+        except (EngineUnavailable, EngineConfigError):
+            raise
+        except Exception as e:  # a stream is not repeatable: it may have had an effect
+            log.warning("engine stream failed: %s", type(e).__name__)
+            if is_quota_error(e):
+                raise EngineQuotaExceeded("The Agent Engine query quota is exhausted.") from e
+            raise EngineUnavailable(
+                f"The Agent Engine stream failed ({type(e).__name__}); try again."
+            ) from e
 
 
 def _resource(env: Mapping[str, str], key: str) -> str:
@@ -130,6 +197,11 @@ class EngineBackend:
         self._step = 0  # the caller-side step counter sent with every call (#266)
         self._tape: list[Any] | None = None  # the replay tape the engine returned (#279)
         self._run = 0  # bumped by every scenario start and reset: ends the open streams (#305)
+        # One engine query per journey per poll interval, however many streams are open (#335).
+        self._journeys: tuple[float, list[dict]] = (float("-inf"), [])
+        self._timelines: dict[tuple[int, str], tuple[float, list[dict], float]] = {}
+        self._timeline_locks: dict[tuple[int, str], asyncio.Lock] = {}
+        self._journeys_lock = asyncio.Lock()
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> EngineBackend:
@@ -169,6 +241,7 @@ class EngineBackend:
 
     async def scenario_start(self, scenario_id: str) -> dict:
         self._run += 1  # before the call: a stream polling meanwhile stops using the old context
+        self._stir()
         state = await self._customer.call("scenario_start", scenario_id=scenario_id)
         self._active, self._step = scenario_id, state["step_index"]
         return self._keep_tape(state)
@@ -185,10 +258,21 @@ class EngineBackend:
         route's job: it checks `active` and `state["done"]` before calling this."""
         state = await self._customer.call("scenario_step", **self._ctx())
         self._keep_tape(state)  # the tape of the step just run, whatever worker answers next
+        # The step is committed in the engine: the counter follows it, whatever comes next.
         self._step += 1
-        async for _ in self._sales.stream(message="tick", user_id="demo"):
-            pass
-        return await self.scenario_state()
+        self._stir()
+        try:
+            async for _ in self._sales.stream(message="tick", user_id="demo"):
+                pass
+        except Exception as e:  # noqa: BLE001 - the tick is best effort; the next step ticks again
+            # (The tick's own a2a_skill calls carry no preset/step context: Sales cannot send it.)
+            log.warning("sales tick failed after a committed step: %s", type(e).__name__)
+        try:
+            return await self.scenario_state()
+        except EngineUnavailable as e:
+            raise StepApplied(
+                "The step was applied but its state could not be read: refresh."
+            ) from e
 
     @property
     def active(self) -> str | None:
@@ -200,6 +284,46 @@ class EngineBackend:
     async def journey_detail(self, journey_id: str) -> dict:
         return await self._customer.call("journey_detail", journey_id=journey_id, **self._ctx())
 
+    async def known_journeys(self) -> list[dict]:
+        """The journeys list, reused for `JOURNEYS_TTL_SECONDS`: opening N streams (or reconnects)
+        in a row costs one engine query, not N (#335)."""
+        async with self._journeys_lock:
+            at, journeys = self._journeys
+            if time.monotonic() - at >= JOURNEYS_TTL_SECONDS:
+                journeys = await self.journeys_list()
+                self._journeys = (time.monotonic(), journeys)
+            return journeys
+
+    async def timeline(self, journey_id: str) -> list[dict]:
+        """The events of a journey so far, shared by every stream of this run: the engine is asked
+        for the new ones at most once per interval, whatever the number of streams, and the interval
+        grows while nothing changes (a step, reply or action resets it) (#335)."""
+        key = (self._run, journey_id)
+        for old in [k for k in self._timelines if k[0] != self._run]:
+            self._timelines.pop(old, None)  # a restart ended those runs
+            self._timeline_locks.pop(old, None)
+        lock = self._timeline_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            at, events, interval = self._timelines.get(
+                key, (float("-inf"), [], TIMELINE_BASE_SECONDS)
+            )
+            if time.monotonic() - at >= interval:
+                new = await self.journey_events(journey_id, len(events))
+                events = events + new
+                interval = (
+                    TIMELINE_BASE_SECONDS if new else min(interval * 1.5, TIMELINE_MAX_SECONDS)
+                )
+                self._timelines[key] = (time.monotonic(), events, interval)
+            return events
+
+    def _stir(self) -> None:
+        """Something happened (a step, a reply, an action): look again soon."""
+        self._journeys = (float("-inf"), [])
+        self._timelines = {
+            k: (float("-inf"), ev, TIMELINE_BASE_SECONDS)
+            for k, (_, ev, _) in self._timelines.items()
+        }
+
     async def journey_events(self, journey_id: str, since: int = 0) -> list[dict]:
         return await self._customer.call(
             "journey_events", journey_id=journey_id, since=since, **self._ctx()
@@ -207,6 +331,7 @@ class EngineBackend:
 
     async def reset(self) -> dict:
         self._run += 1
+        self._stir()
         self._active = None
         self._tape = None  # the tape belongs to the run that is over (#279)
         return await self._customer.call("reset")
@@ -214,7 +339,14 @@ class EngineBackend:
     async def api(self, op: str, **kwargs: Any) -> Any:
         """Phone panel and trigger ops, which return API errors as data."""
         ctx = self._ctx() if op.startswith("whatsapp_") else {}  # not trigger_cancellation
-        return ok(await self._customer.call(op, **kwargs, **ctx))
+        reply = ok(await self._customer.call(op, **kwargs, **ctx))
+        if op != "whatsapp_messages":  # a write: the open streams should look again soon
+            self._stir()
+        return reply
+
+
+async def _timeline_after(backend: EngineBackend, journey_id: str, sent: int) -> list[dict]:
+    return (await backend.timeline(journey_id))[sent:]
 
 
 def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
@@ -231,7 +363,10 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
 
     @app.exception_handler(EngineUnavailable)
     async def unavailable(_: Request, e: EngineUnavailable) -> JSONResponse:
-        return JSONResponse({"detail": str(e)}, status_code=503)
+        status = 429 if isinstance(e, EngineQuotaExceeded) else 503  # never a bare 500 (#306/#335)
+        return JSONResponse(
+            {"detail": str(e)}, status_code=status, headers={"Retry-After": str(e.retry_after)}
+        )
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
@@ -302,11 +437,11 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     async def journey_events(
         request: Request, journey_id: str, limit: int | None = Query(None, ge=1)
     ) -> StreamingResponse:
-        known(await backend.journeys_list(), journey_id)
+        known(await backend.known_journeys(), journey_id)
         run = backend.run  # the stream belongs to this run: a restart ends it (#305)
         stream = event_stream(
             request,
-            lambda sent: backend.journey_events(journey_id, sent),
+            lambda sent: _timeline_after(backend, journey_id, sent),
             limit=limit,
             poll_seconds=POLL_SECONDS,
             still_open=lambda: backend.run == run,
