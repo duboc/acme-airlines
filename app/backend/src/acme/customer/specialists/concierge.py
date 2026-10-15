@@ -49,11 +49,15 @@ async def book_transfers(
     e: DutyOfCareEntitlements,
     airport: str,
     new_departure: datetime,
+    with_hotel: bool = True,
 ) -> bool:
-    legs = [
-        ("airport_to_hotel", airport, PARTNER_HOTEL, rt.clock.now() + timedelta(hours=1)),
-        ("hotel_to_airport", PARTNER_HOTEL, airport, new_departure - timedelta(hours=3)),
-    ]
+    if with_hotel:
+        legs = [
+            ("airport_to_hotel", airport, PARTNER_HOTEL, rt.clock.now() + timedelta(hours=1)),
+            ("hotel_to_airport", PARTNER_HOTEL, airport, new_departure - timedelta(hours=3)),
+        ]
+    else:  # DOC-06: an origin resident goes home, no hotel
+        legs = [("airport_to_home", airport, "HOME", rt.clock.now() + timedelta(hours=1))]
     for leg, origin, destination, at in legs:
         try:
             r = await rt.client.call(

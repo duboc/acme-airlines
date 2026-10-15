@@ -25,6 +25,8 @@ class Passenger(BaseModel):
     tier: Tier
     loyalty: LoyaltyProfile | None = None
     phone: str | None = None
+    origin_resident: bool = False  # DOC-06: ground transfer home, no hotel
+    special_needs: bool = False  # DOC-07: PNAE, hotel and transfer even in daytime
 
 
 class Flight(BaseModel):
