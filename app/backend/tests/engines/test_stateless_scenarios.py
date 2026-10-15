@@ -141,3 +141,60 @@ async def test_replay_does_not_call_the_configured_model():
     state = a.scenario_state(preset="happy-path", step=4)  # replays cancel, notify, 2 replies
     assert state["step_index"] == 4
     assert isinstance(a.runtime.llm, Boom)  # restored afterwards
+
+
+def through_agent_engine(**kwargs):
+    """Arguments as the platform delivers them: JSON numbers become doubles (protobuf Struct)."""
+    from google.protobuf import json_format, struct_pb2
+
+    s = struct_pb2.Struct()
+    s.update(kwargs)
+    return json_format.MessageToDict(s)
+
+
+def test_the_struct_round_trip_really_turns_ints_into_floats():
+    got = through_agent_engine(preset="happy-path", step=5)
+    assert got["step"] == 5.0 and isinstance(got["step"], float)
+
+
+async def test_a_rebuild_works_with_arguments_that_went_through_a_protobuf_struct():
+    """#279: live, the step arrived as 5.0 and the recovery path failed with `bad scenario step`."""
+    a, b = (build_customer_engine_app() for _ in range(2))
+    a.set_up()
+    b.set_up()
+    a.scenario_start("happy-path")
+    for step in range(3):
+        await a.scenario_step(**through_agent_engine(preset="happy-path", step=step))
+    want = a.scenario_state(**through_agent_engine(preset="happy-path", step=3))
+    got = b.scenario_state(**through_agent_engine(preset="happy-path", step=3))  # b rebuilds
+    assert got["step_index"] == 3 and isinstance(got["step_index"], int)
+    assert {k: got[k] for k in STRUCTURAL} == {k: want[k] for k in STRUCTURAL}
+    events = b.journey_events(
+        got["journey_id"], **through_agent_engine(since=1, preset="happy-path", step=3)
+    )
+    assert len(events) == len(b.journey_events(got["journey_id"])) - 1  # `since` 1.0 sliced
+
+
+@pytest.mark.parametrize("step", [5.0, 5])
+def test_integral_values_are_accepted_as_ints(step):
+    from acme.engines.customer import integral
+
+    assert integral(step, "x") == 5 and isinstance(integral(step, "x"), int)
+
+
+@pytest.mark.parametrize("bad", [5.5, True, "5", None, float("nan"), float("inf"), 2.0**60])
+def test_non_whole_numbers_are_rejected(bad):
+    from acme.engines.customer import EngineOperationError, integral
+
+    with pytest.raises(EngineOperationError, match="bad x"):
+        integral(bad, "x")
+
+
+@pytest.mark.parametrize("step", [5.5, True, "5", -1, -1.0, 99.0])
+def test_a_bad_step_is_rejected_by_the_engine(step):
+    from acme.engines.customer import EngineOperationError
+
+    a = build_customer_engine_app()
+    a.set_up()
+    with pytest.raises(EngineOperationError, match="bad scenario step"):
+        a.scenario_state(preset="happy-path", step=step)
