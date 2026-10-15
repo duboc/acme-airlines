@@ -2,9 +2,6 @@ schema_version: "1"
 description: "Factory and agent-activity analyst of the ${EVAL_PROJECT} factory (Antigravity Gemini 4 Argon High). Reports to eval-lead."
 default_harness_config: antigravity
 model: large
-max_duration: "45m"
-max_turns: 150
-max_model_calls: 450
 agent_instructions: agents.md
 system_prompt: system-prompt.md
 env:

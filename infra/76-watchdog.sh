@@ -43,7 +43,7 @@ if [[ -z "$(gcloud secrets versions list "${TOKEN_SECRET}" --project="${PROJECT_
       --purpose "watchdog: wake on change, self-heal, daily reincarnate" --json 2>/dev/null \
     | jq -er '.token' | tr -d '\n' \
     | gcloud secrets versions add "${TOKEN_SECRET}" --project="${PROJECT_ID}" --data-file=- --format=none
-  hub_cli notifications subscribe --project "${HUB_PROJECT_SLUG}" --agent acme-lead \
+  hub_cli notifications subscribe --project "${HUB_PROJECT_SLUG}" --agent lead \
     --triggers COMPLETED,WAITING_FOR_INPUT,LIMITS_EXCEEDED >/dev/null 2>&1 || true
   bash "${INFRA_DIR}/30-hub-admin-access.sh" disable || echo "WARN: disable reported an error; checking status" >&2
   [[ "$(bash "${INFRA_DIR}/30-hub-admin-access.sh" status 2>/dev/null | tail -1)" == "disabled" ]] \

@@ -94,8 +94,11 @@ aliases_map = {
 }
 
 for hc_name, aliases in aliases_map.items():
-    for root in [pathlib.Path("/home/scion/.scion/harness-configs") / hc_name,
-                 pathlib.Path("/opt/scion-source/harnesses") / hc_name]:
+    roots = [
+        pathlib.Path("/home/scion/.scion/harness-configs") / hc_name,
+        pathlib.Path("/opt/scion-source/harnesses") / hc_name,
+    ] + list(pathlib.Path("/home/scion/.scion/workspace-storage").glob(f"hubs/*/harness-configs/global/{hc_name}"))
+    for root in roots:
         cfg = root / "config.yaml"
         if cfg.exists():
             text = cfg.read_text()
@@ -114,7 +117,7 @@ for hc_name, aliases in aliases_map.items():
         cur.execute("UPDATE harness_configs SET config = ? WHERE id = ?", (json.dumps(cfg), hid))
 con.commit()
 PY
-  sudo chown -R scion:scion /home/scion/.scion/harness-configs
+  sudo chown -R scion:scion /home/scion/.scion/harness-configs /home/scion/.scion/workspace-storage 2>/dev/null || true
   mkdir -p ~/.scion/harness-configs
   sudo cp -r /home/scion/.scion/harness-configs/{claude,antigravity,gemini-cli} ~/.scion/harness-configs/
   sudo chown -R "$(id -un):$(id -gn)" ~/.scion
@@ -124,6 +127,36 @@ if [[ "${SKIP_SYNC:-0}" != "1" ]]; then
   for hc in claude antigravity gemini-cli; do
     hub_cli --global harness-config sync "${hc}"
   done
+  # Re-apply modelAliases in hub.db and workspace-storage after harness-config sync
+  vm_ssh '
+    set -euo pipefail
+    sudo python3 - <<\PY
+import json, pathlib, re, sqlite3
+nl = chr(10)
+aliases_map = {
+    "claude": {"small": "claude-haiku-5-5", "medium": "claude-sonnet-5-5", "large": "claude-opus-5-5", "extra-large": "claude-opus-5-5"},
+    "antigravity": {"small": "Gemini 3.1 Flash Lite", "medium": "Gemini 3.8 Flash (Medium)", "large": "Gemini 4 Argon (High)", "extra-large": "Gemini 4 Argon (High)"},
+    "gemini-cli": {"small": "gemini-3.5-flash-lite", "medium": "gemini-3.8-flash", "large": "gemini-4-argon", "extra-large": "gemini-4-argon"},
+}
+for hc_name, aliases in aliases_map.items():
+    for cfg in pathlib.Path("/home/scion/.scion/workspace-storage").glob(f"hubs/*/harness-configs/global/{hc_name}/config.yaml"):
+        text = cfg.read_text()
+        block = "model_aliases:" + nl + "".join(f"  {k}: {json.dumps(v)}" + nl for k, v in aliases.items())
+        new_text, n = re.subn(r"(?m)^model_aliases:\r?\n(?:  [a-z-]+:.*\r?\n)+", lambda _: block, text, count=1)
+        if n:
+            cfg.write_text(new_text)
+con = sqlite3.connect("/home/scion/.scion/hub.db")
+cur = con.cursor()
+for hc_name, aliases in aliases_map.items():
+    cur.execute("SELECT id, config FROM harness_configs WHERE slug = ?", (hc_name,))
+    for hid, cfg_raw in cur.fetchall():
+        cfg = json.loads(cfg_raw or "{}")
+        cfg["modelAliases"] = aliases
+        cur.execute("UPDATE harness_configs SET config = ? WHERE id = ?", (json.dumps(cfg), hid))
+con.commit()
+PY
+    sudo chown -R scion:scion /home/scion/.scion/workspace-storage 2>/dev/null || true
+  '
 
   echo "==> 4. Rendering, importing, and syncing the 10 templates from docs/scion/templates/ via 'scion templates import' + 'sync'"
   LOCAL_RENDER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/scion-rendered.XXXXXX")"
@@ -135,7 +168,61 @@ if [[ "${SKIP_SYNC:-0}" != "1" ]]; then
 
   hub_cli --global templates import --all --force /tmp/scion-templates
   hub_cli --global templates sync --all
-  vm_ssh "rm -rf /tmp/scion-templates"
+  # Update existing agent scion-agent.json files on disk + hub.db to remove any legacy max_duration/max_turns/max_model_calls limits and sync instructions
+  vm_ssh '
+    set -euo pipefail
+    sudo python3 - <<\PY
+import json, pathlib, shutil, sqlite3
+
+model_by_role = {
+    "lead": "claude-opus-5-5",
+    "backend": "claude-sonnet-5-5",
+    "deployer": "claude-sonnet-5-5",
+    "frontend": "Gemini 4 Argon (High)",
+    "reviewer": "Gemini 4 Argon (High)",
+    "eval-lead": "Gemini 4 Argon (High)",
+    "factory-analyst": "Gemini 4 Argon (High)",
+    "search-evaluator": "Gemini 4 Argon (High)",
+    "ui-craftsman": "Gemini 4 Argon (High)",
+    "eval-deployer": "Gemini 4 Argon (High)",
+}
+
+for jf in pathlib.Path("/home/scion/.scion/project-configs").glob("*/.scion/agents/*/scion-agent.json"):
+    role = jf.parent.name
+    if role not in model_by_role:
+        continue
+    data = json.loads(jf.read_text())
+    for k in ("max_duration", "max_turns", "max_model_calls"):
+        data.pop(k, None)
+    data["model"] = model_by_role[role]
+    jf.write_text(json.dumps(data, indent=2) + "\n")
+    src_tpl = pathlib.Path("/tmp/scion-templates") / role
+    if src_tpl.exists():
+        for doc in ("agents.md", "system-prompt.md"):
+            if (src_tpl / doc).exists():
+                for dst in [jf.parent / doc, jf.parent / "home" / ".scion" / doc]:
+                    if dst.parent.exists():
+                        shutil.copy2(src_tpl / doc, dst)
+
+con = sqlite3.connect("/home/scion/.scion/hub.db")
+cur = con.cursor()
+cur.execute("SELECT id, name, applied_config FROM agents WHERE deleted_at IS NULL")
+for aid, name, ac_raw in cur.fetchall():
+    ac = json.loads(ac_raw or "{}")
+    ic = ac.get("inlineConfig") or {}
+    for k in ("max_duration", "max_turns", "max_model_calls", "maxDuration", "maxTurns", "maxModelCalls"):
+        ac.pop(k, None)
+        ic.pop(k, None)
+    ac["inlineConfig"] = ic
+    cur.execute(
+        "UPDATE agents SET applied_config = ?, current_turns = 0, current_model_calls = 0 WHERE id = ?",
+        (json.dumps(ac), aid),
+    )
+con.commit()
+PY
+    sudo chown -R scion:scion /home/scion/.scion/project-configs 2>/dev/null || true
+    rm -rf /tmp/scion-templates
+  '
 
   # Remove obsolete templates if still registered
   for obs in coordinator eng-manager architect developer code-reviewer test-engineer \
@@ -332,6 +419,9 @@ gcloud auth print-identity-token 2>/dev/null | vm_ssh "
       [[ \"\${role_flag}\" == \"full\" ]] && extra_flags+=(\"--role\" \"full\")
       [[ \"\${wait_flag}\" == \"nowait\" ]] && extra_flags+=(\"--no-wait\")
       scion --project \"\${proj}\" start \"\${name}\" --type \"\${name}\" \"\${extra_flags[@]}\" \"\${prompt}\"
+    elif [[ \"\${phase}\" == \"stopped\" ]]; then
+      echo \"    resuming stopped standing agent \${proj}/\${name}...\"
+      scion --project \"\${proj}\" resume \"\${name}\" \"\${prompt}\" || scion --project \"\${proj}\" start \"\${name}\" \"\${prompt}\" || true
     else
       echo \"    agent \${proj}/\${name} already exists (phase=\${phase})\"
     fi

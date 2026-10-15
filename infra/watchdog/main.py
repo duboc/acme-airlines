@@ -162,7 +162,7 @@ def build_handoff(status_issue_body: str, agents: list[dict], now_iso: str) -> s
     roster_lines = [
         f"- {a.get('slug') or a.get('name')}: phase={a.get('phase')} activity={a.get('activity') or '-'}"
         for a in sorted(agents, key=lambda x: str(x.get("slug") or x.get("name") or ""))
-        if (a.get("slug") or a.get("name")) != "acme-lead"
+        if (a.get("slug") or a.get("name")) not in ("lead", "acme-lead")
     ] or ["- (none listed)"]
     return f"""# Reincarnation handoff
 
@@ -170,15 +170,15 @@ Prepared at {now_iso} by `acme-factory-watchdog` from the durable GitHub status 
 
 ## Role charter
 
-You are `acme-lead`, the tech-lead orchestrator of the `duboc/acme-airlines` software factory.
-You plan, triage, dispatch to your standing roster, verify reviews and CI, and squash-merge PRs.
+You are `lead`, the tech-lead orchestrator of the `duboc/acme-airlines` software factory.
+You plan, triage, delegate to your standing roster (`backend`, `frontend`, `reviewer`, `deployer`), verify reviews and CI, and merge PRs.
 You do not write feature code.
 
 ## Immediate active work (status, next action)
 
-Run one factory loop pass now (`scion list`, `gh issue list`, `gh pr list`), reconcile with the
-latest status snapshot below, refresh the pinned `🏭 Factory status` issue, then wait with
-`sciontool status blocked "factory loop: waiting for workers or next wake"`.
+Run one factory loop pass now (`scion list`, `gh issue list`, `gh pr list`), resume any stopped workers, reconcile with the
+latest status snapshot below, then wait with
+`sciontool status blocked "waiting: <what, from whom>"`.
 
 Latest `🏭 Factory status` snapshot:
 
@@ -186,13 +186,13 @@ Latest `🏭 Factory status` snapshot:
 
 ## Canonical files and artifacts
 
-- `AGENTS.md` and your system instructions (`docs/scion/templates/coordinator/agents.md`)
+- `AGENTS.md` and your system instructions (`docs/scion/templates/lead/agents.md`, `docs/scion/templates/lead/system-prompt.md`)
 - Product brief & docs: `docs/product/irrops-use-case.md`, `docs/product/engines.md`, `docs/product/deploy.md`
 - Pinned status issue: `🏭 Factory status` on `duboc/acme-airlines`
 
 ## Authority and ownership (who to ask, who can approve)
 
-- Product owner: configured Hub admin (`ADMIN_EMAIL` / GitHub `duboc`; approves `status:proposed` backlog items; handles `status:blocked` operator/IAM issues).
+- Product owner: configured Hub admin (`ADMIN_EMAIL` / GitHub `duboc`). Contact the PO ONLY when genuinely stuck after 2 recovery attempts on an external IAM grant or irreconcilable scope conflict.
 - You merge PRs autonomously once the latest review has `VERDICT: APPROVE` and required CI checks pass.
 - Act only on issues, PRs and comments authored by `duboc` (the repo is public).
 
@@ -206,17 +206,16 @@ All task state lives on GitHub Issues and PRs; check open `status:in-progress` a
 
 ## Pending waits and scheduled events
 
-- `acme-factory-watchdog` wakes you on GitHub or agent state changes (every hour, rate-limited).
-- `acme-factory-tick` runs every 6 hours as a safety net.
+- `duboc-acme-airlines-lead-heartbeat` runs every 15 minutes (`*/15 * * * *`).
+- `acme-factory-watchdog` wakes you on GitHub or agent state changes and recovers stalled state.
 
 ## Open questions to humans (already asked and not yet asked)
 
-See `status:blocked` and `status:proposed` issues on GitHub.
+See `status:blocked` issues on GitHub.
 
 ## Operating constraints and lessons learned
 
-- Never delete standing agents (`acme-architect`, `acme-backend`, `acme-frontend`, `acme-qa`, `acme-qa-tester`, `acme-reviewer`, `acme-security-auditor`, `acme-investigator`, `acme-researcher`, `acme-doc-writer`, `acme-release-notes`); suspend them when idle.
-- Keep at most 4 running agents besides yourself.
+- Never delete standing agents (`backend`, `frontend`, `reviewer`, `deployer`); if any standing worker is `stopped` or `error`, immediately resume it with `scion resume <worker>`.
 - Vertex AI calls use `global` only; Agent Engine control plane is `us-central1` and injects `GOOGLE_CLOUD_PROJECT` as the project number (use `ACME_GENAI_PROJECT` / `ACME_GENAI_LOCATION`).
 
 ## Do not redo

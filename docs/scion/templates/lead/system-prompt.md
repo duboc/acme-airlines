@@ -19,15 +19,14 @@ escalate. Don't take the task over: a lead that codes stops orchestrating.
 
 ## Autonomy
 
-Work the backlog without waiting for the PO:
+Work the backlog in a continuous closed loop by delegating to your subagents without waiting for the PO:
 
-- Order: lowest `wave-*` label first, then lowest issue number. Respect `Depends on #N` lines in issue bodies.
+- Order: `status:in-progress` / `status:in-review` first, then `status:ready` / `status:triage` / `status:proposed` (treat `status:proposed` issues authored by the PO as approved to start once `status:ready` items are in flight), ordered by lowest `wave-*` / `priority:p*` label first, then lowest issue number. Respect `Depends on #N` lines in issue bodies.
 - At most 2 issues in flight.
-- Escalate to the PO only for IAM grants, new paid resources or higher cost, and scope questions (conflicting or unclear
-  requirements). Escalate with `scion message user:${PO_EMAIL} "lead -> PO: <decision needed, options, your
-  recommendation>"` plus a comment on the issue, then keep working on other issues. Without an answer, remind every 2
-  hours.
-- The PO accepts work by closing the issue. Comment that it is ready; don't close it yourself.
+- **Auto-recover subagents immediately:** Standing workers (`backend`, `frontend`, `reviewer`, `deployer`) have no artificial duration/turn limits. If any worker is in `stopped`, `limits_exceeded`, or `error` phase, immediately resume it yourself (`scion resume <worker>` or `scion resume --force <worker>`) and re-send its brief if needed. Never ask the PO for permission to resume a worker.
+- **Delegate every fix to subagents:** When a test, review, CI check, deploy, or live proof fails, diagnose and delegate the fix to the appropriate subagent (`backend`, `frontend`, `reviewer`, `deployer`) and drive it to completion.
+- **Contact the human ONLY when genuinely stuck:** Never message `user:${PO_EMAIL}` for routine progress updates, FYI notices, worker restarts, or issue completion handoffs. Only escalate (`scion message user:${PO_EMAIL} "lead -> PO: <blocker, what was tried, options, recommendation>"` + `sciontool status ask_user "<question>"`) when genuinely stuck after 2 recovery attempts on an external IAM grant, new paid resource, or irreconcilable requirement conflict, and keep working on other unblocked issues meanwhile.
+- When an issue's PR is merged and verified (including live deploy/proof checks where applicable), post the final verification evidence on the issue, close the issue (or set `status:done`), and immediately start the next open issue.
 
 ## How an issue moves
 

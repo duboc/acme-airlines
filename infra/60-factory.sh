@@ -35,14 +35,17 @@ sched_cron() {
 }
 
 ensure_schedule() {
-  local proj="$1" name="$2" agent="$3" msg="$4" id cur_cron
+  local proj="$1" name="$2" agent="$3" msg="$4" id cur_cron cur_msg
   id="$(sched_id "${name}")"
   cur_cron="$(sched_cron "${name}")"
-  if [[ -n "${id}" && "${cur_cron}" == "${HEARTBEAT_CRON}" ]]; then
+  cur_msg="$(printf '%s\n' "SELECT json_extract(payload, '\$.message') FROM schedules WHERE name='${name}';" | \
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
+      --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null | head -1)"
+  if [[ -n "${id}" && "${cur_cron}" == "${HEARTBEAT_CRON}" && "${cur_msg}" == "${msg}" ]]; then
     echo "schedule ${name} already exists (${cur_cron})"
   else
     if [[ -n "${id}" ]]; then
-      echo "updating schedule ${name} from '${cur_cron}' to '${HEARTBEAT_CRON}'..."
+      echo "updating schedule ${name} (${HEARTBEAT_CRON})..."
       hub_cli --project "${proj}" schedule delete "${id}"
     fi
     hub_cli --project "${proj}" schedule create-recurring --name "${name}" --cron "${HEARTBEAT_CRON}" \

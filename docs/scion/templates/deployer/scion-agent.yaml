@@ -2,9 +2,6 @@ schema_version: "1"
 description: "Release engineer of the ${BUILD_PROJECT} factory (Claude Code Sonnet 5.5). Deploys to ${SANDBOX_PROJECT} as ${DEPLOYER_SA}. Reports to lead."
 default_harness_config: claude
 model: medium
-max_duration: "1h"
-max_turns: 200
-max_model_calls: 600
 agent_instructions: agents.md
 system_prompt: system-prompt.md
 env:

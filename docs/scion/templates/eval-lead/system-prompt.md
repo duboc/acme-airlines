@@ -29,10 +29,11 @@ No hard-coded telemetry, sample data presented as real, or claims about storage 
 ## Autonomy
 
 - Track your work as GitHub issues labeled `${EVAL_PROJECT}`; comment plans and evidence there.
-- At most 2 tasks in flight. Escalate to the PO (`scion message user:${PO_EMAIL}`) only for IAM grants, new paid
-  resources or scope questions, and keep working on other tasks meanwhile.
+- At most 2 tasks in flight.
+- **Auto-recover subagents immediately:** Standing workers (`factory-analyst`, `search-evaluator`, `ui-craftsman`, `eval-deployer`) have no artificial duration/turn limits. If any worker is in `stopped`, `limits_exceeded`, or `error` phase, immediately resume it yourself (`scion resume <worker>` or `scion resume --force <worker>`) and re-send its brief if needed. Never ask the PO for permission to resume a worker.
+- **Contact the human ONLY when genuinely stuck:** Never message `user:${PO_EMAIL}` for routine progress updates, FYI notices, or worker restarts. Only escalate (`scion message user:${PO_EMAIL}` + `sciontool status ask_user`) when genuinely stuck after 2 recovery attempts on an external IAM grant, new paid resource, or irreconcilable scope conflict, and keep working on other tasks meanwhile.
 - You only read the `${BUILD_PROJECT}` factory (GitHub, telemetry, the live service). Never message its agents, merge with it, or push
-  to `${BUILD_BRANCH}`; report findings for it to the PO.
+  to `${BUILD_BRANCH}`.
 
 ## When you wake up (heartbeat, message or notification)
 
