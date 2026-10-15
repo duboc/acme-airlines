@@ -36,6 +36,7 @@ MODEL_LABELS = {
     "opus": "Opus",
     "sonnet": "Sonnet",
     "haiku": "Haiku",
+    "gemini_pro": "Gemini Pro / Argon",
     "gemini_flash": "Gemini Flash",
     "other": "Other",
 }
@@ -63,7 +64,9 @@ def model_class(model_id: str) -> str:
         return "sonnet"
     if "haiku" in m:
         return "haiku"
-    return "gemini_flash" if "gemini" in m and "flash" in m else "other"
+    if "gemini" in m:
+        return "gemini_flash" if "flash" in m else "gemini_pro"
+    return "other"
 
 
 def spend(src: DataSource, days: int) -> SpendResponse:
@@ -226,17 +229,22 @@ def budget(src: DataSource, budget_usd: float) -> BudgetResponse:
                 )
             )
     actions.sort(key=lambda a: a.ts, reverse=True)
+    effective_budget = actions[0].budget_usd if actions else budget_usd
     return BudgetResponse(
         state="lagging" if stale else "ok",
         as_of=iso(newest_dt),
         message="Billing export is behind; month-to-date may be understated." if stale else None,
-        budget_usd=budget_usd,
+        budget_usd=effective_budget,
         mtd_usd=mtd,
-        percent=round(mtd / budget_usd * 100, 2),
+        percent=round(mtd / effective_budget * 100, 2),
         markers=[
-            Marker(percent=p, usd=budget_usd * p / 100, reached=mtd >= budget_usd * p / 100)
+            Marker(
+                percent=p,
+                usd=effective_budget * p / 100,
+                reached=mtd >= effective_budget * p / 100,
+            )
             for p in (50, 90, 100)
-        ],  # fmt: skip
+        ],
         guard_actions=actions,
     )
 

@@ -49,7 +49,7 @@ is `lagging`; `empty` when none exists ("never written"); `unavailable` when it 
 {"state":"ok","as_of":"2026-10-10T12:00:30Z","message":null,"hours":24,
  "models":[{"model":"sonnet","label":"Sonnet","tokens":9800000,"requests":1450}]}
 ```
-`model` is `opus | sonnet | haiku | gemini_flash | other`; sorted by `tokens` descending.
+`model` is `opus | sonnet | haiku | gemini_pro | gemini_flash | other`; sorted by `tokens` descending.
 
 ## `GET /api/agents`
 ```json

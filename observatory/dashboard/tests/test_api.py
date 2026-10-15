@@ -36,12 +36,16 @@ def test_spend_days_window_and_validation(client):
 
 
 def test_models_shape(client):
+    from dashboard.service import model_class
+
     body = client.get("/api/models?hours=24").json()
     assert body["hours"] == 24
     by_model = {m["model"]: m for m in body["models"]}
     assert {"opus", "sonnet", "gemini_flash"} <= set(by_model)
     assert set(by_model["opus"]) == {"model", "label", "tokens", "requests"}
     assert by_model["opus"]["label"] == "Opus"
+    assert model_class("gemini-4-argon") == "gemini_pro"
+    assert model_class("gemini-3.8-flash") == "gemini_flash"
 
 
 def test_agents_shape(client):
@@ -77,6 +81,25 @@ def test_budget_shape(client):
     first = body["guard_actions"][0]
     assert set(first) == {"ts", "cost_usd", "budget_usd", "action"}
     assert first["ts"] >= body["guard_actions"][-1]["ts"]
+
+
+def test_budget_uses_latest_guard_action_budget():
+    from dashboard.service import budget
+    from dashboard.source import FakeDataSource
+
+    class RaisedBudget(FakeDataSource):
+        def guard_logs(self, limit):
+            return [
+                {
+                    "ts": "2026-10-10T11:55:00Z",
+                    "text": "cost=1160.64 budget=2000.00 -> no action",
+                }
+            ]
+
+    res = budget(RaisedBudget("ok"), 1000.0)
+    assert res.budget_usd == 2000.0
+    assert res.markers[0].usd == 1000.0
+    assert res.markers[2].usd == 2000.0
 
 
 @pytest.mark.parametrize("path", ENDPOINTS)
