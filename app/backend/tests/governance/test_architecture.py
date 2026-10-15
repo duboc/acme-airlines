@@ -192,3 +192,49 @@ def test_compose_binds_each_customer_listener_to_its_own_network_only():
         assert ip in ipaddress.ip_network(subnet)
     assert "web-net" not in compose["services"]["sales-agent"]["networks"]
     assert "8800" not in compose["services"]["sales-agent"]["environment"]["ACME_CUSTOMER_URL"]
+
+
+async def test_engine_customer_client_exposes_only_three_a2a_skills():
+    """#330: EngineCustomerClient calls only a2a_skill for the three allowlisted Sales skills."""
+    from uuid import uuid4
+
+    from acme.domain.journey import DisruptionStatus, Offer
+    from acme.sales.client import EngineCustomerClient
+
+    calls: list[tuple[str, dict]] = []
+
+    class FakeCustomerEngine:
+        async def a2a_skill(self, skill: str, args: dict):
+            calls.append((skill, args))
+            if skill == "list_journeys":
+                return {"journey_ids": ["J-01234567"]}
+            if skill == "journey_status":
+                return {
+                    "status": DisruptionStatus.RESOLVED.value,
+                    "flight": "AC1252",
+                    "resolution_acknowledged": True,
+                    "run_id": "0123456789ab",
+                }
+            return {"status": "approved", "offer_id": "ok"}
+
+    public = {name for name in dir(EngineCustomerClient) if not name.startswith("_")}
+    assert public == {"list_journeys", "journey_status", "propose_offer"}
+    client = EngineCustomerClient(FakeCustomerEngine())
+    assert await client.list_journeys() == ["J-01234567"]
+    await client.journey_status("J-01234567")
+    await client.propose_offer(
+        Offer(
+            offer_id=str(uuid4()),
+            journey_id="J-01234567",
+            flight="AC1252",
+            cabin="premium_business",
+            price="135.00",
+            standard_price="290.00",
+            net_margin="80.00",
+            currency="USD",
+            origin="sales",
+            optional=True,
+        )
+    )
+    assert [skill for skill, _ in calls] == ["list_journeys", "journey_status", "propose_offer"]
+    assert all(not ({"tape", "preset", "step"} & set(args)) for _, args in calls)

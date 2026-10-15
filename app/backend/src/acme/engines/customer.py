@@ -46,8 +46,9 @@ log = logging.getLogger(__name__)
 
 DISPLAY_NAME = "acme-customer-agent"
 APP_NAME = "acme-customer"
-# Exact pins, kept equal to uv.lock by a test: the container resolves these with pip, so floating
-# ranges let it drift from what CI tested (#185). Transitive dependencies still float.
+# Exact pins for direct and critical runtime transitive packages, kept equal to uv.lock by a
+# test: the container resolves these with pip, so floating ranges let it drift from what CI
+# tested (#185, #330).
 ENGINE_REQUIREMENTS = [
     "google-cloud-aiplatform[adk,agent-engines]==1.165.1",
     "google-adk[a2a]==1.39.1",
@@ -58,6 +59,18 @@ ENGINE_REQUIREMENTS = [
     "httpx==0.28.1",
     "pydantic==2.14.0",
     "fastapi==0.141.1",
+    "a2a-sdk==0.3.26",
+    "anyio==4.15.1",
+    "certifi==2026.7.22",
+    "cloudpickle==3.1.2",
+    "cryptography==50.0.2",
+    "grpcio==1.84.0",
+    "httpcore==1.0.9",
+    "protobuf==6.33.6",
+    "pydantic-core==2.50.0",
+    "starlette==1.7.0",
+    "urllib3==2.8.0",
+    "uvicorn==0.54.0",
 ]
 
 
@@ -453,7 +466,8 @@ class CustomerEngineApp:
 
     @shared
     async def a2a_skill(self, skill: str, args: dict[str, Any]) -> dict[str, Any]:
-        """Same dispatch as HTTP `/a2a`: the skill's data, or its JSON-RPC error body as is."""
+        """Same dispatch as HTTP `/a2a`: only the three allowlisted Sales skills (`list_journeys`,
+        `journey_status`, `propose_offer`), never `_with_tape` or passenger PII (#330)."""
         request = {
             "jsonrpc": "2.0", "id": 1, "method": "message/send",
             "params": {"message": {
