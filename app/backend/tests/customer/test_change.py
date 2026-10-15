@@ -123,12 +123,55 @@ async def test_live_offer_is_invalidated_by_replanning(setup):
     assert offer.status == "invalidated"
 
 
+ESCALATION = "I can't handle that automatically, so I've asked a colleague to follow up with you."
+
+
 async def test_seat_failure_needs_human_and_keeps_replanning(setup):
     rt, rec = setup
     rt.world.flights["AC1252"].open_seats["economy"] = ["14B"]
+    before = len(sent(rt))
     await rt.handle_inbound(PID, "Can I leave after 10am?")
     assert of(rec, "needs_human")
     assert rec.state.status == S.REPLANNING and len(rec.state.open_requests) == 1
+    assert [m.text for m in sent(rt)[before:]] == [ESCALATION]  # never silent (#398)
+
+
+async def test_rebook_race_escalation_is_answered_on_whatsapp(setup, monkeypatch):
+    from acme.customer.specialists.irrops import IrropsRebooking, RebookResponse
+
+    async def raced(self, req, emit):
+        emit("needs_human", {"step": "rebook", "reason": "raced"})
+        return RebookResponse(status="no_feasible_flight")
+
+    monkeypatch.setattr(IrropsRebooking, "handle", raced)
+    rt, rec = setup
+    before = len(sent(rt))
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    assert [m.text for m in sent(rt)[before:]] == [ESCALATION]
+    assert rec.state.status == S.REPLANNING and len(rec.state.open_requests) == 1
+
+
+async def test_rescheduled_transfer_starts_at_the_booked_hotel(setup):
+    rt, rec = setup
+    rec.hotel = rec.hotel.model_copy(update={"hotel_id": "HT0001"})
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    origins = {t["origin"] for t in rt.sim.partners.transfers.values() if t["origin"] != "GRU"}
+    assert "HT0001" in origins
+
+
+async def test_superseded_hotel_pickup_is_cancelled_once_the_new_one_is_booked(setup):
+    rt, rec = setup
+    old = next(
+        e.payload["transfer_ref"]
+        for e in of(rec, "transfer_arranged")
+        if e.payload["leg"] == "hotel_to_airport"
+    )
+    assert old in rt.sim.partners.transfers
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    transfers = rt.sim.partners.transfers
+    assert old not in transfers and len(transfers) == 2
+    assert any(t["pickup_at"].startswith("2026-10-10T08:40") for t in transfers.values())
+    assert any(t["destination"] == "HT8842" for t in transfers.values())  # airport_to_hotel kept
 
 
 async def test_every_event_of_the_full_replanning_flow_matches_the_api_contract(setup):
