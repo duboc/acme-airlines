@@ -17,6 +17,7 @@ from tests.live.agent_engine_proof import (
     CloudTraceV1,
     probe_report,
     run_proof,
+    run_rebuild_proof,
     write_engine_logs,
     write_inventory,
 )
@@ -85,6 +86,30 @@ def attach_engine_logs(project: str, started: datetime) -> None:
             "sales": logs.fetch_or_error(os.environ["AGENT_ENGINE_SALES"], start, end),
         },
     )
+
+
+async def test_forced_rebuild_matches_the_plain_run_without_repeating_side_effects():
+    """#279: park the deployed Customer engine on another preset, ask for the final step of the
+    reference preset (a cross-container rebuild), and compare with the plain run."""
+    from acme.api.engine_backend import EngineBackend
+
+    backend = EngineBackend.from_env()
+    project = os.environ["AGENT_ENGINE_CUSTOMER"].split("/")[1]
+    logs = CloudLogging(project)
+
+    def fetch(since: datetime) -> list[dict]:
+        return logs.fetch_or_error(
+            os.environ["AGENT_ENGINE_CUSTOMER"], since, datetime.now(UTC) + timedelta(minutes=2)
+        )
+
+    started = datetime.now(UTC)
+    report = await run_rebuild_proof(backend, fetch)
+    summary = report.markdown()
+    print(summary)
+    if target := os.environ.get("ACME_PROOF_REBUILD"):
+        Path(target).write_text(summary)
+    attach_engine_logs(project, started)
+    assert not report.failures, "\n".join(report.failures)
 
 
 @pytest.mark.skipif(

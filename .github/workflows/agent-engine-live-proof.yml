@@ -48,7 +48,16 @@ jobs:
           ACME_PROOF_INVENTORY: ${{ runner.temp }}/trace-inventory.json
           ACME_PROOF_DUMP: ${{ inputs.dump_inventory && '1' || '0' }}
           ACME_PROOF_LOGS: ${{ runner.temp }}/engine-logs.jsonl
-        run: uv run pytest tests/live/test_agent_engine_traces.py -m live -q -k "not unary_probe"
+        run: uv run pytest tests/live/test_agent_engine_traces.py -m live -q -k "not unary_probe and not forced_rebuild"
+      - name: Forced cross-container rebuild (#279)
+        working-directory: app/backend
+        env:
+          ACME_LIVE_AGENT_ENGINE: "1"
+          AGENT_ENGINE_CUSTOMER: ${{ inputs.customer_engine }}
+          AGENT_ENGINE_SALES: ${{ inputs.sales_engine }}
+          ACME_PROOF_REBUILD: ${{ runner.temp }}/rebuild-summary.md
+          ACME_PROOF_LOGS: ${{ runner.temp }}/rebuild-engine-logs.jsonl
+        run: uv run pytest tests/live/test_agent_engine_traces.py -m live -q -s -k forced_rebuild
       - name: Unary probe (platform sampling vs exporter, #221)
         if: ${{ inputs.probe_calls != '0' }}
         working-directory: app/backend
@@ -64,6 +73,7 @@ jobs:
         if: always()
         run: |
           cat "${{ runner.temp }}/trace-table.md" >> "$GITHUB_STEP_SUMMARY" || true
+          cat "${{ runner.temp }}/rebuild-summary.md" >> "$GITHUB_STEP_SUMMARY" || true
           cat "${{ runner.temp }}/probe-table.md" >> "$GITHUB_STEP_SUMMARY" || true
       - name: "Upload the trace inventory (no PII, acme.* values scrubbed)"
         if: always()
@@ -80,6 +90,7 @@ jobs:
           name: engine-logs
           path: |
             ${{ runner.temp }}/engine-logs.jsonl
+            ${{ runner.temp }}/rebuild-engine-logs.jsonl
             ${{ runner.temp }}/probe-engine-logs.jsonl
           if-no-files-found: ignore
           retention-days: 1

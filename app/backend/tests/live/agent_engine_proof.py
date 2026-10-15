@@ -652,3 +652,146 @@ def write_engine_logs(path: str, by_engine: dict[str, list[dict[str, Any]]]) -> 
         if dropped:
             rows.append({"engine": name, "event": "dropped", "lines": dropped, "errors": errors})
     Path(path).write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
+
+
+# --- #279: forced cross-container rebuild ----------------------------------
+# A caller that is at (preset, step) while the answering container is elsewhere makes the engine
+# rebuild the scenario by replay (#266, ADR 0103). The proof forces that: it parks the engine on a
+# decoy preset, then asks for the final state of the reference preset, and compares what the
+# passenger and the demo UI would see with the run that was never rebuilt.
+DEFAULT_REBUILD = ("happy-path", "seat-taken")  # (preset to rebuild, decoy the engine is parked on)
+REBUILD_WAIT, REBUILD_POLL = 120.0, 15.0  # Cloud Logging lags: poll for the rebuild line
+
+
+def conversation(messages: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
+    """The passenger-visible conversation without the random `message_id` (new on every build)."""
+    return [(m.get("direction"), m.get("text"), tuple(m.get("buttons", ())),
+             tuple(m.get("attachments", ())), m.get("timestamp")) for m in messages]  # fmt: skip
+
+
+@dataclass
+class Snapshot:
+    state: dict[str, Any]
+    journeys: list[dict[str, Any]]
+    messages: list[tuple[Any, ...]]
+
+
+async def take_snapshot(backend: Any, state: dict[str, Any]) -> Snapshot:
+    journeys = await backend.journeys_list()
+    messages: list[tuple[Any, ...]] = []
+    for pid in sorted({j["passenger_id"] for j in journeys}):
+        messages += conversation(await backend.api("whatsapp_messages", passenger_id=pid))
+    return Snapshot(structural(state), journeys, messages)
+
+
+def compare_snapshots(reference: Snapshot, rebuilt: Snapshot) -> list[str]:
+    """State, journeys and conversation of the rebuilt run must equal the non-rebuilt run."""
+    out = []
+    for name in ("state", "journeys", "messages"):
+        want, got = getattr(reference, name), getattr(rebuilt, name)
+        if want != got:
+            out.append(f"rebuilt {name} differs from the non-rebuilt run ({_brief(want, got)})")
+    return out
+
+
+def _brief(want: Any, got: Any) -> str:
+    if isinstance(want, list) and isinstance(got, list) and len(want) != len(got):
+        return f"{len(got)} entries, expected {len(want)}"
+    return "same size, different content"  # never the content: it carries passenger text
+
+
+def duplicate_failures(reference: Snapshot, rebuilt: Snapshot) -> list[str]:
+    """No repeated passenger-visible side effect: no extra WhatsApp message, no extra offer."""
+    out = []
+    seen: set[tuple[Any, ...]] = set()
+    for m in rebuilt.messages:
+        if m in seen and rebuilt.messages.count(m) > reference.messages.count(m):
+            out.append(f"duplicate WhatsApp message after the rebuild ({m[0]})")
+        seen.add(m)
+    extra = len(rebuilt.messages) - len(reference.messages)
+    if extra > 0:
+        out.append(f"{extra} more WhatsApp message(s) after the rebuild than in the plain run")
+    offers = rebuilt.state.get("offers_sent") or 0
+    if offers > (reference.state.get("offers_sent") or 0):
+        out.append(f"duplicate offer: offers_sent {offers} after the rebuild, "
+                   f"{reference.state.get('offers_sent')} in the plain run")  # fmt: skip
+    return out
+
+
+def rebuild_events(entries: list[dict[str, Any]], preset: str, to_step: int,
+                   since: datetime) -> list[dict[str, Any]]:  # fmt: skip
+    """Allowlisted `rebuild` diags of this preset and step logged at or after `since`."""
+    out = []
+    for e in entries:
+        diag = allowlisted_diag(e)
+        at = parse_ts(diag["ts"]) if diag and "ts" in diag else None
+        if (diag and diag["event"] == "rebuild" and diag.get("preset") == preset
+                and diag.get("to_step") == to_step and at and at >= since):  # fmt: skip
+            out.append(diag)
+    return out
+
+
+@dataclass
+class RebuildReport:
+    preset: str = ""
+    to_step: int = 0
+    wall_ms: float = 0.0  # client side: the forced call, network included
+    engine_ms: list[float] = field(default_factory=list)  # the engine's own `rebuild` ms
+    failures: list[str] = field(default_factory=list)
+
+    def markdown(self) -> str:
+        engine = ", ".join(f"{ms:.1f} ms" for ms in self.engine_ms) or "no rebuild logged"
+        verdict = "FAIL" if self.failures else "PASS"
+        lines = [f"## Forced rebuild: {verdict}", "",
+                 f"preset `{self.preset}`, rebuilt to step {self.to_step}", "",
+                 f"- rebuild latency (engine, `ACME_DIAG rebuild`): {engine}",
+                 f"- forced call, client side: {self.wall_ms:.0f} ms"]  # fmt: skip
+        return "\n".join(lines + [f"- FAIL: {f}" for f in self.failures]) + "\n"
+
+
+async def run_rebuild_proof(
+    backend: Any,
+    fetch_logs: Callable[[datetime], list[dict[str, Any]]],
+    preset: str = DEFAULT_REBUILD[0],
+    decoy: str = DEFAULT_REBUILD[1],
+    *,
+    wait: float = REBUILD_WAIT,
+    poll: float = REBUILD_POLL,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    monotonic: Callable[[], float] = time.monotonic,
+) -> RebuildReport:
+    """Plain run of `preset`, park the engine on `decoy`, then ask for the final state of `preset`.
+
+    `fetch_logs(since)` returns the Customer engine's log entries (see `CloudLogging`).
+    """
+    report = RebuildReport(preset=preset)
+    state = await backend.scenario_start(preset)
+    while not state["done"]:
+        state = await backend.scenario_step(preset)
+    report.to_step = state["step_index"]
+    reference = await take_snapshot(backend, state)
+    await backend.scenario_start(decoy)  # the engine's local state is now the decoy's
+    backend._active, backend._step = preset, report.to_step  # noqa: SLF001 - the caller says: final step
+    since = now() - timedelta(seconds=2)
+    t0 = monotonic()
+    state = await backend.scenario_state()  # not at (preset, step): the engine rebuilds
+    report.wall_ms = (monotonic() - t0) * 1000
+    rebuilt = await take_snapshot(backend, state)
+    report.failures += compare_snapshots(reference, rebuilt) + duplicate_failures(
+        reference, rebuilt
+    )
+    deadline = monotonic() + wait
+    while True:
+        events = rebuild_events(fetch_logs(since), preset, report.to_step, since)
+        if events or monotonic() >= deadline:
+            break
+        await sleep(poll)
+    report.engine_ms = [e["ms"] for e in events if "ms" in e]
+    if not events:
+        report.failures.append("no ACME_DIAG rebuild event in the Customer engine log")
+    elif len(events) > 1:
+        report.failures.append(f"{len(events)} rebuilds logged for one forced call (expected 1)")
+    elif "ms" not in events[0]:
+        report.failures.append("the rebuild event carries no latency (ms)")
+    return report
