@@ -1,6 +1,6 @@
 name: mutation
 
-# Nightly (and on demand) mutation testing of acme/policy (#232). NOT a PR check: a run takes a
+# Nightly (and on demand) mutation testing of acme/policy (#232) and the governance paths (#281). NOT a PR check: a run takes a
 # few minutes and a surviving mutant means a missing test, which is handled as a follow-up.
 # Fake LLM only, no credentials, no network beyond package installs.
 
@@ -33,7 +33,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: app/backend/uv.lock
       - run: uv sync --frozen
-      - name: Run mutmut on acme/policy
+      - name: Run mutmut on acme/policy and the governance decision paths (#281)
         run: uv run mutmut run || true # the gate below decides; a failing run must still report
       - name: Export results
         if: always()

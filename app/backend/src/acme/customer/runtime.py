@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from pydantic import AwareDatetime, BaseModel
 
-from acme.customer import closure, outreach
+from acme.customer import outreach, service_closure
 from acme.customer.change import ChangeAgent
 from acme.customer.rebuild import rebuild_journey
 from acme.customer.specialists.change import ReplanningChangeAgent
@@ -178,11 +178,11 @@ class CustomerRuntime:
             async with self.journey_lock(rec.state.journey_id):
                 await outreach.send_notification(self, rec, prepared)  # re-validates inside
         for rec in list(self.journeys.values()):
-            if not closure.service_closure_due(self, rec):
+            if not service_closure.service_closure_due(self, rec):
                 continue
             async with self.journey_lock(rec.state.journey_id):
-                if closure.service_closure_due(self, rec):
-                    await closure.close_without_offer(self, rec)
+                if service_closure.service_closure_due(self, rec):
+                    await service_closure.close_without_offer(self, rec)
 
     def journey_for_passenger(self, passenger_id: str) -> JourneyRecord | None:
         for rec in self.journeys.values():
