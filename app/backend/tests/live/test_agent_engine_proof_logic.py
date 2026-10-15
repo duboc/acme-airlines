@@ -250,10 +250,12 @@ async def test_the_list_call_count_stays_bounded_when_everything_is_prompt():
 import json  # noqa: E402
 
 from tests.live.agent_engine_proof import (  # noqa: E402
+    RebuildReport,
     Snapshot,
     compare_snapshots,
     conversation,
     duplicate_failures,
+    offer_wording_differences,
     rebuild_events,
     run_rebuild_proof,
 )
@@ -393,3 +395,62 @@ async def test_forced_rebuild_against_the_real_engines_offline(monkeypatch):
 
     r = await run_rebuild_proof(backend, logs, "happy-path", "seat-taken", wait=0.0)
     assert r.failures == [] and len(r.engine_ms) == 1 and r.to_step == 5
+
+
+OFFER = ("outbound", "Upgrade AC1252 to premium business for $135.00, seat 2A. Optional.",
+         ("Accept", "No thanks"), ("boarding_pass",), "t9")  # fmt: skip
+
+
+def offer_snap(offer):
+    return snap(messages=[*MSGS, offer])
+
+
+def test_a_reworded_offer_with_the_same_structure_and_facts_passes_and_is_counted():
+    reworded = (*OFFER[:1], "Fancy AC1252 in premium business? $135.00, optional.", *OFFER[2:])
+    ref, got = offer_snap(OFFER), offer_snap(reworded)
+    assert compare_snapshots(ref, got) == []
+    assert offer_wording_differences(ref, got) == 1
+    report = RebuildReport(preset="p", to_step=5, offer_wording_differs=1)
+    assert "offer wording differs (ADR 0103, accepted by PO on #279): 1" in report.markdown()
+    assert "offer wording differs" not in RebuildReport().markdown()  # silent when equal
+
+
+@pytest.mark.parametrize(
+    ("text", "tag"),
+    [
+        ("", "[text]"),
+        ("Upgrade for free!", "[text]"),
+        ("AC1252, $99.00, optional premium business", "[text]"),
+        ("$135.00 optional premium business", "[text]"),
+    ],
+)
+def test_an_offer_with_empty_text_or_other_facts_still_fails(text, tag):
+    got = offer_snap((*OFFER[:1], text, *OFFER[2:]))
+    (msg,) = compare_snapshots(offer_snap(OFFER), got)
+    assert tag in msg and "free" not in msg and "$99" not in msg
+
+
+def test_any_customer_message_text_difference_still_fails():
+    changed = [("outbound", "other words", (), (), "t1"), MSGS[1], OFFER]
+    (msg,) = compare_snapshots(offer_snap(OFFER), snap(messages=changed))
+    assert msg.endswith("1 of 3 differ: index 0 [text]")
+    # wording is not enough to be "an offer": identification is by buttons, not by text content
+    mimic = ("outbound", OFFER[1], (), (), "t1")
+    assert compare_snapshots(snap(messages=[MSGS[0]]), snap(messages=[mimic])) != []
+
+
+@pytest.mark.parametrize("field", [2, 3, 4])
+def test_an_offer_whose_structure_differs_still_fails(field):
+    changed = list(OFFER)
+    changed[1] = "Fancy AC1252 in premium business? $135.00, optional."
+    changed[field] = ("Accept",) if field == 2 else (("x",) if field == 3 else "t10")
+    (msg,) = compare_snapshots(offer_snap(OFFER), offer_snap(tuple(changed)))
+    assert "index 2" in msg
+
+
+def test_a_structural_difference_still_fails_when_the_offer_wording_also_differs():
+    reworded = (*OFFER[:1], "Fancy AC1252 in premium business? $135.00, optional.", *OFFER[2:])
+    out = compare_snapshots(
+        offer_snap(OFFER), snap(state={"seat": "9Z"}, messages=[*MSGS, reworded])
+    )
+    assert len(out) == 1 and "state differs" in out[0]

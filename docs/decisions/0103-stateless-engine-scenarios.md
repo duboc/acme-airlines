@@ -69,6 +69,10 @@ The offer text is composed on whichever container serves the Sales tick (`a2a_sk
 the caller holds is the one returned by the next Customer call. If that call lands on another
 container, the offer text is not on the tape: it is replayed with the fake model and `tape_miss` is
 greater than 0. State, journeys and the absence of duplicates are unaffected.
+The PO accepted this on 2026-10-15 (#279, no shared store): the live rebuild proof therefore
+compares everything exactly except the wording of the offer message (identified by its buttons),
+which must keep position, buttons, attachments, timestamp and the offer facts, and is reported as
+"offer wording differs" in the summary.
 
 ## Rebuild latency budget (#280)
 A rebuild at a late step replays every earlier step offline. Measured by the no-coverage CI step

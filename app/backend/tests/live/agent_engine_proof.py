@@ -718,9 +718,48 @@ def _differing(want: Any, got: Any, names: tuple[str, ...] = ()) -> list[str]:
     return ["value"]
 
 
+PRICE, FLIGHT = re.compile(r"\$\d+(?:\.\d{2})?"), re.compile(r"\b[A-Z]{2}\d{3,4}\b")
+
+
+def is_offer(message: tuple[Any, ...]) -> bool:
+    """The Sales-initiated offer, from structured data: an outbound message with quick-reply
+    buttons (the only one the Customer sends with buttons), never from its wording."""
+    return message[0] == "outbound" and bool(message[2])
+
+
+def offer_facts_kept(want: str, got: str) -> bool:
+    """The re-worded offer still states what the engine's deterministic facts check requires of
+    any offer text: the price and the flight (shared with the original), that it is optional and
+    that it is premium business. Seats are not compared: the engine does not require them."""
+    return (
+        bool(set(PRICE.findall(want)) & set(PRICE.findall(got)))
+        and bool(set(FLIGHT.findall(want)) & set(FLIGHT.findall(got)))
+        and all(word in got.lower() for word in ("optional", "premium business"))
+    )
+
+
+def offer_wording_differs(want: tuple[Any, ...], got: tuple[Any, ...]) -> bool:
+    """Both are offers, equal in every field but the wording, and the new wording is non-empty
+    and keeps the offer facts (ADR 0103, accepted by the PO on #279: a cross-replica rebuild may
+    re-word the offer, never change what it says)."""
+    if not (is_offer(want) and is_offer(got)) or want == got:
+        return False
+    same_but_text = want[:1] + want[2:] == got[:1] + got[2:]
+    return same_but_text and bool(got[1]) and offer_facts_kept(str(want[1]), str(got[1]))
+
+
+def offer_wording_differences(reference: Snapshot, rebuilt: Snapshot) -> int:
+    """How many offer messages were accepted with other wording (reported, never silent)."""
+    if len(reference.messages) != len(rebuilt.messages):
+        return 0
+    pairs = zip(reference.messages, rebuilt.messages, strict=True)
+    return sum(offer_wording_differs(w, g) for w, g in pairs)
+
+
 def compare_snapshots(reference: Snapshot, rebuilt: Snapshot) -> list[str]:
-    """State, journeys and conversation of the rebuilt run must equal the non-rebuilt run. A
-    failure names WHICH fields differ and at which index, never the content."""
+    """State, journeys and conversation of the rebuilt run must equal the non-rebuilt run, except
+    the wording of the Sales-initiated offer (`offer_wording_differs`). A failure names WHICH
+    fields differ and at which index, never the content."""
     out = []
     want_state, got_state = reference.state, rebuilt.state
     if want_state != got_state:
@@ -735,9 +774,11 @@ def compare_snapshots(reference: Snapshot, rebuilt: Snapshot) -> list[str]:
                        f"expected {len(want)}")  # fmt: skip
             continue
         bad = [f"index {i} {_differing(w, g, names)}".replace("'", "")
-               for i, (w, g) in enumerate(zip(want, got, strict=True)) if w != g]  # fmt: skip
-        out.append(f"rebuilt {name} differs from the non-rebuilt run: {len(bad)} of {len(want)} "
-                   f"differ: {', '.join(bad)}")  # fmt: skip
+               for i, (w, g) in enumerate(zip(want, got, strict=True))
+               if w != g and not (name == "messages" and offer_wording_differs(w, g))]  # fmt: skip
+        if bad:
+            out.append(f"rebuilt {name} differs from the non-rebuilt run: {len(bad)} of "
+                       f"{len(want)} differ: {', '.join(bad)}")  # fmt: skip
     return out
 
 
@@ -779,6 +820,7 @@ class RebuildReport:
     wall_ms: float = 0.0  # client side: the forced call, network included
     engine_ms: list[float] = field(default_factory=list)  # the engine's own `rebuild` ms
     failures: list[str] = field(default_factory=list)
+    offer_wording_differs: int = 0  # accepted relaxation, reported in the summary
 
     def markdown(self) -> str:
         engine = ", ".join(f"{ms:.1f} ms" for ms in self.engine_ms) or "no rebuild logged"
@@ -787,6 +829,10 @@ class RebuildReport:
                  f"preset `{self.preset}`, rebuilt to step {self.to_step}", "",
                  f"- rebuild latency (engine, `ACME_DIAG rebuild`): {engine}",
                  f"- forced call, client side: {self.wall_ms:.0f} ms"]  # fmt: skip
+        if self.offer_wording_differs:
+            lines.append(f"- offer wording differs (ADR 0103, accepted by PO on #279): "
+                         f"{self.offer_wording_differs} offer message(s), same position, buttons, "
+                         f"attachments, timestamp and facts")  # fmt: skip
         return "\n".join(lines + [f"- FAIL: {f}" for f in self.failures]) + "\n"
 
 
@@ -836,6 +882,7 @@ async def run_rebuild_proof(
     except EngineCallFailed as exc:
         report.failures.append(f"the forced rebuild call failed: {exc}")
     else:
+        report.offer_wording_differs = offer_wording_differences(reference, rebuilt)
         report.failures += compare_snapshots(reference, rebuilt) + duplicate_failures(
             reference, rebuilt
         )
