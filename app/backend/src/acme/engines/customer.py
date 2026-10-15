@@ -316,16 +316,24 @@ class CustomerEngineApp:
         from_step = runner.index if runner.active is not None else None
         started = time.perf_counter()
         recorder = self.runtime.llm  # the RecordingLlm wrapped around the engine's model
-        replay_llm = TapeLlm(clean_tape(kwargs.get("tape")) or [])  # untrusted: bad tape = none
-        self.runtime.llm = replay_llm  # deterministic and free: never the deployed model
-        try:
-            with replaying():
-                runner.start(target)
-                async with reuse_sessions():  # one sim session per server for the whole replay
-                    for _ in range(step):
-                        await runner.step(sales_tick=True)
-        finally:
-            self.runtime.llm = recorder
+        tape = clean_tape(kwargs.get("tape"))  # untrusted: a bad tape is no tape
+        discarded = 0
+        for attempt in [tape, []] if tape else [[]]:
+            replay_llm = TapeLlm(attempt)
+            self.runtime.llm = replay_llm  # deterministic and free: never the deployed model
+            try:
+                with replaying():
+                    runner.start(target)
+                    async with reuse_sessions():  # one sim session per server for the replay
+                        for _ in range(step):
+                            await runner.step(sales_tick=True)
+                break
+            except Exception:
+                if not attempt:
+                    raise  # the pure offline replay failed: a real error, not a tape problem
+                discarded = 1  # a tape that does not fit the flow must never crash a rebuild
+            finally:
+                self.runtime.llm = recorder
         recorder.entries = replay_llm.entries  # what was replayed is what a next rebuild replays
         elapsed = time.perf_counter() - started
         metrics.rebuild_duration(elapsed, preset, reason)  # outside replaying(): not suppressed
@@ -334,7 +342,7 @@ class CustomerEngineApp:
         ident = process_identity()
         diag(
             "rebuild", preset=preset, from_step=from_step, to_step=step, reason=reason,
-            ms=round(elapsed * 1000, 1), tape_miss=replay_llm.misses,
+            ms=round(elapsed * 1000, 1), tape_miss=replay_llm.misses, tape_discarded=discarded,
             proc=ident["proc"], container=ident["container"], pid=ident["pid"],
         )  # fmt: skip
 

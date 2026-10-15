@@ -601,6 +601,7 @@ DIAG_FIELDS: dict[str, dict[str, Callable[[Any], bool]]] = {
         "preset": _matches(_PRESET), "from_step": _is_int, "to_step": _is_int,
         "reason": _matches(_NAME), "ms": _is_num, "proc": _matches(_HEX8),
         "container": _matches(_HEX8_OR_NA), "pid": _is_int, "tape_miss": _is_int,
+        "tape_discarded": _is_int,
     },
 }  # fmt: skip
 
@@ -787,11 +788,15 @@ async def run_rebuild_proof(
     `fetch_logs(since)` returns the Customer engine's log entries (see `CloudLogging`).
     """
     report = RebuildReport(preset=preset)
-    state = await backend.scenario_start(preset)
-    while not state["done"]:
-        state = await backend.scenario_step(preset)
-    report.to_step = state["step_index"]
-    reference = await take_snapshot(backend, state)
+    try:
+        state = await backend.scenario_start(preset)
+        while not state["done"]:
+            state = await backend.scenario_step(preset)
+        report.to_step = state["step_index"]
+        reference = await take_snapshot(backend, state)
+    except Exception as exc:  # noqa: BLE001 - only the class: the error text may carry passengers
+        report.failures.append(f"the plain run failed: {type(exc).__name__}")
+        return report
     plain_tape = getattr(backend, "_tape", None)  # the plain run's replay tape (#279)
     await backend.scenario_start(decoy)  # the engine's local state is now the decoy's
     # The caller says: final step of `preset`, with the tape of that run, not the decoy's.
@@ -799,12 +804,16 @@ async def run_rebuild_proof(
     backend._tape = plain_tape  # noqa: SLF001
     since = now() - timedelta(seconds=2)
     t0 = monotonic()
-    state = await backend.scenario_state()  # not at (preset, step): the engine rebuilds
-    report.wall_ms = (monotonic() - t0) * 1000
-    rebuilt = await take_snapshot(backend, state)
-    report.failures += compare_snapshots(reference, rebuilt) + duplicate_failures(
-        reference, rebuilt
-    )
+    try:
+        state = await backend.scenario_state()  # not at (preset, step): the engine rebuilds
+        report.wall_ms = (monotonic() - t0) * 1000
+        rebuilt = await take_snapshot(backend, state)
+    except Exception as exc:  # noqa: BLE001 - the platform echoes the request (the tape) in errors
+        report.failures.append(f"the forced rebuild call failed: {type(exc).__name__}")
+    else:
+        report.failures += compare_snapshots(reference, rebuilt) + duplicate_failures(
+            reference, rebuilt
+        )
     deadline = monotonic() + wait
     while True:
         events = rebuild_events(fetch_logs(since), preset, report.to_step, since)

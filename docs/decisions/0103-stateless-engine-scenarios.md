@@ -35,6 +35,17 @@ per method and in order; a missing or mismatching entry falls back to the fake m
   never logged, put in `ACME_DIAG`, spans or metrics, and never sent to Sales or returned by the API.
 - Callers without a tape (and older engines) behave as before.
 
+## Tape keys and degradation (#279, live run 4)
+Entries carry an optional key: a short SHA-256 of the passenger text for a parse, and the kind of
+message (`offer` or `notice`) for a compose. A replay uses an entry only for a call with the same
+key (entries without a key, from older tapes, still match by position); anything else falls back to
+the fake model and counts in `tape_miss`. A tape that is incomplete (the caller holds the one the
+last Customer call returned, which can miss what another container recorded) used to shift the
+positions, so the request "after 10am" received the recorded `ack`, no offer was sent and the
+rebuild died with `NoSentOffer`. If a replay with a tape still raises, the rebuild runs once more
+with no tape and the diag carries `tape_discarded` (0 or 1). The live proof reports only the class
+of a failing engine call, because the platform appends the request (the tape) to the error text.
+
 ## Known gap
 The offer text is composed on whichever container serves the Sales tick (`a2a_skill`), and the tape
 the caller holds is the one returned by the next Customer call. If that call lands on another
