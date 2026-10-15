@@ -4,6 +4,7 @@ A `Connector` opens a short-lived MCP session to one server. Each connector
 acts as ONE caller and presents only that caller's token (`acme.sim.auth.client_config`, #27).
 """
 
+import threading
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
@@ -17,7 +18,32 @@ from mcp.server.fastmcp import FastMCP
 
 from acme.sim.app import DEFAULT_REGISTRY, ServerFactory, create_app
 from acme.sim.auth import client_config, load_tokens
+from acme.sim.current import CURRENT, WorldRef
 from acme.sim.world import SimWorld
+
+_SHARED: dict[str, FastMCP] = {}  # one tool registry per server for the whole process (#280)
+_SHARED_LOCK = threading.Lock()
+
+
+def _shared_server(server: str) -> ServerFactory:
+    """A factory for the process-wide FastMCP of `server`: built once against a `WorldRef`, so it
+    holds no world. Only its session manager is per use (a manager runs once per instance)."""
+
+    def factory(_world: SimWorld) -> FastMCP:
+        with _SHARED_LOCK:
+            if server not in _SHARED:
+                _SHARED[server] = DEFAULT_REGISTRY[server](WorldRef())  # type: ignore[arg-type]
+            mcp = _SHARED[server]
+            mcp._session_manager = None  # noqa: SLF001 - a session manager runs once per instance
+            return mcp
+
+    return factory
+
+
+def warm_registry() -> None:
+    """Build every shared tool registry now (engine start-up), so no rebuild pays for it."""
+    for server in DEFAULT_REGISTRY:
+        _shared_server(server)(None)  # type: ignore[arg-type]
 
 
 @dataclass
@@ -84,29 +110,22 @@ def inprocess_connector(
 ) -> Connector:
     """In-process sim with the middleware ON; `caller` presents only its own credential."""
     tokens = dict(tokens) if tokens else load_tokens({})  # random per connector when not given
-    servers: dict[str, FastMCP] = {}  # one tool registry per server, bound to THIS `sim` only
-
-    def registry_for(server: str) -> ServerFactory:
-        def factory(world: SimWorld) -> FastMCP:
-            if server not in servers:  # registering the tools is the costly part (#280)
-                servers[server] = DEFAULT_REGISTRY[server](world)
-            mcp = servers[server]
-            mcp._session_manager = None  # noqa: SLF001 - a session manager runs once per instance
-            return mcp
-
-        return factory
 
     @asynccontextmanager
     async def open_session(server: str):
         # Mount only the requested server: a session manager runs once per instance.
-        app = create_app(sim, registry={server: registry_for(server)}, tokens=tokens)
+        app = create_app(sim, registry={server: _shared_server(server)}, tokens=tokens)
         http = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url="http://acme-sim",
             headers=caller_headers(caller, "http://acme-sim", tokens, server),
         )
-        async with app.router.lifespan_context(app), _session(http, server) as session:
-            yield session
+        token = CURRENT.set(sim)  # the server tasks created below inherit THIS run's world
+        try:
+            async with app.router.lifespan_context(app), _session(http, server) as session:
+                yield session
+        finally:
+            CURRENT.reset(token)
 
     @asynccontextmanager
     async def connect(server: str):

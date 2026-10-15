@@ -1,10 +1,11 @@
 """#280: how long a forced rebuild takes, per preset at its last step (offline, LLM_MODE=fake),
-and that sim sessions reused by a replay do not leak state across runs.
+and that the shared sim registry and reused sessions do not leak state across runs.
 
-The p95 ceiling below is INTERIM: a regression guard at about 1.6x the worst single rebuild measured
-on the dev sandbox after the session reuse (614 ms). The target is p95 < 500 ms, see #280.
-Why it is not flaky: 8 samples per preset (p95 is the slowest of 8 by nearest rank, so the
-ceiling needs about 2x headroom: 1000 ms against a median of 514 ms and a max of 614 ms).
+The p95 ceiling below is INTERIM: a regression guard, not the target (p95 < 500 ms, see #280; the
+PO decides the final number). Measured on the dev sandbox after the registry cache (20 rebuilds per
+preset, p95): happy-path 504-506 ms, upgrade-race 465-469, declines-upgrade 446-450, the rest < 301.
+Why it is not flaky: 8 samples per preset (the nearest-rank p95 of 8 is the slowest), and a ceiling
+of 650 ms leaves about 28% over the worst measured p95 (506 ms) and 2x over the median (414 ms).
 """
 
 import math
@@ -15,7 +16,7 @@ import pytest
 from acme.api.scenarios import BY_ID
 from acme.engines.customer import build_customer_engine_app
 
-SAMPLES, CEILING_MS = 8, 1000.0
+SAMPLES, CEILING_MS = 8, 650.0
 PID = "P-MARIANA"
 
 
@@ -63,7 +64,7 @@ async def test_rebuild_p95_per_preset_stays_under_the_interim_ceiling(capsys):
             failures.append(rows[-1])
     with capsys.disabled():
         print(
-            "\nrebuild latency (target p95 < 500 ms, interim ceiling 1000 ms):\n  "
+            "\nrebuild latency (target p95 < 500 ms, interim ceiling 650 ms):\n  "
             + "\n  ".join(rows)
         )
     if measured_under_tracing():

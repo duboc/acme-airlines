@@ -15,6 +15,7 @@ from uuid import uuid4
 from mcp.server.fastmcp import FastMCP
 from pydantic import AwareDatetime, Field, StringConstraints
 
+from acme.sim.current import lazy, resolve
 from acme.sim.servers import _server
 from acme.sim.world import SimError
 
@@ -168,7 +169,7 @@ class PartnerState:
 
 def build_concierge(sim: SimWorld) -> FastMCP:
     mcp = _server("concierge")
-    p = sim.partners
+    p = lazy(lambda: resolve(sim).partners)  # per run, resolved at call time (#280)
 
     @mcp.tool(name="hotel.book")
     def hotel_book(
@@ -194,7 +195,7 @@ def build_concierge(sim: SimWorld) -> FastMCP:
 
 def build_whatsapp(sim: SimWorld) -> FastMCP:
     mcp = _server("whatsapp")
-    p = sim.partners
+    p = lazy(lambda: resolve(sim).partners)  # per run, resolved at call time (#280)
 
     @mcp.tool(name="message.send")
     def message_send(

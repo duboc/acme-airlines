@@ -39,7 +39,7 @@ from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
 from acme.llm.tape import RecordingLlm, TapeLlm, clean_tape
 from acme.replay import replaying
-from acme.sim.client import reuse_sessions
+from acme.sim.client import reuse_sessions, warm_registry
 from acme.telemetry import EngineOp, diag, flush, process_identity, span
 
 log = logging.getLogger(__name__)
@@ -388,6 +388,7 @@ class CustomerEngineApp:
         configure_cloud_monitoring(DISPLAY_NAME)
         self.runtime = CustomerRuntime()  # in-process simulators, LlmPort from LLM_MODE
         self.runtime.llm = RecordingLlm(self.runtime.llm)  # the replay tape (#279)
+        warm_registry()  # build the sim tool registries once, not during a rebuild (#280)
         self.skills = CustomerSkills(self.runtime)
         self._sessions = InMemorySessionService()
         self._runner = Runner(
