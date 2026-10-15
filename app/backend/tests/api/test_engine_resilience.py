@@ -1,0 +1,289 @@
+"""#306: a transient Agent Engine error is retried when the op is a read and otherwise a clean 503,
+never a raw 500; a step that committed stays consistent when its Sales tick or state read fails."""
+
+import pytest
+
+from acme.api import engine_backend
+from acme.api.engine_backend import (
+    EngineBackend,
+    EngineUnavailable,
+    StepApplied,
+    _AdcEngine,
+    create_engine_app,
+)
+from tests.api.test_engine_mode import LocalEngine, client
+from tests.api.test_engine_mode import engine_backend as local_backend
+
+
+@pytest.fixture(autouse=True)
+def fast_retries(monkeypatch):
+    monkeypatch.setattr(engine_backend, "RETRY_BACKOFF", (0.0, 0.0))
+
+
+class Flaky:
+    """The remote engine object: `fail` errors first, then answers."""
+
+    def __init__(self, fail=0, exc=None):
+        self.fail, self.calls = fail, []
+        self.exc = exc or ConnectionError("rpc unavailable")
+
+    def _maybe_fail(self, op):
+        self.calls.append(op)
+        if len([c for c in self.calls if c == op]) <= self.fail:
+            raise self.exc
+
+    def scenario_state(self, **kw):
+        self._maybe_fail("scenario_state")
+        return {"step_index": 3}
+
+    def scenario_start(self, **kw):
+        self._maybe_fail("scenario_start")
+        return {"step_index": 0}
+
+    async def async_stream_query(self, **kw):
+        self._maybe_fail("stream")
+        yield {"ok": True}
+
+
+def adc(remote):
+    engine = _AdcEngine("projects/p/locations/l/reasoningEngines/1")
+    engine._engine = remote  # noqa: SLF001 - already resolved: no credentials needed
+    return engine
+
+
+async def test_given_a_transient_error_on_a_read_when_it_is_retried_then_it_succeeds():
+    remote = Flaky(fail=2)
+    assert await adc(remote).call("scenario_state") == {"step_index": 3}
+    assert remote.calls == ["scenario_state"] * 3
+
+
+async def test_given_a_persistent_error_on_a_read_then_it_is_bounded_and_unavailable():
+    remote = Flaky(fail=99)
+    with pytest.raises(EngineUnavailable) as err:
+        await adc(remote).call("scenario_state")
+    assert len(remote.calls) == 3  # one try and two retries
+    assert "ConnectionError" in str(err.value) and "rpc unavailable" not in str(err.value)
+
+
+async def test_given_an_error_on_a_write_then_it_is_never_repeated():
+    remote = Flaky(fail=1)
+    with pytest.raises(EngineUnavailable):
+        await adc(remote).call("scenario_start", scenario_id="happy-path")
+    assert remote.calls == ["scenario_start"]  # it may have taken effect: no second try
+
+
+async def test_given_a_failing_stream_then_it_is_unavailable_not_a_raw_error():
+    with pytest.raises(EngineUnavailable):
+        async for _ in adc(Flaky(fail=1)).stream(message="tick", user_id="demo"):
+            pass
+
+
+async def test_given_a_persistent_engine_error_over_http_then_the_answer_is_a_json_503():
+    class Down(LocalEngine):
+        async def call(self, op, **kwargs):
+            raise EngineUnavailable("The Agent Engine call failed (X); try again.")
+
+    app = create_engine_app(EngineBackend(Down(None), Down(None)))
+    async with client(app) as c:
+        r = await c.get("/journeys")
+    assert r.status_code == 503 and r.json() == {
+        "detail": "The Agent Engine call failed (X); try again."
+    }
+
+
+async def test_given_a_failing_sales_tick_after_a_committed_step_then_the_step_still_answers():
+    backend = local_backend()
+
+    class BrokenSales:
+        def stream(self, **kw):
+            raise RuntimeError("tick rpc failed")
+
+        async def call(self, op, **kw):
+            raise RuntimeError
+
+    backend._sales = BrokenSales()  # noqa: SLF001
+    app = create_engine_app(backend)
+    async with client(app) as c:
+        await c.post("/scenarios/happy-path/start")
+        r = await c.post("/scenarios/happy-path/step")
+        assert r.status_code == 200 and r.json()["step_index"] == 1
+        assert backend._step == 1  # noqa: SLF001 - matches the engine
+        assert (await c.post("/scenarios/happy-path/step")).json()["step_index"] == 2
+
+
+async def test_given_a_state_read_failing_after_a_committed_step_then_it_says_the_step_applied():
+    backend = local_backend()
+    real, stepped = backend._customer.call, []  # noqa: SLF001
+
+    async def call(op, **kw):
+        if op == "scenario_state" and stepped:  # the read that follows the committed step
+            raise EngineUnavailable("down")
+        out = await real(op, **kw)
+        if op == "scenario_step":
+            stepped.append(True)
+        return out
+
+    backend._customer.call = call  # noqa: SLF001
+    app = create_engine_app(backend)
+    async with client(app) as c:
+        await c.post("/scenarios/happy-path/start")
+        r = await c.post("/scenarios/happy-path/step")
+    assert r.status_code == 503 and "step was applied" in r.json()["detail"]
+    assert backend._step == 1  # noqa: SLF001 - the counter follows the committed step
+    assert issubclass(StepApplied, EngineUnavailable)
+
+
+# --- #335: the query quota -------------------------------------------------------------------
+
+
+class QuotaExhausted(Exception):
+    """What grpc/api_core raise for RESOURCE_EXHAUSTED (matched by name, like the real one)."""
+
+
+QuotaExhausted.__name__ = "ResourceExhausted"
+
+
+async def test_given_the_quota_is_exhausted_on_a_read_then_it_is_a_429_with_retry_after_unretried():
+    remote = Flaky(fail=99, exc=QuotaExhausted("429 quota"))
+    with pytest.raises(engine_backend.EngineQuotaExceeded) as err:
+        await adc(remote).call("scenario_state")
+    assert remote.calls == ["scenario_state"]  # a retry would burn more quota
+    assert "quota" in str(err.value) and "429" not in str(err.value)
+
+
+async def test_given_a_grpc_status_code_for_exhaustion_then_it_is_a_quota_error():
+    class Rpc(Exception):
+        def code(self):
+            return "StatusCode.RESOURCE_EXHAUSTED"
+
+    with pytest.raises(engine_backend.EngineQuotaExceeded):
+        await adc(Flaky(fail=1, exc=Rpc())).call("scenario_start", scenario_id="x")
+
+
+async def test_given_the_quota_is_exhausted_over_http_then_429_retry_after_and_no_detail_leak():
+    class Quota(LocalEngine):
+        async def call(self, op, **kwargs):
+            raise engine_backend.EngineQuotaExceeded("The Agent Engine query quota is exhausted.")
+
+    app = create_engine_app(EngineBackend(Quota(None), Quota(None)))
+    async with client(app) as c:
+        reset, journeys = await c.post("/scenario/reset"), await c.get("/journeys")
+    for r in (reset, journeys):
+        assert r.status_code == 429 and r.headers["retry-after"] == "20"
+        assert r.json() == {"detail": "The Agent Engine query quota is exhausted."}
+
+
+async def test_given_an_unavailable_engine_over_http_then_503_with_retry_after():
+    class Down(LocalEngine):
+        async def call(self, op, **kwargs):
+            raise EngineUnavailable("down")
+
+    async with client(create_engine_app(EngineBackend(Down(None), Down(None)))) as c:
+        r = await c.post("/scenario/reset")
+    assert r.status_code == 503 and r.headers["retry-after"] == "5"
+
+
+class CountingEngine:
+    def __init__(self, inner):
+        self.inner, self.calls = inner, []
+
+    async def call(self, op, **kwargs):
+        self.calls.append(op)
+        return await self.inner.call(op, **kwargs)
+
+    def stream(self, **kw):
+        return self.inner.stream(**kw)
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    from types import SimpleNamespace
+
+    now = [1000.0]  # a stub module: patching `time.monotonic` itself would stop the event loop
+    monkeypatch.setattr(engine_backend, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    return now
+
+
+async def test_given_many_streams_then_the_engine_is_asked_once_per_interval(clock):
+    backend = local_backend()
+    counter = backend._customer = CountingEngine(backend._customer)  # noqa: SLF001
+    await backend.scenario_start("happy-path")
+    await backend.scenario_step("happy-path")
+    (jid,) = [j["journey_id"] for j in await backend.journeys_list()]
+    counter.calls.clear()
+    for _ in range(20):  # twenty streams polling in the same instant
+        await backend.timeline(jid)
+    assert counter.calls.count("journey_events") == 1
+
+
+async def test_given_one_idle_stream_then_the_engine_rate_stays_low_and_backs_off(clock):
+    backend = local_backend()
+    counter = backend._customer = CountingEngine(backend._customer)  # noqa: SLF001
+    await backend.scenario_start("happy-path")
+    await backend.scenario_step("happy-path")
+    (jid,) = [j["journey_id"] for j in await backend.journeys_list()]
+    await backend.timeline(jid)  # the first look finds the events so far
+    counter.calls.clear()
+    for _ in range(30):  # one minute of a stream looking every POLL_SECONDS (2 s)
+        clock[0] += engine_backend.POLL_SECONDS
+        await backend.timeline(jid)
+    per_minute = counter.calls.count("journey_events")
+    assert per_minute <= 30  # it was 120 a minute per stream at 0.5 s
+    counter.calls.clear()
+    for _ in range(30):  # the next minute is idle too: the interval has grown
+        clock[0] += engine_backend.POLL_SECONDS
+        await backend.timeline(jid)
+    assert counter.calls.count("journey_events") <= 12
+
+
+async def test_given_a_write_then_the_open_streams_look_again_at_once(clock):
+    backend = local_backend()
+    await backend.scenario_start("happy-path")
+    await backend.scenario_step("happy-path")
+    await backend.scenario_step("happy-path")
+    (jid,) = [j["journey_id"] for j in await backend.journeys_list()]
+    n = len(await backend.timeline(jid))
+    for _ in range(3):  # idle: the interval grows
+        clock[0] += engine_backend.POLL_SECONDS
+        await backend.timeline(jid)
+    await backend.scenario_step("happy-path")  # a step: new events
+    assert len(await backend.timeline(jid)) > n  # seen without waiting for the interval
+
+
+async def test_given_reconnects_then_the_journeys_list_is_queried_once_per_ttl(clock):
+    backend = local_backend()
+    counter = backend._customer = CountingEngine(backend._customer)  # noqa: SLF001
+    for _ in range(10):
+        await backend.known_journeys()
+    assert counter.calls.count("journeys_list") == 1
+    clock[0] += engine_backend.JOURNEYS_TTL_SECONDS
+    await backend.known_journeys()
+    assert counter.calls.count("journeys_list") == 2
+
+
+async def test_given_a_quota_error_in_a_stream_then_it_sends_a_retry_hint_and_ends_cleanly():
+    from acme.api.sse import event_stream
+
+    class Request:
+        async def is_disconnected(self):
+            return False
+
+    async def fetch(sent):
+        raise engine_backend.EngineQuotaExceeded("quota")
+
+    frames = [f async for f in event_stream(Request(), fetch, limit=None, poll_seconds=0.001)]
+    assert frames == ["retry: 20000\n\n"]
+
+
+async def test_given_a_stream_error_that_is_not_typed_then_it_still_surfaces():
+    from acme.api.sse import event_stream
+
+    class Request:
+        async def is_disconnected(self):
+            return False
+
+    async def fetch(sent):
+        raise RuntimeError("bug")
+
+    with pytest.raises(RuntimeError):
+        [f async for f in event_stream(Request(), fetch, limit=None, poll_seconds=0.001)]
