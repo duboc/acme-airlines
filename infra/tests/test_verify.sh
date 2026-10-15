@@ -53,6 +53,8 @@ cexpect() {
 }
 T=$(mktemp -d); mk() { mkdir -p "$T/$1/$2"; printf '%b' "$3" > "$T/$1/$2/scion-agent.yaml"; }
 mk good lead 'default_harness_config: claude\nmodel: large\n'
+mk good researcher 'default_harness_config: antigravity\nmodel: large\n'
+mk good product-manager 'default_harness_config: antigravity\nmodel: large\n'
 mk good backend 'default_harness_config: claude\nmodel: medium\n'
 mk good reviewer 'default_harness_config: antigravity\nmodel: large\n'
 mexpect 0 "models match mapping" "$T/good"

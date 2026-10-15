@@ -1,6 +1,6 @@
 # 01 — Scion CLI Configuration, Two-Project Provisioning & IAP Setup
 
-How to provision the GCP project, manage sensitive organization/domain parameters via `infra/factory.local.env` (and Secret Manager), recreate both Scion Hub projects (`duboc-acme-airlines` for development and `acme-airlines-eval` for evaluation) and all 10 agents using the native `scion` CLI ([`infra/setup-scion.sh`](../../infra/setup-scion.sh)), and grant IAP web access to organization domains (`WEB_DOMAINS`).
+How to provision the GCP project, manage sensitive organization/domain parameters via `infra/factory.local.env` (and Secret Manager), recreate both Scion Hub projects (`duboc-acme-airlines` for development and `acme-airlines-eval` for evaluation) and all 12 agents using the native `scion` CLI ([`infra/setup-scion.sh`](../../infra/setup-scion.sh)), and grant IAP web access to organization domains (`WEB_DOMAINS`).
 
 ---
 
@@ -12,19 +12,19 @@ All scripts source public defaults from [`infra/factory.env`](../../infra/factor
 |---|---|
 | [`infra/00-bootstrap-project.sh`](../../infra/00-bootstrap-project.sh) | Creates GCP project (`acme-airlines-factory`), links billing, enables APIs (`compute`, `run`, `iap`, `aiplatform`, `secretmanager`, `monitoring`, `cloudscheduler`), ensures Cloud NAT on `default` VPC. |
 | [`infra/10-deploy-hub.sh`](../../infra/10-deploy-hub.sh) | Runs upstream `single-node-vm/deploy.sh --config <runtime-config.json>` (injects `$ADMIN_EMAIL` at deploy time and provisions `scion-hub-acme` VM + `scion-hub-acme-iap-proxy` Cloud Run IAP proxy). |
-| **[`infra/setup-scion.sh`](../../infra/setup-scion.sh)** | **Declarative `scion` CLI setup script:** upgrades `scion-antigravity:latest` (`agy 1.3.4`), syncs `model_aliases` (`scion harness-config sync`), renders & imports the 10 templates from [`docs/scion/templates/`](./templates/) via [`infra/render-templates.py`](../../infra/render-templates.py) (`scion templates import` + `sync`), provisions both Hub projects (`duboc-acme-airlines` on `main` & `acme-airlines-eval` on orphan branch `eval-dashboard`), sets `GITHUB_TOKEN` (`injection_mode=always`), verifies `acme-agent@` and `acme-observatory-deployer@` SAs, starts all 10 standing agents, and installs both 15-minute heartbeats. |
+| **[`infra/setup-scion.sh`](../../infra/setup-scion.sh)** | **Declarative `scion` CLI setup script:** upgrades `scion-antigravity:latest` (`agy 1.3.4`), syncs `model_aliases` (`scion harness-config sync`), renders & imports the 12 templates from [`docs/scion/templates/`](./templates/) via [`infra/render-templates.py`](../../infra/render-templates.py) (`scion templates import` + `sync`), provisions both Hub projects (`duboc-acme-airlines` on `main` & `acme-airlines-eval` on orphan branch `eval-dashboard`), sets `GITHUB_TOKEN` (`injection_mode=always`), verifies `acme-agent@` and `acme-observatory-deployer@` SAs, starts all 12 standing agents, and installs both 15-minute heartbeats. |
 | [`infra/25-agent-identity.sh`](../../infra/25-agent-identity.sh) | Creates low-privilege `acme-agent@` SA, switches Hub to `default_gcp_identity_mode: assign`, and drops `roles/iam.serviceAccountAdmin` from the Hub VM SA. |
 | [`infra/30-hub-admin-access.sh`](../../infra/30-hub-admin-access.sh) | `enable` / `disable` / `status`: temporarily opens operator OAuth federation on `localhost:8080` over IAP-tunneled SSH for non-interactive CLI mutations. |
 | [`infra/35-github-repo.sh`](../../infra/35-github-repo.sh) | Creates project labels (`duboc-acme-airlines`, `acme-airlines-eval`), wave labels (`wave-1`..`wave-5`), pinned `🏭 Factory status` issue, orphan branch `eval-dashboard`, and `main` branch protection. |
 | [`infra/50-web-access.sh`](../../infra/50-web-access.sh) / [`55-iap-oauth-client.sh`](../../infra/55-iap-oauth-client.sh) | Configures IAP OAuth client + Hub domain access for all `WEB_DOMAINS` in `infra/factory.local.env`. |
-| [`infra/60-factory.sh`](../../infra/60-factory.sh) | `status` / `tick-install` / `pause` / `resume`: controls the two 15-minute heartbeat schedules (`duboc-acme-airlines-lead-heartbeat` & `acme-airlines-eval-lead-heartbeat`) and all 10 agents across both projects. |
+| [`infra/60-factory.sh`](../../infra/60-factory.sh) | `status` / `tick-install` / `pause` / `resume`: controls the two 15-minute heartbeat schedules (`duboc-acme-airlines-lead-heartbeat` & `acme-airlines-eval-lead-heartbeat`) and all 12 agents across both projects. |
 | [`infra/70-budget-guard.sh`](../../infra/70-budget-guard.sh) | Deploys the `$2,000` billing budget + Pub/Sub + `acme-budget-guard` Cloud Run auto-suspend function. |
 | [`infra/75-backups.sh`](../../infra/75-backups.sh) / [`76-watchdog.sh`](../../infra/76-watchdog.sh) | Attaches daily persistent-disk snapshot schedule and deploys `acme-factory-watchdog` (hourly self-healing check + `04:00 UTC` daily reincarnation + Cloud Monitoring email alert). |
 | [`infra/80-observatory-platform.sh`](../../infra/80-observatory-platform.sh) / [`90-irrops-demo-platform.sh`](../../infra/90-irrops-demo-platform.sh) / [`95-agent-engine-platform.sh`](../../infra/95-agent-engine-platform.sh) | Deploys product & eval Cloud Run services (`acme-observatory`, `acme-observatory-collector`, `acme-irrops-demo`), GitHub WIF, and the two Vertex AI Reasoning Engines. |
 
 ---
 
-## 2. Recreating Both Projects & the 10 Agents with the `scion` CLI (`infra/setup-scion.sh`)
+## 2. Recreating Both Projects & the 12 Agents with the `scion` CLI (`infra/setup-scion.sh`)
 
 ### Step 1: Sync Harness `model_aliases` (`scion harness-config sync`)
 ```bash
@@ -35,7 +35,7 @@ scion --global harness-config sync gemini-cli
 - **`claude` (Claude Code):** `large: "claude-opus-5-5"`, `medium: "claude-sonnet-5-5"`, `small: "claude-haiku-5-5"`
 - **`antigravity` (`agy 1.3.4`):** `large: "Gemini 4 Argon (High)"` (`gemini-4-argon`), `medium: "Gemini 3.8 Flash (Medium)"` (`gemini-3.8-flash`)
 
-### Step 2: Render, Import & Sync the 10 Templates (`infra/render-templates.py` + `scion templates`)
+### Step 2: Render, Import & Sync the 12 Templates (`infra/render-templates.py` + `scion templates`)
 [`infra/render-templates.py`](../../infra/render-templates.py) combines [`docs/scion/templates/_shared/agents.md`](./templates/_shared/agents.md) into each role's `agents.md` and substitutes `${VAR}` placeholders from `infra/factory.env` + `infra/factory.local.env`:
 ```bash
 python3 infra/render-templates.py --out /tmp/scion-templates
@@ -48,10 +48,12 @@ scion --global templates sync --all
 - **Eval project (`acme-airlines-eval`):** `/home/scion/.scion/projects/acme-airlines-eval` checked out on independent orphan trunk `EVAL_BRANCH=eval-dashboard`.
 - Both projects receive `GITHUB_TOKEN` with `injection_mode=always`, default SA `acme-agent@acme-airlines-factory.iam.gserviceaccount.com` (`assign` mode), and deployer SA `acme-observatory-deployer@acme-airlines-factory.iam.gserviceaccount.com` assigned to `deployer` and `eval-deployer`.
 
-### Step 4: Start the 10 Standing Agents & Two 15-Minute Heartbeats (`scion start` / `scion schedule`)
+### Step 4: Start the 12 Standing Agents & Two 15-Minute Heartbeats (`scion start` / `scion schedule`)
 ```bash
 # Build project (duboc-acme-airlines on main)
 scion --project duboc-acme-airlines start lead --type lead --role full "Read your instructions, then run your wake-up steps."
+scion --project duboc-acme-airlines start researcher --type researcher "Stand by for research and root-cause investigation briefs from lead."
+scion --project duboc-acme-airlines start product-manager --type product-manager "Stand by for user story and acceptance criteria briefs from lead."
 scion --project duboc-acme-airlines start backend --type backend "Stand by for briefs from lead."
 scion --project duboc-acme-airlines start frontend --type frontend "Stand by for briefs from lead."
 scion --project duboc-acme-airlines start reviewer --type reviewer "Stand by for review requests from lead."

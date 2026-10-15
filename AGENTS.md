@@ -1,7 +1,7 @@
 # AGENTS.md (`CLAUDE.md`) — Project Context & Operating Protocol
 
 This repository holds the **acme-airlines** multi-agent application (`app/`), the **Observatory** evaluation & telemetry dashboard (`observatory/`), and the **Scion software factory** infrastructure (`infra/`, `docs/scion/`), structured after [`duboc/scion-experiment`](https://github.com/duboc/scion-experiment) with two Scion Hub projects:
-- **Build Project (`duboc-acme-airlines` on branch `main`):** `lead`, `backend`, `frontend`, `reviewer`, `deployer`
+- **Build Project (`duboc-acme-airlines` on branch `main`):** `lead`, `researcher`, `product-manager`, `backend`, `frontend`, `reviewer`, `deployer`
 - **Eval Project (`acme-airlines-eval` on orphan branch `eval-dashboard`):** `eval-lead`, `factory-analyst`, `search-evaluator`, `ui-craftsman`, `eval-deployer`
 
 ## 1. Build, Lint & Test Commands
@@ -38,14 +38,15 @@ npm ci && npm run lint && npm test && npm run build
 
 ## 3. Factory Operating Protocol (`duboc/scion-experiment`)
 
-1. **GitHub is the source of truth:** Issues labeled with the project slug (`duboc-acme-airlines` or `acme-airlines-eval`) and `wave-1`..`wave-5` form the backlog (respecting `Depends on #N`, at most 2 issues in flight). Post plans, commands/results, and deploy/review evidence on the issue.
+1. **GitHub is the source of truth:** Issues labeled with the project slug (`duboc-acme-airlines` or `acme-airlines-eval`) and `wave-1`..`wave-5` form the backlog (respecting `Depends on #N`, distributing up to 4 active `status:in-progress` issues in parallel across the team). Post plans, commands/results, and deploy/review evidence on the issue.
 2. **Only delivered messages count:** Use `scion message <agent> "<from> -> <to>: <text>"` (or `--body-file <file>`) and verify it prints `Message delivered` (or `Message sent to user:<email>.` when escalating to `user:<PO_EMAIL>`).
 3. **End every turn with a status:** Always finish your turn with `sciontool status blocked "waiting: <what, from whom>"`, `sciontool status task_completed "<summary>"`, or `sciontool status ask_user "<question>"`.
-4. **6-Step Issue Lifecycle (`lead` -> worker -> `reviewer` -> commit slot -> `deployer` -> PO acceptance):**
-   - **Plan:** `lead` comments the plan on Issue `#N`.
-   - **Build:** `lead` briefs `backend` / `frontend`; worker implements & tests without committing, then messages `lead` (`DONE #N: ...`).
-   - **Review:** `lead` checks `git diff` and asks `reviewer`; `reviewer` runs tests, appends to [`REVIEW.md`](REVIEW.md), and messages `lead` (`#N <PASS|FAIL>: <evidence>`).
-   - **Commit Slot:** On `PASS`, `lead` grants the commit slot to one agent at a time (`git add <files> && git commit -m "<type>(<scope>): <summary> (#N)" && git push origin <branch>`).
-   - **Deploy:** `deployer` exports the pushed SHA via `git archive` to a clean temp dir, deploys `acme-irrops-demo`, verifies live endpoints, appends to [`DEPLOYMENT.md`](DEPLOYMENT.md), and comments on `#N`.
-   - **Accept:** `lead` comments the outcome on `#N` and messages the PO (`user:<PO_EMAIL>`). The PO closes the issue to accept.
+4. **7-Step Specification-Driven Issue Lifecycle (`researcher` -> `product-manager` -> worker -> `reviewer` -> merge -> `deployer` -> `eval-lead` approval & close):**
+   - **Research & User Story (`status:triage` -> `status:spec-ready` -> `status:ready`):** For unspecified or newly triaged issues, `lead` dispatches `researcher` to post a `## Research Brief` (root cause, `file:line`, ADR/policy constraints) and `product-manager` to post a `## User Story & Acceptance Contract` (`As a ... I want ... so that ...`, numbered `Given / When / Then` criteria, and a deterministic `Verify:` command block), marking the issue `status:ready`.
+   - **Plan:** `lead` comments the execution plan on Issue `#N` and sets `status:in-progress`.
+   - **Build (in parallel):** `lead` briefs `backend` (`role:backend`, `bug`, backend `role:qa`), `frontend` (`role:frontend`, `role:docs`), or `reviewer` (`role:security`); worker implements & tests in an isolated git worktree (`/tmp/wt-<N>`), opens a PR (`Refs #N`), and messages `lead` (`DONE #N: ...`).
+   - **Review:** `lead` asks `reviewer` to review the PR and run the `Verify:` block; `reviewer` submits a GitHub PR review (`VERDICT: APPROVE` / `VERDICT: REQUEST CHANGES`), appends to [`REVIEW.md`](REVIEW.md), and messages `lead`.
+   - **Merge:** On `VERDICT: APPROVE` and green CI, the PR is squash-merged to `main`.
+   - **Deploy:** `deployer` exports the merged SHA via `git archive` to a clean temp dir, deploys/verifies `acme-irrops-demo`, appends to [`DEPLOYMENT.md`](DEPLOYMENT.md), and comments on `#N`. `lead` posts the `(merged_sha, cloud_run_revision, verify_output)` tuple, moves `#N` to `status:in-review`, and immediately picks up the next issue.
+   - **Eval Acceptance & Dashboard Update:** `eval-lead` (`acme-airlines-eval`) dispatches `search-evaluator` and `factory-analyst` to independently execute the `Verify:` block and `Given / When / Then` criteria against `origin/main` and live `acme-irrops-demo`, approves & closes verified issues (`gh issue close <N>` + `status:done`), files any new live bugs as `duboc-acme-airlines,bug,status:triage`, and dispatches `ui-craftsman` + `eval-deployer` to update and deploy `acme-observatory` on `eval-dashboard`.
 5. **Trunk isolation:** `main` (`duboc-acme-airlines`) and `eval-dashboard` (`acme-airlines-eval`) are independent orphan trunks. Never merge, rebase, cherry-pick, or open a PR between them.
