@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import AwareDatetime, BaseModel
 
-from acme.domain.clock import FixedClock
+from acme.domain.clock import FixedClock, SystemClock
 from acme.domain.models import HotelBooking, Voucher
 from acme.memory.store import JourneyStore, dump_journey
 from acme.sim.dcs import dcs_state
@@ -114,6 +114,8 @@ def restore(
             rt.clock.set(snap.clock)
         else:
             rt.clock = FixedClock(snap.clock)
+    else:  # a post-reset snapshot: this worker may still hold a preset's fixed clock (#321)
+        rt.clock = rt._initial_clock or SystemClock()  # noqa: SLF001
     rt.sim.clock = rt.clock
     rt.sim.import_data(snap.sim)
     rt.sim.partners.import_data(snap.partners)

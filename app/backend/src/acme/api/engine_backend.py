@@ -392,13 +392,15 @@ class EngineBackend:
         self._run += 1
         self._sales_pending = False
         self._stir()
-        self._active = None
+        self._active, self._step = None, 0
         self._tape = None  # the tape belongs to the run that is over (#279)
         return await self._customer.call("reset")
 
     async def api(self, op: str, **kwargs: Any) -> Any:
         """Phone panel and trigger ops, which return API errors as data."""
         ctx = self._ctx() if op.startswith("whatsapp_") else {}  # not trigger_cancellation
+        if op == "trigger_cancellation":  # the engine ends the preset: so does this cursor (#321)
+            self._active, self._step, self._tape = None, 0, None
         reply = ok(await self._customer.call(op, **kwargs, **ctx))
         if op != "whatsapp_messages":  # a write: the open streams should look again soon
             self._stir()

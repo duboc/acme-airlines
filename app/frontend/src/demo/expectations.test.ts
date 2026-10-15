@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { base } from './fixtures';
-import { evaluate } from './expectations';
+import { applyExpectedStep, evaluate } from './expectations';
 
 describe('evaluate', () => {
   it('has no expectation before the first step', () => {
@@ -62,5 +62,30 @@ describe('evaluate', () => {
 
   it('returns null for unknown presets', () => {
     expect(evaluate({ ...base, scenario_id: 'nope', step_index: 1 })).toBeNull();
+  });
+
+  it('applyExpectedStep merges expected outcome fields and clears last_message across all preset steps', () => {
+    const cases: Array<[string, number]> = [
+      ['happy-path', 5],
+      ['declines-upgrade', 5],
+      ['unsatisfiable-request', 3],
+      ['seat-taken', 2],
+      ['hotel-unavailable', 2],
+      ['upgrade-race', 6],
+    ];
+    for (const [scenarioId, totalSteps] of cases) {
+      let cur = {
+        ...base,
+        scenario_id: scenarioId,
+        total_steps: totalSteps,
+      };
+      for (let i = 1; i <= totalSteps; i += 1) {
+        cur = applyExpectedStep({ ...cur, last_message: 'stale message' });
+        expect(cur.step_index).toBe(i);
+        expect(cur.done).toBe(i === totalSteps);
+        expect(cur.last_message).toBeNull();
+        expect(evaluate(cur)?.mismatches).toEqual([]);
+      }
+    }
   });
 });
