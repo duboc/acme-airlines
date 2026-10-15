@@ -1,8 +1,8 @@
 # Agent Engine apps
 
-Packages under `app/backend/src/acme/engines/`. Platform facts live in
-[platform-contract.md](platform-contract.md). This page is the **operations
-contract** that the Sales engine (#161) and the demo (#162) build on.
+Packages under `app/backend/src/acme/engines/`. This page documents the **operations
+contract**, environment configuration, telemetry, and state model for the Customer engine (`#160`),
+the Sales engine (`#161`), and `EngineBackend` (`#162`, `#164`) — all shipped and verified in CI and live proof.
 
 ## `acme-customer-agent` (`acme.engines.customer`)
 
@@ -26,15 +26,25 @@ of its own. Call `set_up()` once (the engine does this itself) before use.
 
 Presets are allowed on the engine even with `LLM_MODE=vertex` (the API app still answers 404 outside fake mode). The world is deterministic; only message wording comes from the LLM, and the fact check before sending (`outreach.required_facts`, template fallback) is the same code. Outcomes match local mode structurally (status, flight, seat, offers, charge), not in message text. Guardrails are unchanged.
 
-State is in memory, so a deploy must pin the Customer engine to one instance.
+State within a container is shared across worker processes via `ACME_STATE_DB` (#200, `max_instances=1`), and calls landing on an unseeded or restarted container rebuild state by deterministic replay and the replay tape ([ADR 0103](../decisions/0103-stateless-engine-scenarios.md), #266/#279).
 
 ### Environment
 
-| Variable | Default | Rule |
+See the full **[Configuration reference](deploy.md#configuration-reference)** for all 26 `ACME_*` and `LLM_*` variables (including `ACME_SALES_TOKEN`, `ACME_SIM_TOKENS`, and the Compose network split). Engine-relevant variables:
+
+| Variable | Default | Rule / Fail-closed behaviour |
 |---|---|---|
-| `LLM_MODE` | `fake` | `fake` (dev/CI) or `vertex`; any other value fails at instantiation |
-| `ACME_GENAI_PROJECT` / `GOOGLE_CLOUD_PROJECT` | `acme-airlines-factory` | With `LLM_MODE=vertex` one of them must be set; `ACME_GENAI_PROJECT` wins, else the platform-injected `GOOGLE_CLOUD_PROJECT` (never set in the deploy env). |
-| `ACME_GENAI_LOCATION` | `global` | Model location. With `vertex` it **must** be `global`; building fails fast (`EngineConfigError`) otherwise. No API keys, no regional fallback. `GOOGLE_CLOUD_LOCATION` is never read: Agent Engine reserves it and injects the engine region (#190). |
+| `LLM_MODE` | `fake` | `fake` (dev/CI) or `vertex`; any other value fails at instantiation (`LlmConfigError` / `EngineConfigError`). |
+| `LLM_MODEL` | `gemini-2.5-flash` | Gemini model ID for `LLM_MODE=vertex`; empty falls back to `gemini-2.5-flash`. |
+| `LLM_TIMEOUT_SECONDS` | `8.0` | Per-call timeout on `BoundedLlm` around `VertexLlm` (#231). Non-numeric or `<= 0` falls back to `8.0`s. On timeout, compose raises `LlmTimeout` (caller sends deterministic template) and parse fails closed to `Other` (no acknowledgement, no offer, escalated to human). |
+| `ACME_GENAI_PROJECT` / `GOOGLE_CLOUD_PROJECT` | `acme-airlines-factory` | With `LLM_MODE=vertex` one of them must be set; `ACME_GENAI_PROJECT` wins, else platform-injected `GOOGLE_CLOUD_PROJECT` (`493084803309`). Any other project raises `EngineConfigError`. |
+| `ACME_GENAI_LOCATION` | `global` | Model location. With `vertex` it **must** be `global`; building fails fast (`EngineConfigError`) otherwise. No API keys, no regional fallback. `GOOGLE_CLOUD_LOCATION` is never read (#190). |
+| `ACME_STATE_DB` | `""` (`/tmp/acme-state/state.db` on deploy) | SQLite path for cross-process `SharedState` (`flock` + Pydantic JSON snapshot + Sales sent-set) across worker processes in one container (#200). Lock contention past `lock_timeout` raises `LockTimeout`. |
+| `ACME_ENABLE_TRACING` | `""` (`true` on deploy) | Enables Cloud Trace and Cloud Monitoring export on custom templates (`true`/`1`, #190). Exporter setup errors log a warning and never block startup. |
+| `ACME_TRACE_SAMPLER` | `""` (`ALWAYS_ON`) | OpenTelemetry sampler (`parent` restores `ParentBased(ALWAYS_ON)`; anything else records all spans via `ALWAYS_ON`, #221 / ADR 0101). |
+| `ACME_TELEMETRY_STRICT` | `""` (`1` in tests) | When `1`, raises `TelemetryError` on span attributes outside the PII-free allowlist; otherwise silently drops them. |
+| `ACME_CUSTOMER_LOOP` | `1` | Local HTTP runtime only (`create_local_app`): `0` disables the 1 s background OCC poll/outreach/closure loop while HTTP `GET`s stay read-only (#228). Unused on Agent Engine. |
+| `ACME_JOURNEY_DB` | `:memory:` | SQLite database path for `SqliteJourneyStore` in `CustomerRuntime`. |
 
 ### Deploy helpers
 
@@ -146,9 +156,9 @@ Deploys never overlap (`concurrency: agent-engine-deploy`).
 
 1. Looks up both engines by display name. More than one hit for a name fails the run before anything is written. One hit means update in place; none means create.
 2. Deploys `acme-customer-agent`, then `acme-sales-agent` with `ENGINE_MODE=agent-engine` and `ACME_CUSTOMER_ENGINE=<customer resource name>`.
-3. Settings: `service_account=$AGENT_ENGINE_SA`, staging bucket and location from `AGENT_ENGINE_*`, env `LLM_MODE=vertex`, `ACME_GENAI_LOCATION=global`, `ACME_ENABLE_TRACING=true` (no `GOOGLE_CLOUD_*` names: they are reserved, #190).
+3. Settings: `service_account=$AGENT_ENGINE_SA`, staging bucket and location from `AGENT_ENGINE_*`, env `LLM_MODE=vertex`, `ACME_GENAI_LOCATION=global`, `ACME_GENAI_PROJECT=acme-airlines-factory`, `ACME_ENABLE_TRACING=true`, `ACME_STATE_DB=/tmp/acme-state/state.db` (no `GOOGLE_CLOUD_*` names: they are reserved, #190).
 4. **Tracing:** this SDK has no `enable_tracing` argument on `create`/`update` for custom templates, and it only wires `GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY` into its `AdkApp` template. The deploy therefore sets our own `ACME_ENABLE_TRACING=true` (a `GOOGLE_CLOUD_*` name is reserved, #190; `configure_cloud_trace` still honours the SDK flag too), and both engines' `set_up()` call `acme.telemetry.configure_cloud_trace(<display name>)`. It installs an SDK `TracerProvider` with the Cloud Trace exporter (ADC) and `service.name` = the display name only when the var is on and no SDK provider exists yet.
-5. **Instances:** the Customer engine is pinned with `min_instances=1`, `max_instances=1`. This is a **demo limitation**: its world is in memory, so state is lost on restart and it does not scale horizontally. Sales is not pinned.
+5. **Instances:** both `acme-customer-agent` and `acme-sales-agent` are pinned with `min_instances=1`, `max_instances=1` (#200, verified by `verify_started`), because `ACME_STATE_DB` lives on one container's disk. Cross-container calls or restarts are handled by stateless scenario replay and the replay tape ([ADR 0103](../decisions/0103-stateless-engine-scenarios.md)).
 
 Afterwards the workflow runs `gcloud run services update --update-env-vars` (everything else is kept) to set `AGENT_ENGINES=acme-customer-agent=<id>,acme-sales-agent=<id>` on the `acme-observatory` service and `AGENT_ENGINE_CUSTOMER` / `AGENT_ENGINE_SALES` (full resource names) on `vars.IRROPS_DEMO_SERVICE`. It does not set `ENGINE_MODE` on the demo.
 
@@ -272,16 +282,14 @@ Evidence first, then the fix. What is in place to find the cause:
 - **Every span export is a line too** (`event: export`, `ok`, `n`, `ms`, `error`): the Cloud Trace
   exporter is wrapped so a failed or raising export (429, auth, network) is surfaced instead of being
   swallowed by the batch processor.
-- The unary probe and the engine-log artifact in the live proof workflow are a separate PR.
 - Reading it: a missing trace whose op line shows `is_recording: false` / `parent.sampled: false` is
   platform sampling; `flush_ok: false` or an `export` line with `ok: false` is our exporter; different
   `pid` / `instance` values per call point to the multi-process or multi-instance hypotheses.
 
 ## Live-proof engine diagnostics (#221)
 
-The live proof workflow uploads an engine diagnostics artifact for the missing-trace investigation
-(engine-side instrumentation is a separate PR: per-operation `ACME_DIAG` lines and the
-`acme.engine.op` span):
+The live proof workflow uploads an engine diagnostics artifact for trace verification
+(paired with the per-operation `ACME_DIAG` lines and `acme.engine.op` span):
 
 - **Engine diagnostics artifact** (`engine-logs`, **retention 1 day**): both engines' log lines for the
   run window are read with the deployer's `logging.viewer` and reduced to an **allowlist**: only
@@ -312,10 +320,7 @@ rarely lands on a sampling slot. The exporter was healthy (73/73 flushes and 75/
 Fix: `acme.telemetry.build_provider` uses an **ALWAYS_ON sampler**, so every request's spans are
 recorded and exported whatever the platform decided (same trace id, so the platform's spans join ours).
 It is a demo with a handful of requests, so volume is not a concern. `ACME_TRACE_SAMPLER=parent`
-restores the platform's decision. See [ADR 0101](../decisions/0101-always-on-tracing-sampler.md)
-for the architecture decision record.
-
-restores the platform's decision.
+restores the platform's decision (ADR 0101).
 
 ## Log redaction (#233)
 
@@ -365,19 +370,10 @@ allowlist includes the new fields. Reading it: if the failing `scenario_step` li
 process-local hypothesis. (Identity is on the log line, the error and `diagnostics`, not on every
 response body: several operations return lists or strictly typed models.)
 
-## Stateless scenario ops (#266, ADR 0103)
+## Stateless scenario ops, replay rebuild & replay tape (#266, #279, #280, ADR 0103)
 
-State is per container (`/tmp`). The caller (`EngineBackend`, so the live proof too) sends `preset` and
-`step` on the scenario ops and state-dependent reads/phone actions; an engine not at that point rebuilds
-it by deterministic replay (offline model, no spans, no metrics) and logs `ACME_DIAG {"event": "rebuild",
-preset, from_step, to_step, reason, container...}`. Decision and trade-offs:
-[ADR 0103](../decisions/0103-stateless-engine-scenarios.md).
+State is per container (`/tmp/acme-state/state.db`). The caller (`EngineBackend`, and the live proof) sends `preset`, monotonic `step` (`integral()` accepts whole-number protobuf floats like `5.0`), and `tape` on scenario ops and state-dependent reads/phone actions; an engine not at `(preset, step)` rebuilds state via `_ensure_scenario` by deterministic replay of steps `0..step-1` from the seeded mocks (no spans, no metrics except `acme.scenario.rebuild.duration`) and logs `ACME_DIAG {"event": "rebuild", preset, from_step, to_step, reason, ms, tape_miss, tape_discarded, container...}`. Full decision and trade-offs: [ADR 0103](../decisions/0103-stateless-engine-scenarios.md).
 
-**Live proof of the rebuild (#279).** The `Agent Engine Live Proof` workflow (`workflow_dispatch` only, never a
-PR check) has a forced-rebuild step: it runs `happy-path` plainly and snapshots state, journeys and the
-WhatsApp conversation, parks the engine on `seat-taken`, then asks for the final step of `happy-path`, so
-the engine rebuilds. The step fails unless (1) the Customer log has exactly one `ACME_DIAG rebuild` for it,
-(2) the rebuilt state, journeys and conversation (without the random `message_id`) equal the plain run, and
-(3) there is no extra or repeated WhatsApp message and no extra offer. The run summary lists the rebuild
-latency (the engine's `ms` and the client-side wall time). Logic and its offline tests:
-`app/backend/tests/live/agent_engine_proof.py`, `test_agent_engine_proof_logic.py`.
+- **Replay tape (`RecordingLlm` / `TapeLlm`, #279):** On `LLM_MODE=vertex`, message wording and passenger reply parsing come from Gemini, so replaying with `FakeLlm` alone altered message text after a rebuild. `RecordingLlm` records each LLM answer in order (keyed by message kind `offer`/`notice` for compose, or a short SHA-256 of the passenger text for parse) and returns it as `tape` in scenario state. `EngineBackend` keeps `tape` next to `preset`/`step`, strips `tape` before returning state to the API client or Sales (the tape holds passenger text and is never logged, traced, exported in metrics, or emitted in `ACME_DIAG`), and sends it back on subsequent Customer calls. During a rebuild, `TapeLlm` replays matching entries and falls back to `FakeLlm` on a miss (`tape_miss`). The tape is untrusted input (at most 32 entries, texts at most 2000 chars, parse entries schema-validated; malformed tapes are ignored as a whole). Because `RecordingLlm` lives per worker process, if replaying with a partial tape raises, the rebuild retries once with no tape (`tape_discarded=1`). Separately, when the live model fails closed to `Other` on a passenger reply, `classify` falls back to the deterministic time pattern (`parse_kind`, `parse_source` in `ACME_DIAG`).
+- **Registry cache & rebuild latency budget (#280):** `warm_registry()` in `set_up()` builds simulator tool registries once per process and shares them across runs via `sim/current.py`, while rebuilds reuse sim sessions. This keeps cross-container rebuild p95 within the enforced `< 600 ms` budget (`500 ms` target, checked in CI by `pytest -m budget --no-cov`).
+- **Live proof of the rebuild (#279):** The `Agent Engine Live Proof` workflow (`workflow_dispatch` only, never a PR check) has a forced-rebuild step: it runs `happy-path` plainly and snapshots state, journeys and the WhatsApp conversation, parks the engine on `seat-taken`, then asks for the final step of `happy-path`, so the engine rebuilds. The step fails unless (1) the Customer log has exactly one `ACME_DIAG rebuild` for it, (2) the rebuilt state, journeys and conversation (without the random `message_id`; offer message wording may differ when the Sales tick ran on another worker/container as long as position, buttons, attachments, timestamp and offer facts match, reported as `"offer wording differs"`) equal the plain run, and (3) there is no extra or repeated WhatsApp message and no extra offer. The run summary lists the rebuild latency (the engine's `ms` and the client-side wall time). Logic and its offline tests: `app/backend/tests/live/agent_engine_proof.py`, `test_agent_engine_proof_logic.py`.
