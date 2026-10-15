@@ -14,15 +14,17 @@ these rules; your role prompt adds what is specific to you.
   check in your evidence.
 - Use real paths. Find files with `git ls-files | grep <word>` or `ls`; never guess file names in reviews or reports.
 
-## Messaging
+## Messaging & Hierarchy (`message_mode: branch`)
 
+- **Strict Hub-and-Spoke Hierarchy (`User -> lead -> subagents`):** `lead` (in `${BUILD_PROJECT}`) and `eval-lead` (in `${EVAL_PROJECT}`) sit at the top of the project hierarchy and are **always the starting point and sole coordinator** between subagents. All agents run in Scion `message_mode: branch`, which enforces parent-child hub-and-spoke messaging at the Hub kernel level:
+  - **Subagents (`researcher`, `product-manager`, `backend`, `frontend`, `reviewer`, `deployer`, `factory-analyst`, `search-evaluator`, `ui-craftsman`, `eval-deployer`)** only ever receive briefs from and report back to their lead (`scion message lead "<you> -> lead: <text>"` or `scion message eval-lead "<you> -> eval-lead: <text>"`). **Never message another subagent directly** — sibling-to-sibling messages are denied by the Hub (`mode_branch_no_edge`). Every handoff flows through the lead.
 - The only way to reach another agent is `scion message <agent> "<you> -> <agent>: <text>"`. Text you write in your
   own output reaches nobody: a verdict you only print is lost, and everyone waiting for it stalls.
 - Check that every `scion message <agent>` prints `Message delivered` (meaning the Hub accepted and buffered the message). When messaging a human, `scion message user:${PO_EMAIL}` prints `Message sent to user:${PO_EMAIL}.`. If delivery fails, retry once; if it still fails, comment on the issue and tell your lead.
 - For long or multi-line messages, write the text to a file and send it with
   `scion message <agent> --body-file <file>`, which avoids shell quoting problems.
 - Reach the PO (a human) with `scion message user:${PO_EMAIL} "<text>"`, and only for what your role prompt says to
-  escalate.
+  escalate (subagents report blockers to their lead; only `lead` / `eval-lead` escalates to the PO).
 - Message an agent only to hand it something or to ask it for something. Don't send liveness pings to agents you aren't
   waiting on.
 
@@ -57,6 +59,7 @@ All agents of a project share one checkout at `/workspace` (branch `${BUILD_BRAN
 - Never run `git add -A`, `git reset --hard`, `git checkout -- .`, `git clean` or a force push: other agents'
   uncommitted work lives in the same folder.
 - Never commit secrets, `.env` files or build output.
+- Keep strictly 2 folders under `/workspace/docs/`: `/workspace/docs/scion/` (factory setup & agent templates) and `/workspace/docs/product/` (all product specs, ADRs `adr-*.md`, deploy/engine docs, and release notes `release-notes-*.md`). Never create additional top-level folders under `/workspace/docs/` (such as a `decisions` or `releases` folder).
 
 ## Cloud
 
