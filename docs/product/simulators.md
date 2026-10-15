@@ -39,6 +39,7 @@ MCP tool errors. Times are timezone-aware ISO 8601.
 |---|---|---|
 | `hotel.book` | `hotel_id`, `nights ≥ 1`, `pax ≥ 1`, `passenger_id?` | `{booking_ref, hotel_id, nights, pax, passenger_id, at}`. Only hotels in the world's `hotels_with_rooms` (HT8842) succeed; otherwise a tool error. Stored in `sim.partners.hotel_bookings`. |
 | `transfer.book` | `origin`, `destination`, `at` (aware datetime) | `{transfer_ref, origin, destination, pickup_at}` (the brief's `from`/`to` are `origin`/`destination`). |
+| `transfer.cancel` | `transfer_ref` | `{transfer_ref, status: "cancelled"}`; the transfer is removed from `sim.partners.transfers`. Unknown refs are a tool error. Used for a pickup superseded by a replan (#398). |
 | `voucher.issue` | `type` (`meal`/`hotel`/`transport`), `amount` (USD, 0 < x ≤ 10000) | `{voucher_id, type, amount, currency}`. |
 
 ## whatsapp — `/mcp/whatsapp/`

@@ -25,6 +25,9 @@ if TYPE_CHECKING:
 
 ACTOR = "change_agent"
 TRANSFER_LEAD = timedelta(hours=3)
+ESCALATION_REPLY = (
+    "I can't handle that automatically, so I've asked a colleague to follow up with you."
+)
 
 
 def _last_payload(rec: JourneyRecord, type_: str) -> dict:
@@ -80,6 +83,7 @@ class ReplanningChangeAgent:
         tier = (await client.call("crm", "profile.get", passenger_id=rec.passenger_id))["tier"]
         rebook = await irrops.handle(req, emit)
         if rebook.status != "rebooked":  # raced with inventory: never silent
+            await rt.send(rec.passenger_id, ESCALATION_REPLY)
             return
         seat_ok = True
         if old_seat:
@@ -111,7 +115,9 @@ class ReplanningChangeAgent:
             )
         transfer_ok = await self._reschedule_transfer(rt, rec, current_flight, rebook.departure)
         if not (seat_ok and set(bags.rerouted) == set(tags) and transfer_ok):
-            return  # needs_human already recorded; journey stays REPLANNING, request open
+            # needs_human already recorded; journey stays REPLANNING, request open
+            await rt.send(rec.passenger_id, ESCALATION_REPLY)
+            return
         self._close(rec, request_id, "satisfied")
         state.transition(DisruptionStatus.RESOLVED, actor=ACTOR)
         seat_now = next(
@@ -145,11 +151,20 @@ class ReplanningChangeAgent:
         if rec.hotel is None or new_departure is None:
             return True
         at = new_departure - TRANSFER_LEAD
+        # every replan cancels the previous pickup, so only the latest one is still booked
+        pickups = [
+            e.payload["transfer_ref"]
+            for e in rec.state.timeline
+            if e.type == "transfer_arranged" and e.payload.get("leg") == "hotel_to_airport"
+        ]
+        superseded = pickups[-1:]
         try:
             r = await rt.client.call(
-                "concierge", "transfer.book", origin="HT8842", destination=old_flight["origin"],
-                at=at.isoformat(),
+                "concierge", "transfer.book", origin=rec.hotel.hotel_id,
+                destination=old_flight["origin"], at=at.isoformat(),
             )  # fmt: skip
+            for ref in superseded:  # only once the new pickup is booked
+                await rt.client.call("concierge", "transfer.cancel", transfer_ref=ref)
         except ToolError as exc:
             rec.state.append_event(
                 ACTOR, "needs_human", {"step": "transfer:hotel_to_airport", "error": str(exc)}
