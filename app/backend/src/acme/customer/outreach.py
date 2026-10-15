@@ -60,6 +60,9 @@ def collect_facts(rec: JourneyRecord) -> dict[str, Any] | None:
     }
 
 
+_WORD_FACTS = ("transfer", "voucher")
+
+
 def required_facts(facts: dict[str, Any]) -> list[str]:
     needed = [facts["cancelled_flight"], facts["new_flight"], facts["departure"], facts["seat"]]
     if facts["hotel_id"]:
@@ -69,6 +72,10 @@ def required_facts(facts: dict[str, Any]) -> list[str]:
     if facts["has_voucher"]:
         needed.append("voucher")
     return needed
+
+
+def _has_fact(text: str, fact: str) -> bool:
+    return (fact in text.lower()) if fact in _WORD_FACTS else (fact in text)
 
 
 def _care_sentence(f: dict[str, Any]) -> str:
@@ -117,7 +124,7 @@ async def prepare_notification(
     source = "llm"
     try:
         text = await rt.llm.compose_passenger_message(context)
-        if not all(fact in text for fact in required_facts(facts)):
+        if not all(_has_fact(text, fact) for fact in required_facts(facts)):
             raise ValueError("missing resolution fact")
     except Exception:  # noqa: BLE001 (any LLM failure falls back to the template)
         text, source = fallback, "template"
@@ -144,6 +151,8 @@ async def send_notification(
         return
     text, source = prepared.text, prepared.source
     if facts != prepared.facts:
+        if source != "template":
+            metrics.template_fallback("resolution")
         text, source = template_text(prepared.name, facts), "template"
     attachments = [
         name
