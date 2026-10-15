@@ -1,10 +1,11 @@
 """#280: how long a forced rebuild takes, per preset at its last step (offline, LLM_MODE=fake),
 and that sim sessions reused by a replay do not leak state across runs.
 
-The p95 ceiling below is INTERIM: a regression guard at about 1.6x the worst single rebuild measured
-on the dev sandbox after the session reuse (614 ms). The target is p95 < 500 ms, see #280.
-Why it is not flaky: 8 samples per preset (p95 is the slowest of 8 by nearest rank, so the
-ceiling needs about 2x headroom: 1000 ms against a median of 514 ms and a max of 614 ms).
+The budget is p95 < 500 ms per preset (#280), asserted only WITHOUT coverage: CI runs this file in
+its own step (`--no-cov`); under coverage the timing is skipped. Margin: on the CI runner (run
+38747137505, 8 samples so p95 = max) the slowest preset took 363 ms, so 500 ms leaves ~1.4x. The
+dev sandbox is slower (about 600 ms): run with CI-like speed in mind before blaming the code.
+20 samples per preset make p95 the 19th, so a single slow sample (GC, noisy neighbour) is ignored.
 """
 
 import math
@@ -15,7 +16,7 @@ import pytest
 from acme.api.scenarios import BY_ID
 from acme.engines.customer import build_customer_engine_app
 
-SAMPLES, CEILING_MS = 8, 1000.0
+SAMPLES, CEILING_MS = 20, 500.0
 PID = "P-MARIANA"
 
 
@@ -51,7 +52,7 @@ async def rebuild_ms(app, preset: str, steps: int) -> float:
     return app.last_rebuild["ms"]
 
 
-async def test_rebuild_p95_per_preset_stays_under_the_interim_ceiling(capsys):
+async def test_rebuild_p95_per_preset_stays_under_the_budget(capsys):
     app = build_customer_engine_app()
     app.set_up()
     rows, failures = [], []
@@ -62,10 +63,7 @@ async def test_rebuild_p95_per_preset_stays_under_the_interim_ceiling(capsys):
         if p95(times) >= CEILING_MS:
             failures.append(rows[-1])
     with capsys.disabled():
-        print(
-            "\nrebuild latency (target p95 < 500 ms, interim ceiling 1000 ms):\n  "
-            + "\n  ".join(rows)
-        )
+        print("\nrebuild latency (budget p95 < 500 ms):\n  " + "\n  ".join(rows))
     if measured_under_tracing():
         pytest.skip("timing is not asserted under coverage/tracing; the no-coverage CI step does")
     assert not failures, failures
