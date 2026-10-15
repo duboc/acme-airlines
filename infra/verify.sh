@@ -70,7 +70,8 @@ models_ok() {
   echo "${n} templates match the model mapping"
 }
 
-# caps_ok <templates-dir>: every template except lead and eval-lead sets max_duration, max_turns and max_model_calls.
+# caps_ok <templates-dir>: no template sets max_duration, max_turns or max_model_calls
+# (standing agents run continuously without artificial turn/duration caps; budget alerts provide visibility).
 caps_ok() {
   local dir="$1" f t n=0 bad=""
   for f in "${dir}"/*/scion-agent.yaml; do
@@ -78,13 +79,14 @@ caps_ok() {
     t="$(basename "$(dirname "${f}")")"
     [[ "${t}" == _* ]] && continue
     n=$((n+1))
-    [[ "${t}" == "lead" || "${t}" == "eval-lead" ]] && continue
-    [[ -n "$(_yaml_val max_duration "${f}")" && -n "$(_yaml_val max_turns "${f}")" \
-       && -n "$(_yaml_val max_model_calls "${f}")" ]] || bad+=" ${t}"
+    if [[ -n "$(_yaml_val max_duration "${f}")" || -n "$(_yaml_val max_turns "${f}")" \
+       || -n "$(_yaml_val max_model_calls "${f}")" ]]; then
+      bad+=" ${t}"
+    fi
   done
   (( n > 0 )) || { echo "no templates in ${dir}"; return 1; }
-  [[ -z "${bad}" ]] || { echo "missing caps:${bad}"; return 1; }
-  echo "caps present on all non-lead templates"
+  [[ -z "${bad}" ]] || { echo "unexpected caps on standing templates:${bad}"; return 1; }
+  echo "no artificial caps on standing templates"
 }
 
 # cron_interval_ok <cron> <min-minutes>: the minute field fires at most every

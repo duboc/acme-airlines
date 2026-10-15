@@ -65,13 +65,16 @@ class Handler(BaseHTTPRequestHandler):
         n = parse_notification(envelope)
         result = "no action"
         if should_pause(n):
-            try:
-                result = pause_factory()
-            except (RuntimeError, KeyError, subprocess.SubprocessError, OSError) as e:
-                log.error("pause failed: %s", e)
-                self.send_response(500)  # Pub/Sub retries
-                self.end_headers()
-                return
+            if os.environ.get("PAUSE_ON_BUDGET", "0") == "1":
+                try:
+                    result = pause_factory()
+                except (RuntimeError, KeyError, subprocess.SubprocessError, OSError) as e:
+                    log.error("pause failed: %s", e)
+                    self.send_response(500)  # Pub/Sub retries
+                    self.end_headers()
+                    return
+            else:
+                result = "visibility alert only (PAUSE_ON_BUDGET=0)"
         log.info("cost=%s budget=%s -> %s", n.get("costAmount"), n.get("budgetAmount"), result)
         self.send_response(204)
         self.end_headers()

@@ -46,23 +46,23 @@ mexpect() {  # mexpect <0|1> <name> <dir>
   if models_ok "$3" >/dev/null; then got=0; else got=1; fi
   if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
 }
-# caps_ok <dir>: every template except acme-lead has max_duration and max_turns
+# caps_ok <dir>: no standing template has max_duration, max_turns or max_model_calls
 cexpect() {
   if caps_ok "$3" >/dev/null; then got=0; else got=1; fi
   if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
 }
 T=$(mktemp -d); mk() { mkdir -p "$T/$1/$2"; printf '%b' "$3" > "$T/$1/$2/scion-agent.yaml"; }
 mk good lead 'default_harness_config: claude\nmodel: large\n'
-mk good backend 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\nmax_turns: 400\nmax_model_calls: 1200\n'
-mk good reviewer 'default_harness_config: antigravity\nmodel: large\nmax_duration: "45m"\nmax_turns: 150\nmax_model_calls: 450\n'
+mk good backend 'default_harness_config: claude\nmodel: medium\n'
+mk good reviewer 'default_harness_config: antigravity\nmodel: large\n'
 mexpect 0 "models match mapping" "$T/good"
-cexpect 0 "caps present (lead exempt)" "$T/good"
-mk badmodel reviewer 'default_harness_config: claude\nmodel: large\nmax_duration: "45m"\nmax_turns: 150\n'
+cexpect 0 "no caps on standing templates" "$T/good"
+mk badmodel reviewer 'default_harness_config: claude\nmodel: large\n'
 mexpect 1 "reviewer on opus rejected" "$T/badmodel"
-mk nocap backend 'default_harness_config: claude\nmodel: medium\n'
-mk nocalls backend 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\nmax_turns: 400\n'
-cexpect 1 "missing max_model_calls rejected" "$T/nocalls"
-cexpect 1 "missing caps rejected" "$T/nocap"
+mk hascap backend 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\n'
+mk hascalls backend 'default_harness_config: claude\nmodel: medium\nmax_model_calls: 1200\n'
+cexpect 1 "max_model_calls cap rejected" "$T/hascalls"
+cexpect 1 "max_duration cap rejected" "$T/hascap"
 mexpect 1 "empty dir rejected" "$T/none"
 rm -rf "$T"
 

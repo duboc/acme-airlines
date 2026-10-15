@@ -36,6 +36,13 @@ for svc in "${PROXY_SVC}" "${FACTORY_PREFIX}-observatory" "${FACTORY_PREFIX}-irr
       --resource-type=cloud-run --service="${svc}" --region="${REGION}" \
       --member="domain:${d}" --role=roles/iap.httpsResourceAccessor --condition=None --format=none
   done
+  if [[ "${svc}" != "${PROXY_SVC}" ]]; then
+    for sa in "${AGENT_SA}" "${DEPLOYER_SA}"; do
+      gcloud iap web add-iam-policy-binding --project="${PROJECT_ID}" \
+        --resource-type=cloud-run --service="${svc}" --region="${REGION}" \
+        --member="serviceAccount:${sa}" --role=roles/iap.httpsResourceAccessor --condition=None --format=none
+    done
+  fi
   gcloud iap web get-iam-policy --project="${PROJECT_ID}" --resource-type=cloud-run \
     --service="${svc}" --region="${REGION}" --format='value(bindings)'
 done
