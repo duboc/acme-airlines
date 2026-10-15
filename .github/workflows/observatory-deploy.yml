@@ -7,12 +7,9 @@ name: Observatory Deploy
 # --set-secrets, which would replace and drop the existing SCION_HUB_TOKEN), and its HUB_PROJECT
 # env var, set with --update-env-vars (not --set-env-vars, which would replace all env vars).
 
+# Live Observatory deploys are owned by the `eval-dashboard` trunk (#359); main's
+# `observatory/` tree is frozen and must never auto-deploy on push to main.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "observatory/**"
-      - ".github/workflows/observatory-deploy.yml"
   workflow_dispatch:
 
 permissions:

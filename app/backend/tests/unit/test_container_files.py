@@ -101,3 +101,13 @@ def test_deploy_doc_is_global_with_service_to_service_iam_and_no_api_keys():
     assert "--no-allow-unauthenticated" in doc
     assert "api key" in doc.lower() and "never" in doc.lower()
     assert not re.search(r"[a-z]+-[a-z]+\d+-aiplatform\.googleapis\.com", doc)
+
+
+def test_observatory_deploy_and_dependabot_do_not_trigger_from_main():
+    """#359: live Observatory is owned by `eval-dashboard`; main must not auto-deploy it on push."""
+    wf = yaml.safe_load((APP.parent / ".github/workflows/observatory-deploy.yml").read_text())
+    on = wf.get(True, wf.get("on"))
+    assert "push" not in on and "workflow_dispatch" in on
+    dep = yaml.safe_load((APP.parent / ".github/dependabot.yml").read_text())
+    dirs = [d for u in dep["updates"] for d in u.get("directories", [u.get("directory", "")])]
+    assert not any(d.startswith("/observatory") for d in dirs)
