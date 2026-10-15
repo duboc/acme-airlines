@@ -191,6 +191,8 @@ describe('DemoPanel', () => {
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Step 1 of 3')).toBeInTheDocument();
     expect(screen.getByText(/next: time passes/i)).toBeInTheDocument();
+    expect(screen.getByText('Matches the expectation')).toBeInTheDocument();
+    expect(screen.queryByText('Differs from the expectation')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next step' })).toBeEnabled();
 
     // Advance normally to Step 2 of 3, then final Step 3 returns 503 StepApplied -> marks done and disables Next step
@@ -200,10 +202,17 @@ describe('DemoPanel', () => {
         step_index: 2,
         last_step: 'Time passes',
         next_step: "Mariana: 'Can I leave after 10am?'",
+        journey_status: 'RESOLVED',
+        flight: 'AC1240',
+        seat: '14A',
+        last_message: 'We rebooked you on AC1240.',
       }),
     );
     await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
     expect(await screen.findByText('Step 2 of 3')).toBeInTheDocument();
+    expect(
+      screen.getByText('Last message to passenger: We rebooked you on AC1240.'),
+    ).toBeInTheDocument();
 
     fetchMock.mockImplementationOnce(() =>
       Promise.resolve(
@@ -218,7 +227,74 @@ describe('DemoPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
     expect(await screen.findByText('Step 3 of 3')).toBeInTheDocument();
     expect(screen.getByText(/scenario finished/i)).toBeInTheDocument();
+    expect(screen.getByText('Matches the expectation')).toBeInTheDocument();
+    expect(screen.queryByText('Differs from the expectation')).not.toBeInTheDocument();
+    expect(screen.queryByText(/last message to passenger/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled();
     expect(onChanged).toHaveBeenCalledTimes(3);
+  });
+
+  it('merges ScenarioState outcome fields on 503 StepApplied so evaluate(state) does not show false mismatches (#386)', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url === '/api/scenarios')
+        return json([
+          {
+            id: 'happy-path',
+            title: 'Happy path',
+            description: 'Scenarios 1-5 end to end.',
+            steps: [
+              'OCC cancels AC1234',
+              'Time passes',
+              "Mariana: 'Can I leave after 10am?'",
+              "Mariana: 'Perfect, thanks!'",
+              'Mariana taps Accept on the upgrade',
+            ],
+            expectation: 'Journey CLOSED on AC1252, seat 2A, $135.00 charged once.',
+          },
+        ]);
+      if (url.endsWith('/start'))
+        return json({
+          ...base,
+          total_steps: 5,
+          step_index: 4,
+          last_step: "Mariana: 'Perfect, thanks!'",
+          next_step: 'Mariana taps Accept on the upgrade',
+          journey_id: 'J-1',
+          journey_status: 'RESOLVED',
+          flight: 'AC1252',
+          seat: '14A',
+          offers_sent: 1,
+          offer_status: 'sent',
+          charged: '0.00',
+          last_message: 'Upgrade offer sent.',
+        });
+      if (url.endsWith('/step'))
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              detail: 'The step was applied but its state could not be read: refresh.',
+            }),
+            { status: 503, headers: { 'Retry-After': '5' } },
+          ),
+        );
+      return json({}, 404);
+    });
+
+    render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+    expect(screen.getByText('Last message to passenger: Upgrade offer sent.')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(await screen.findByText('Step 5 of 5')).toBeInTheDocument();
+    expect(screen.getByText(/scenario finished/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Journey CLOSED on AC1252, seat 2A, $135.00 charged once.', {
+        selector: '.demo-expected p',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Matches the expectation')).toBeInTheDocument();
+    expect(screen.queryByText('Differs from the expectation')).not.toBeInTheDocument();
+    expect(screen.queryByText(/last message to passenger/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled();
   });
 });
