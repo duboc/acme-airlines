@@ -792,8 +792,11 @@ async def run_rebuild_proof(
         state = await backend.scenario_step(preset)
     report.to_step = state["step_index"]
     reference = await take_snapshot(backend, state)
+    plain_tape = getattr(backend, "_tape", None)  # the plain run's replay tape (#279)
     await backend.scenario_start(decoy)  # the engine's local state is now the decoy's
-    backend._active, backend._step = preset, report.to_step  # noqa: SLF001 - the caller says: final step
+    # The caller says: final step of `preset`, with the tape of that run, not the decoy's.
+    backend._active, backend._step = preset, report.to_step  # noqa: SLF001
+    backend._tape = plain_tape  # noqa: SLF001
     since = now() - timedelta(seconds=2)
     t0 = monotonic()
     state = await backend.scenario_state()  # not at (preset, step): the engine rebuilds
