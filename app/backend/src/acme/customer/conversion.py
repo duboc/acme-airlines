@@ -15,6 +15,7 @@ Any failure leaves the seat unchanged, marks the offer `invalidated` and tells t
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 from acme.customer.closure import close_loop
@@ -115,6 +116,7 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     try:
         await rt.client.call("dcs", "seat.hold", flight=flight, seat=seat, pnr=pnr)
     except ToolError:
+        skills._decision_event(state, offer, GuardrailDecision(False, ["no_inventory"]))  # noqa: SLF001
         return await _refuse(rt, rec, record, ["no_inventory"])  # nothing was charged
 
     try:
@@ -127,6 +129,7 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
             idempotency_key=str(offer.offer_id),
         )
     except ToolError:
+        await _release_held_seat(rt, flight, seat, pnr)
         return await _refuse(rt, rec, record, ["payment_failed"])
 
     # The approval must still hold AFTER the money moved: a transition out of RESOLVED that
@@ -134,9 +137,12 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     state.current_flight = skills._current_flight(rec)  # noqa: SLF001
     recheck = evaluate_traced(state, offer, inventory, "recheck")
     if record.status != "sent" or not recheck.approved:
-        skills._decision_event(state, offer, recheck)  # noqa: SLF001
+        reasons = list(recheck.reasons) if not recheck.approved else ["offer_already_made"]
+        refused = recheck if not recheck.approved else GuardrailDecision(False, reasons)
+        skills._decision_event(state, offer, refused)  # noqa: SLF001
+        await _release_held_seat(rt, flight, seat, pnr)
         await _void(rt, rec, record, charge["charge_id"], reason="journey_changed")
-        return await _refuse(rt, rec, record, list(recheck.reasons), charged=True)
+        return await _refuse(rt, rec, record, reasons, charged=True)
 
     try:
         await rt.client.call(
@@ -144,6 +150,7 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
         )
         bp = await rt.client.call("dcs", "boarding_pass.issue", pnr=pnr, flight=flight)
     except Exception:  # noqa: BLE001 - ANY failure after the charge must void it
+        await _release_held_seat(rt, flight, seat, pnr)
         await _void(rt, rec, record, charge["charge_id"])
         return await _refuse(rt, rec, record, ["upgrade_failed"], charged=True)
 
@@ -169,6 +176,11 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
     del bp
     await close_loop(rt, rec)
     return "accepted"
+
+
+async def _release_held_seat(rt: CustomerRuntime, flight: str, seat: str, pnr: str) -> None:
+    with contextlib.suppress(Exception):
+        await rt.client.call("dcs", "seat.release", flight=flight, seat=seat, pnr=pnr)
 
 
 async def _release_original_seat(
