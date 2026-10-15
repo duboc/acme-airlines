@@ -40,3 +40,11 @@ def test_cloud_monitoring_is_off_without_the_tracing_switch(monkeypatch):
     monkeypatch.delenv("ACME_ENABLE_TRACING", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", raising=False)
     assert metrics.configure_cloud_monitoring("x") is False
+
+
+def test_rebuild_duration_is_recorded_with_preset_and_reason(metric_points):
+    metrics.rebuild_duration(0.5, "happy-path", "preset_mismatch")
+    metrics.rebuild_duration(0.1, "bad value with spaces!", "step_mismatch")
+    pts = metric_points()["acme.scenario.rebuild.duration"]
+    assert any(a == {"preset": "happy-path", "reason": "preset_mismatch"} for a, _ in pts)
+    assert any(a["preset"] == "unknown" for a, _ in pts)

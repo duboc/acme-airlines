@@ -29,6 +29,9 @@ _needs_human = _meter.create_counter("acme.needs_human", description="needs_huma
 _notify_latency = _meter.create_histogram(
     "acme.notification.latency", unit="s", description="RESOLVED to notification_sent"
 )
+_rebuild_duration = _meter.create_histogram(
+    "acme.scenario.rebuild.duration", unit="s", description="Scenario rebuild by replay (#266)"
+)
 _http_5xx = _meter.create_counter("acme.http.server.errors", description="HTTP 5xx responses")
 
 
@@ -68,6 +71,12 @@ def notification_latency(seconds: float) -> None:
     if is_replaying():  # a scenario rebuild must not double count (#266)
         return
     _notify_latency.record(max(seconds, 0.0))
+
+
+def rebuild_duration(seconds: float, preset: str, reason: str) -> None:
+    """Not suppressed during replay: the rebuild is the very thing that is measured (#280). Call
+    it outside the `replaying()` block, which only silences what the replay re-emits."""
+    _rebuild_duration.record(max(seconds, 0.0), {"preset": _v(preset), "reason": _v(reason)})
 
 
 def http_5xx(status_code: int) -> None:

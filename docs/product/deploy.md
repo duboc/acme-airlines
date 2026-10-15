@@ -145,6 +145,7 @@ ids/enums only, never passenger data. In deploy, `configure_cloud_monitoring` (c
 | `acme.llm.template_fallbacks` | counter | `surface` (resolution/offer) | LLM text rejected, template used |
 | `acme.needs_human` | counter | `specialist` | Escalations to a person |
 | `acme.notification.latency` | histogram (s) | none | RESOLVED to `notification_sent` |
+| `acme.scenario.rebuild.duration` | histogram (s) | `preset`, `reason` | Scenario rebuild by replay on a container (#280) |
 | `acme.http.server.errors` | counter | `status_code` | HTTP 5xx responses from the API |
 
 ## Proposed alert policies (operator creates them; needs infra access)

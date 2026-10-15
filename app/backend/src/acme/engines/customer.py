@@ -34,9 +34,11 @@ from google.genai import types
 from opentelemetry import trace
 from pydantic import ConfigDict
 
+from acme import metrics
 from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
 from acme.replay import replaying
+from acme.sim.client import reuse_sessions
 from acme.telemetry import EngineOp, diag, flush, process_identity, span
 
 log = logging.getLogger(__name__)
@@ -228,6 +230,7 @@ class CustomerEngineApp:
         self.llm_mode = validate_env()
         self.startup_error: str | None = None
         self.started = False
+        self.last_rebuild: dict[str, Any] | None = None
         self.shared: Any = None  # SharedState when ACME_STATE_DB is set (built in set_up)
 
     def _shared_operation(self):
@@ -318,14 +321,19 @@ class CustomerEngineApp:
         try:
             with replaying():
                 runner.start(target)
-                for _ in range(step):
-                    await runner.step(sales_tick=True)
+                async with reuse_sessions():  # one sim session per server for the whole replay
+                    for _ in range(step):
+                        await runner.step(sales_tick=True)
         finally:
             self.runtime.llm = real_llm
+        elapsed = time.perf_counter() - started
+        metrics.rebuild_duration(elapsed, preset, reason)  # outside replaying(): not suppressed
+        self.last_rebuild = {"preset": preset, "to_step": step, "reason": reason,
+                             "ms": round(elapsed * 1000, 1)}  # fmt: skip
         ident = process_identity()
         diag(
             "rebuild", preset=preset, from_step=from_step, to_step=step, reason=reason,
-            ms=round((time.perf_counter() - started) * 1000, 1),
+            ms=round(elapsed * 1000, 1),
             proc=ident["proc"], container=ident["container"], pid=ident["pid"],
         )  # fmt: skip
 
@@ -350,6 +358,7 @@ class CustomerEngineApp:
             "startup_error": self.startup_error,
             "llm_mode": self.llm_mode,
             "identity": process_identity(),
+            "last_rebuild": self.last_rebuild,  # None until this container rebuilt a scenario
         }
 
     def _set_up(self) -> None:
