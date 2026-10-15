@@ -263,14 +263,14 @@ async def run_proof(
         return True
 
     for sid in presets:
-        await backend.scenario_start(sid)
+        await engine_call(backend.scenario_start(sid), "scenario_start", sid, 0)
         want = await local.scenario_start(sid)
         turn = 0
         while not want["done"]:
             turn += 1
             start = now() - timedelta(seconds=5)
             sent_at = now()
-            got = await backend.scenario_step(sid)
+            got = await engine_call(backend.scenario_step(sid), "scenario_step", sid, turn)
             turn_log.append({
                 "scenario": sid, "turn": turn, "sent_at": sent_at.isoformat(),
                 "received_at": now().isoformat(), "window_start": start.isoformat(),
@@ -594,7 +594,7 @@ DIAG_FIELDS: dict[str, dict[str, Callable[[Any], bool]]] = {
         "provider": _matches(_NAME),
         "proc": _matches(_HEX8), "container": _matches(_HEX8_OR_NA), "scenario": _matches(_PRESET),
         "step": _is_int, "shared_version": _is_int, "loaded_version": _is_int,
-        "db_inode": _is_int,
+        "db_inode": _is_int, "parse_kind": _matches(_NAME), "parse_source": _matches(_NAME),
     },
     "export": {"ok": _is_bool, "n": _is_int, "ms": _is_num, "error": _matches(_NAME)},
     "rebuild": {  # a scenario rebuilt by replay on this container (#266)
@@ -677,11 +677,30 @@ class Snapshot:
     messages: list[tuple[Any, ...]]
 
 
+class EngineCallFailed(Exception):
+    """An engine call failed. Only the exception class and our own context are kept: the platform
+    appends the request (the replay tape, passenger text) to the error text."""
+
+
+async def engine_call(
+    call: Awaitable[Any], op: str, preset: str = "", step: int | None = None
+) -> Any:
+    try:
+        return await call
+    except Exception as exc:  # noqa: BLE001
+        where = f" ({preset}" + (f", step {step})" if step is not None else ")") if preset else ""
+        raise EngineCallFailed(f"engine call {op}{where} failed: {type(exc).__name__}") from None
+
+
 async def take_snapshot(backend: Any, state: dict[str, Any]) -> Snapshot:
-    journeys = await backend.journeys_list()
+    journeys = await engine_call(backend.journeys_list(), "journeys_list")
     messages: list[tuple[Any, ...]] = []
     for pid in sorted({j["passenger_id"] for j in journeys}):
-        messages += conversation(await backend.api("whatsapp_messages", passenger_id=pid))
+        messages += conversation(
+            await engine_call(
+                backend.api("whatsapp_messages", passenger_id=pid), "whatsapp_messages"
+            )
+        )
     return Snapshot(structural(state), journeys, messages)
 
 
@@ -789,27 +808,33 @@ async def run_rebuild_proof(
     """
     report = RebuildReport(preset=preset)
     try:
-        state = await backend.scenario_start(preset)
+        state = await engine_call(backend.scenario_start(preset), "scenario_start", preset)
         while not state["done"]:
-            state = await backend.scenario_step(preset)
+            state = await engine_call(
+                backend.scenario_step(preset), "scenario_step", preset, state["step_index"]
+            )
         report.to_step = state["step_index"]
         reference = await take_snapshot(backend, state)
-    except Exception as exc:  # noqa: BLE001 - only the class: the error text may carry passengers
-        report.failures.append(f"the plain run failed: {type(exc).__name__}")
+    except EngineCallFailed as exc:  # the message holds only the class and the context
+        report.failures.append(f"the plain run failed: {exc}")
         return report
     plain_tape = getattr(backend, "_tape", None)  # the plain run's replay tape (#279)
-    await backend.scenario_start(decoy)  # the engine's local state is now the decoy's
+    await engine_call(
+        backend.scenario_start(decoy), "scenario_start", decoy
+    )  # the engine's local state is now the decoy's
     # The caller says: final step of `preset`, with the tape of that run, not the decoy's.
     backend._active, backend._step = preset, report.to_step  # noqa: SLF001
     backend._tape = plain_tape  # noqa: SLF001
     since = now() - timedelta(seconds=2)
     t0 = monotonic()
     try:
-        state = await backend.scenario_state()  # not at (preset, step): the engine rebuilds
+        state = await engine_call(  # not at (preset, step): the engine rebuilds
+            backend.scenario_state(), "scenario_state", preset, report.to_step
+        )
         report.wall_ms = (monotonic() - t0) * 1000
         rebuilt = await take_snapshot(backend, state)
-    except Exception as exc:  # noqa: BLE001 - the platform echoes the request (the tape) in errors
-        report.failures.append(f"the forced rebuild call failed: {type(exc).__name__}")
+    except EngineCallFailed as exc:
+        report.failures.append(f"the forced rebuild call failed: {exc}")
     else:
         report.failures += compare_snapshots(reference, rebuilt) + duplicate_failures(
             reference, rebuilt

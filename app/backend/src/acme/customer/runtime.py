@@ -86,6 +86,7 @@ class CustomerRuntime:
         change_agent: ChangeAgent | None = None,
     ) -> None:
         self.llm = llm or build_llm()
+        self.last_parse: dict[str, str] | None = None  # parse kind and source, for the op diag
         self.change_agent: ChangeAgent = change_agent or ReplanningChangeAgent()
         self.notify_delay = notify_delay  # settle time after RESOLVED before the one notification
         # After the passenger acknowledges, how long an offer may still come before the journey is

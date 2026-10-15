@@ -169,7 +169,9 @@ class EngineBackend:
 
     async def scenario_state(self) -> dict:
         state = await self._customer.call("scenario_state", **self._ctx())
-        self._step = state["step_index"]
+        # Never backwards: a stale read from another worker must not make the next call re-send
+        # a step that already ran (only scenario_start and reset set the counter freely).
+        self._step = max(self._step, state["step_index"])
         return self._keep_tape(state)
 
     async def scenario_step(self, scenario_id: str) -> dict:

@@ -52,6 +52,18 @@ shared across runs through a per-run world reference (`sim/current.py`), and a r
 sim sessions. A replay no longer rebuilds the registries for every step, which is where most of the
 rebuild time went; isolation between runs is covered by `tests/unit/test_sim_session_reuse.py`.
 
+## The tape is per worker process; the model stays primary (#279, live run 6)
+`RecordingLlm` lives in each worker process, so the tape the caller holds is the one of the process
+that answered its last Customer call: entries recorded by the other workers of the same container
+are not on it (in run 6 the tape had one parse of the three the scenario makes). A replay therefore
+treats the tape as a hint, never as the whole truth. Separately, a deployed model that answers
+`Other` for "after 10am" (malformed output, a timeout and an exception all fail closed to `Other`)
+used to leave the journey without an offer. `classify` now asks the model first and only when it
+answers `Other` and the deterministic time pattern reads the text does the pattern win; a non-Other
+answer is never overridden. The op diag carries `parse_kind` and `parse_source` (`model|pattern`),
+never text. `EngineBackend` keeps its step counter monotonic against stale reads from another
+worker.
+
 ## Known gap
 The offer text is composed on whichever container serves the Sales tick (`a2a_skill`), and the tape
 the caller holds is the one returned by the next Customer call. If that call lands on another
