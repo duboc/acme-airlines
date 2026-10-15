@@ -37,7 +37,7 @@ from pydantic import ConfigDict
 from acme import metrics
 from acme.diagnostics import format_error
 from acme.llm.config import LlmConfigError, load_llm_mode, load_vertex_config
-from acme.llm.tape import RecordingLlm, TapeLlm, clean_tape
+from acme.llm.tape import RecordingLlm, TapeLlm, clean_tape, manual_turns
 from acme.replay import replaying
 from acme.sim.client import reuse_sessions, warm_registry
 from acme.telemetry import EngineOp, diag, flush, process_identity, span
@@ -323,8 +323,15 @@ class CustomerEngineApp:
         if preset is None or step is None:
             return
         step = integral(step, "scenario step")  # Agent Engine sends 5.0 for 5
+        tape = clean_tape(kwargs.get("tape"))  # untrusted: a bad tape is no tape
         runner = self.scenarios
-        if runner.active is not None and runner.active.id == preset and runner.index == step:
+        local_manual = manual_turns(getattr(self.runtime.llm, "entries", None))
+        if (
+            runner.active is not None
+            and runner.active.id == preset
+            and runner.index == step
+            and (tape is None or local_manual == manual_turns(tape))
+        ):
             return
         target = self._preset(preset)
         if not 0 <= step <= len(target.steps):
@@ -338,7 +345,6 @@ class CustomerEngineApp:
         from_step = runner.index if runner.active is not None else None
         started = time.perf_counter()
         recorder = self.runtime.llm  # the RecordingLlm wrapped around the engine's model
-        tape = clean_tape(kwargs.get("tape"))  # untrusted: a bad tape is no tape
         discarded = 0
         for attempt in [tape, []] if tape else [[]]:
             replay_llm = TapeLlm(attempt)
@@ -347,8 +353,11 @@ class CustomerEngineApp:
                 with replaying():
                     runner.start(target)
                     async with reuse_sessions():  # one sim session per server for the replay
-                        for _ in range(step):
+                        turns = manual_turns(attempt)
+                        await self._replay_manual(runner, replay_llm, turns, 0)
+                        for s in range(step):
                             await runner.step(sales_tick=True)
+                            await self._replay_manual(runner, replay_llm, turns, s + 1)
                 break
             except Exception:
                 if not attempt:
@@ -367,6 +376,22 @@ class CustomerEngineApp:
             ms=round(elapsed * 1000, 1), tape_miss=replay_llm.misses, tape_discarded=discarded,
             proc=ident["proc"], container=ident["container"], pid=ident["pid"],
         )  # fmt: skip
+
+    async def _replay_manual(
+        self, runner: Any, replay_llm: TapeLlm, turns: list[dict[str, Any]], step: int
+    ) -> None:
+        from acme.api.app import do_action, do_reply
+
+        for entry in turns:
+            if entry["step"] != step:
+                continue
+            if entry["m"] == "manual_reply":
+                await do_reply(runner.rt, entry["pid"], entry["text"])
+                await runner.radar.tick()
+                replay_llm.record_manual("whatsapp_reply", entry["pid"], entry["text"], step)
+            else:
+                await do_action(runner.rt, entry["pid"], entry["action"])
+                replay_llm.record_manual("whatsapp_action", entry["pid"], entry["action"], step)
 
     def _no_scenario(self) -> EngineOperationError:
         """The readable error: ids and counters of the process that answered (no PII)."""
@@ -639,6 +664,16 @@ class CustomerEngineApp:
 
         return await self._api(do_messages, passenger_id)
 
+    def _after_manual(
+        self, op: str, passenger_id: str, value: str, preset: str | None, out: dict[str, Any]
+    ) -> None:
+        if "error" in out or self.scenarios.active is None:
+            return
+        if preset is not None and self.scenarios.advance_if_matches(op, passenger_id, value):
+            return
+        if hasattr(self.runtime.llm, "record_manual"):
+            self.runtime.llm.record_manual(op, passenger_id, value, self.scenarios.index)
+
     @shared
     async def whatsapp_reply(
         self,
@@ -650,7 +685,9 @@ class CustomerEngineApp:
     ) -> dict[str, Any]:
         from acme.api.app import do_reply
 
-        return await self._api(do_reply, passenger_id, text)
+        out = await self._api(do_reply, passenger_id, text)
+        self._after_manual("whatsapp_reply", passenger_id, text, preset, out)
+        return out
 
     @shared
     async def whatsapp_action(
@@ -663,7 +700,9 @@ class CustomerEngineApp:
     ) -> dict[str, Any]:
         from acme.api.app import do_action
 
-        return await self._api(do_action, passenger_id, action)
+        out = await self._api(do_action, passenger_id, action)
+        self._after_manual("whatsapp_action", passenger_id, action, preset, out)
+        return out
 
     def register_operations(self) -> dict[str, list[str]]:
         return {

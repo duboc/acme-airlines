@@ -10,6 +10,7 @@ input (`clean_tape`): at most MAX_ENTRIES well-formed entries; a malformed tape 
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Mapping
 from datetime import time
 from typing import Any
@@ -50,9 +51,59 @@ def _decode(entry: Entry) -> StructuredRequest:
     return Acknowledge() if entry["kind"] == "ack" else Other(text=entry["text"])
 
 
+def _valid_step(step: Any) -> bool:
+    return (
+        not isinstance(step, bool)
+        and isinstance(step, (int, float))
+        and math.isfinite(step)
+        and int(step) == step
+        and 0 <= int(step) <= MAX_ENTRIES
+    )
+
+
+def manual_entry(op: str, passenger_id: str, value: str, step: int) -> Entry:
+    if op == "whatsapp_reply":
+        return {
+            "m": "manual_reply",
+            "pid": passenger_id,
+            "text": value[:MAX_TEXT],
+            "step": int(step),
+        }
+    return {"m": "manual_action", "pid": passenger_id, "action": value, "step": int(step)}
+
+
+def manual_turns(tape: list[Entry] | None) -> list[Entry]:
+    if not tape:
+        return []
+    return [
+        {**e, "step": int(e["step"])}
+        for e in tape
+        if e.get("m") in ("manual_reply", "manual_action")
+    ]
+
+
 def _valid(entry: Any) -> bool:
     if not isinstance(entry, dict):
         return False
+    if entry.get("m") == "manual_reply":
+        pid, text, step = entry.get("pid"), entry.get("text"), entry.get("step")
+        return (
+            set(entry) == {"m", "pid", "text", "step"}
+            and isinstance(pid, str)
+            and 0 < len(pid) <= 64
+            and isinstance(text, str)
+            and len(text) <= MAX_TEXT
+            and _valid_step(step)
+        )
+    if entry.get("m") == "manual_action":
+        pid, action, step = entry.get("pid"), entry.get("action"), entry.get("step")
+        return (
+            set(entry) == {"m", "pid", "action", "step"}
+            and isinstance(pid, str)
+            and 0 < len(pid) <= 64
+            and action in ("accept_offer", "decline_offer")
+            and _valid_step(step)
+        )
     if KEY in entry:
         key = entry[KEY]
         if not isinstance(key, str) or not 0 < len(key) <= 32:
@@ -86,7 +137,7 @@ def clean_tape(raw: Any) -> list[Entry] | None:
     """The tape if it is well-formed, else None (ignored)."""
     if not isinstance(raw, list) or len(raw) > MAX_ENTRIES or not all(_valid(e) for e in raw):
         return None
-    return [dict(e) for e in raw]
+    return [{**e, "step": int(e["step"])} if "step" in e else dict(e) for e in raw]
 
 
 class RecordingLlm:
@@ -100,6 +151,10 @@ class RecordingLlm:
 
     def _room(self) -> bool:
         return len(self.entries) < MAX_ENTRIES  # never grow past what a rebuild would accept
+
+    def record_manual(self, op: str, passenger_id: str, value: str, step: int) -> None:
+        if self._room():
+            self.entries.append(manual_entry(op, passenger_id, value, step))
 
     async def compose_passenger_message(self, context: Mapping[str, Any]) -> str:
         try:
@@ -135,6 +190,10 @@ class TapeLlm:
     def __init__(self, tape: list[Entry]) -> None:
         self._tape = {m: [e for e in tape if e["m"] == m] for m in ("compose", "parse")}
         self._fake, self.misses, self.entries = FakeLlm(), 0, []  # type: ignore[var-annotated]
+
+    def record_manual(self, op: str, passenger_id: str, value: str, step: int) -> None:
+        if len(self.entries) < MAX_ENTRIES:
+            self.entries.append(manual_entry(op, passenger_id, value, step))
 
     def _next(self, method: str, key: str) -> Entry | None:
         for i, entry in enumerate(self._tape[method]):

@@ -246,3 +246,30 @@ async def test_backend_logs_no_passenger_data(engine_app, caplog):
         await run(c, "happy-path")
     text = caplog.text
     assert "Mariana" not in text and "MSLV42" not in text
+
+
+async def test_manual_whatsapp_reply_ticks_sales_and_refreshes_state_in_local_and_engine_modes(
+    engine_app,
+):
+    """#322 AC1 & AC2: manual WhatsApp reply after step 3 ticks Sales to propose the $135 AC1252
+    offer without calling /scenarios/happy-path/step, and refreshes _step and _tape."""
+    backend = engine_app.state.engine_backend
+    async with client(create_app()) as local, client(engine_app) as remote:
+        for c in (local, remote):
+            await c.post("/scenarios/happy-path/start")
+            for _ in range(3):  # cancel, notify, "Can I leave after 10am?"
+                assert (await c.post("/scenarios/happy-path/step")).status_code == 200
+            r = await c.post("/whatsapp/P-MARIANA/messages", json={"text": "Perfect, thanks!"})
+            assert r.status_code == 201
+            (jid,) = [j["journey_id"] for j in (await c.get("/journeys")).json()]
+            detail = (await c.get(f"/journeys/{jid}")).json()
+            assert detail["resolution_acknowledged"] is True
+            assert detail["offer"] is not None and detail["offer"]["status"] == "sent"
+            assert detail["offer"]["flight"] == "AC1252" and detail["offer"]["price"] == "135.00"
+            act = await c.post("/whatsapp/P-MARIANA/actions", json={"action": "accept_offer"})
+            assert act.status_code == 200 and act.json()["offer_status"] == "accepted"
+            after = (await c.get(f"/journeys/{jid}")).json()
+            assert after["status"] == "CLOSED" and after["seat"]["seat"] == "2A"
+            assert after["offer"]["status"] == "accepted"
+    assert backend._step == 5 and backend.done  # noqa: SLF001
+    assert any(e.get("k") == "offer" for e in (backend._tape or []))  # noqa: SLF001
