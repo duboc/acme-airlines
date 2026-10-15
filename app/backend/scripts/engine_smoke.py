@@ -19,9 +19,12 @@ os.environ.setdefault("LLM_MODE", "fake")
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "493084803309")  # Agent Engine injects the NUMBER
 
 import cloudpickle  # noqa: E402
+from opentelemetry.exporter.cloud_monitoring import CloudMonitoringMetricsExporter  # noqa: E402
+from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter  # noqa: E402
 
 import acme  # noqa: E402
 
+assert CloudMonitoringMetricsExporter and CloudTraceSpanExporter
 assert Path(acme.__file__).resolve().is_relative_to(staged), f"acme came from {acme.__file__}"
 
 
