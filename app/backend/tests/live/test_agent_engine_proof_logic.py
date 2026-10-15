@@ -244,3 +244,138 @@ async def test_the_list_call_count_stays_bounded_when_everything_is_prompt():
     src = TimedTraces([(step("t1", T0, KINDS), 1, T0), (step("t2", T0), 1, T0)])
     r = await settle_proof(src, clock)
     assert r.failures == [] and src.calls == 3  # one per turn + one settle listing
+
+
+# --- #279: forced rebuild ---------------------------------------------------
+import json  # noqa: E402
+
+from tests.live.agent_engine_proof import (  # noqa: E402
+    Snapshot,
+    compare_snapshots,
+    conversation,
+    duplicate_failures,
+    rebuild_events,
+    run_rebuild_proof,
+)
+
+MSGS = [("outbound", "hello", (), (), "t1"), ("inbound", "hi", (), (), "t2")]
+
+
+def snap(**kw):
+    base = {"state": {"offers_sent": 1, "seat": "2A"}, "journeys": [{"journey_id": "J-1"}],
+            "messages": list(MSGS)}  # fmt: skip
+    return Snapshot(**{**base, **kw})
+
+
+def diag_entry(ts="2026-01-01T00:00:05Z", **kw):
+    data = {"event": "rebuild", "preset": "p", "to_step": 2, "ms": 41.5, **kw}
+    return {"ts": ts, "severity": "INFO", "text": "ACME_DIAG " + json.dumps(data)}
+
+
+class RebuildBackend:
+    """Engine stand-in: a plain run of `p`, then a rebuild with optional faults."""
+
+    def __init__(self, drift=None, extra_message=False, extra_offer=False):
+        self.drift, self.extra_message, self.extra_offer = drift, extra_message, extra_offer
+        self.rebuilt, self._active, self._step = False, None, 0
+
+    async def scenario_start(self, sid):
+        self._active, self._step = sid, 0
+        return {"done": False, "step_index": 0, "offers_sent": 0}
+
+    async def scenario_step(self, sid):
+        self._step += 1
+        return {"done": self._step == 2, "step_index": self._step, "offers_sent": 1, "seat": "2A"}
+
+    async def scenario_state(self):
+        self.rebuilt = self._active == "p" and self._step == 2
+        offers = 2 if self.extra_offer and self.rebuilt else 1
+        return {"done": True, "step_index": 2, "offers_sent": offers,
+                "seat": self.drift or "2A"}  # fmt: skip
+
+    async def journeys_list(self):
+        return [{"journey_id": "J-1", "passenger_id": "P-1"}]
+
+    async def api(self, op, **kw):
+        msgs = [{"direction": d, "text": t, "timestamp": ts, "message_id": f"WM-{i}{self.rebuilt}"}
+                for i, (d, t, _b, _a, ts) in enumerate(MSGS)]  # fmt: skip
+        return msgs + (msgs[:1] if self.extra_message and self.rebuilt else [])
+
+
+async def rebuild(backend, entries):
+    async def no_sleep(_):
+        pass
+
+    clock = iter(range(0, 10_000))
+    return await run_rebuild_proof(
+        backend, lambda since: entries, "p", "d", sleep=no_sleep, now=lambda: T0,
+        monotonic=lambda: float(next(clock)), wait=3.0, poll=1.0,
+    )  # fmt: skip
+
+
+def test_conversation_ignores_the_random_message_id():
+    a = [{"message_id": "WM-1", "direction": "outbound", "text": "x"}]
+    assert conversation(a) == conversation([{**a[0], "message_id": "WM-2"}])
+
+
+def test_compare_flags_each_difference_without_echoing_content():
+    assert compare_snapshots(snap(), snap()) == []
+    out = compare_snapshots(snap(), snap(state={"seat": "9Z"}, messages=MSGS[:1]))
+    assert len(out) == 2 and "1 entries, expected 2" in out[1]
+    assert "9Z" not in " ".join(out)
+    assert "same size" in compare_snapshots(snap(), snap(journeys=[{"journey_id": "J-2"}]))[0]
+
+
+def test_duplicate_check_flags_repeated_message_extra_message_and_extra_offer():
+    assert duplicate_failures(snap(), snap()) == []
+    out = duplicate_failures(snap(), snap(messages=[*MSGS, MSGS[0]], state={"offers_sent": 2}))
+    assert any("duplicate WhatsApp message" in f for f in out)
+    assert any("1 more WhatsApp" in f for f in out)
+    assert any("duplicate offer" in f for f in out)
+
+
+def test_rebuild_events_filter_by_preset_step_and_time():
+    entries = [diag_entry(), diag_entry(preset="q"), diag_entry(to_step=1),
+               diag_entry(ts="2025-12-31T23:00:00Z"), {"text": "other"}]  # fmt: skip
+    assert [e["ms"] for e in rebuild_events(entries, "p", 2, T0)] == [41.5]
+
+
+async def test_rebuild_proof_passes_and_reports_latency():
+    r = await rebuild(RebuildBackend(), [diag_entry()])
+    assert r.failures == [] and r.engine_ms == [41.5] and r.to_step == 2
+    md = r.markdown()
+    assert "PASS" in md and "41.5 ms" in md and "client side" in md
+
+
+@pytest.mark.parametrize(
+    ("backend", "entries", "needle"),
+    [
+        (RebuildBackend(drift="9Z"), [diag_entry()], "state differs"),
+        (RebuildBackend(extra_message=True), [diag_entry()], "duplicate WhatsApp message"),
+        (RebuildBackend(extra_offer=True), [diag_entry()], "duplicate offer"),
+        (RebuildBackend(), [], "no ACME_DIAG rebuild event"),
+        (RebuildBackend(), [diag_entry(), diag_entry()], "2 rebuilds logged"),
+        (RebuildBackend(), [diag_entry(ms=None)], "no latency"),
+    ],
+)
+async def test_rebuild_proof_failures(backend, entries, needle):
+    r = await rebuild(backend, entries)
+    assert any(needle in f for f in r.failures), r.failures
+    assert "FAIL" in r.markdown()
+
+
+async def test_forced_rebuild_against_the_real_engines_offline(monkeypatch):
+    """The real Customer and Sales engines (fake LLM), the forced call included: it must rebuild."""
+    from tests.api.test_engine_mode import engine_backend
+
+    monkeypatch.setenv("LLM_MODE", "fake")
+    backend, captured = engine_backend(), []
+    monkeypatch.setattr("acme.engines.customer.diag",
+                        lambda event, **kw: captured.append({"event": event, **kw}))  # fmt: skip
+
+    def logs(since):
+        return [{"ts": datetime.now(UTC).isoformat(), "text": "ACME_DIAG " + json.dumps(c)}
+                for c in captured if c["event"] == "rebuild"]  # fmt: skip
+
+    r = await run_rebuild_proof(backend, logs, "happy-path", "seat-taken", wait=0.0)
+    assert r.failures == [] and len(r.engine_ms) == 1 and r.to_step == 5

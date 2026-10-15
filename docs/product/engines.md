@@ -372,3 +372,12 @@ State is per container (`/tmp`). The caller (`EngineBackend`, so the live proof 
 it by deterministic replay (offline model, no spans, no metrics) and logs `ACME_DIAG {"event": "rebuild",
 preset, from_step, to_step, reason, container...}`. Decision and trade-offs:
 [ADR 0103](../decisions/0103-stateless-engine-scenarios.md).
+
+**Live proof of the rebuild (#279).** The `Agent Engine Live Proof` workflow (`workflow_dispatch` only, never a
+PR check) has a forced-rebuild step: it runs `happy-path` plainly and snapshots state, journeys and the
+WhatsApp conversation, parks the engine on `seat-taken`, then asks for the final step of `happy-path`, so
+the engine rebuilds. The step fails unless (1) the Customer log has exactly one `ACME_DIAG rebuild` for it,
+(2) the rebuilt state, journeys and conversation (without the random `message_id`) equal the plain run, and
+(3) there is no extra or repeated WhatsApp message and no extra offer. The run summary lists the rebuild
+latency (the engine's `ms` and the client-side wall time). Logic and its offline tests:
+`app/backend/tests/live/agent_engine_proof.py`, `test_agent_engine_proof_logic.py`.
