@@ -33,7 +33,7 @@ from acme.api.app import (
 )
 from acme.api.errors import ApiError, add_error_handlers, not_found
 from acme.api.events import TimelineEvent
-from acme.api.scenarios import BY_ID, PresetView, ScenarioState
+from acme.api.scenarios import ACK, BY_ID, PresetView, ScenarioState
 from acme.api.sse import event_stream, resume_from
 from acme.customer.runtime import WhatsAppMessage
 
@@ -287,11 +287,15 @@ class EngineBackend:
         """Customer step, then one Sales engine turn (its own trace). `409` conditions are the
         route's job: it checks `active` and `done` before calling this."""
         steps = BY_ID[scenario_id].steps
-        upcoming = steps[self._step].kind if self._step < len(steps) else None
+        # From the acknowledgement on, the Sales tick is what makes the offer: a step that runs
+        # before it has succeeded can invalidate or outlive the offer for good (upgrade-race step 5
+        # replans and clears the acknowledgement, so step 6 would wedge with NoSentOffer).
+        offer_due = any(step is ACK for step in steps[: self._step])
         if self._sales_pending:  # the previous step's tick failed: the offer may not exist yet
-            await self._tick_sales()
-            if self._sales_pending and upcoming in ("accept", "decline"):
-                # Not even trying the Customer step: it would fail with NoSentOffer and wedge here.
+            if await self._tick_sales():
+                await self.scenario_state()  # refresh the tape: it now holds the offer's text
+            if self._sales_pending and offer_due:
+                # Not even trying the Customer step: it would fail or make the offer impossible.
                 raise EngineUnavailable(
                     "The Sales engine could not be reached to prepare the offer; try again."
                 )

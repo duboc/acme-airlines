@@ -419,3 +419,62 @@ async def test_given_a_step_or_a_detail_then_no_redundant_engine_query_is_made()
         while not backend.done:
             await c.post("/scenarios/happy-path/step")
         assert (await c.post("/scenarios/happy-path/step")).status_code == 409  # finished, no RPC
+
+
+# --- #372: every step after the acknowledgement waits for the Sales tick ------------------
+
+
+async def test_given_sales_down_at_the_ack_step_then_the_replan_step_of_upgrade_race_waits():
+    """#372: only accept/decline were held back, so step 5 (replan, which clears the
+    acknowledgement) ran while the offer did not exist, and step 6 wedged with NoSentOffer."""
+    backend = local_backend()
+    await backend.scenario_start("upgrade-race")
+    for _ in range(3):
+        await backend.scenario_step("upgrade-race")
+    backend._sales = down = ScriptedSales(backend._sales, fail=99)  # noqa: SLF001
+    ack = await backend.scenario_step("upgrade-race")
+    assert ack["offers_sent"] == 0 and backend._sales_pending  # noqa: SLF001
+    calls, real_call = [], backend._customer.call  # noqa: SLF001
+
+    async def spy(op, **kw):
+        calls.append((op, kw))
+        return await real_call(op, **kw)
+
+    backend._customer.call = spy  # noqa: SLF001
+    with pytest.raises(EngineUnavailable):  # the replan step must not run yet
+        await backend.scenario_step("upgrade-race")
+    assert not [c for c in calls if c[0] == "scenario_step"] and backend._step == 4  # noqa: SLF001
+    down.fail = 0  # Sales recovers
+    state = await backend.scenario_step("upgrade-race")  # the replan step, now with an offer
+    assert state["step_index"] == 5 and state["offer_status"] == "invalidated"
+    final = await backend.scenario_step("upgrade-race")  # the stale accept: refused, not wedged
+    assert final["done"] and final["offer_status"] == "invalidated" and final["charged"] == "0.00"
+
+
+async def test_given_a_catch_up_tick_then_the_tape_sent_with_the_next_step_has_the_offer_text():
+    """#372: the tape was not refreshed after the catch-up tick, so a step landing on another
+    replica rebuilt without the offer's text (tape_miss)."""
+    backend = local_backend()
+    await to_step(backend, 3)
+    backend._sales = down = ScriptedSales(backend._sales, fail=99)  # noqa: SLF001
+    await backend.scenario_step("happy-path")  # the ACK step: the tick fails
+    down.fail = 0
+    seen = []
+    real_call = backend._customer.call  # noqa: SLF001
+
+    async def spy(op, **kw):
+        if op == "scenario_step":
+            seen.append(kw.get("tape"))
+        return await real_call(op, **kw)
+
+    backend._customer.call = spy  # noqa: SLF001
+    await backend.scenario_step("happy-path")  # the accept
+    assert seen and any(e.get("k") == "offer" for e in seen[0])
+
+
+async def test_given_sales_down_before_the_acknowledgement_then_steps_still_run():
+    backend = local_backend()
+    await backend.scenario_start("happy-path")
+    backend._sales = ScriptedSales(backend._sales, fail=99)  # noqa: SLF001
+    for expected in (1, 2, 3):  # cancel, notify, reply: no offer is due yet
+        assert (await backend.scenario_step("happy-path"))["step_index"] == expected
