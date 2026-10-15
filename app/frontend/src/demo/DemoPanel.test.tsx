@@ -142,4 +142,41 @@ describe('DemoPanel', () => {
     );
     await waitFor(() => expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled());
   });
+
+  it('surfaces 429 Retry-After busy feedback and refreshes on 503 StepApplied', async () => {
+    render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            detail: 'The Agent Engine query quota is exhausted (step); retry shortly.',
+          }),
+          { status: 429, headers: { 'Retry-After': '20' } },
+        ),
+      ),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Engine busy (429): The Agent Engine query quota is exhausted (step); retry shortly. Retry in 20s.',
+    );
+    expect(onChanged).not.toHaveBeenCalled();
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            detail: 'The step was applied but its state could not be read: refresh.',
+          }),
+          { status: 503, headers: { 'Retry-After': '5' } },
+        ),
+      ),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Engine busy (503): The step was applied but its state could not be read: refresh. Retry in 5s.',
+    );
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
 });

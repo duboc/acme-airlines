@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
+  ApiHttpError,
   actionForButton,
   attachmentLabel,
   fetchMessages,
+  formatTransientError,
   postAction,
   sendReply,
   type WhatsAppMessage,
@@ -34,24 +36,36 @@ export function ChatView({
   const [sending, setSending] = useState(false);
   // Message ids whose buttons were already tapped: one action per offer.
   const [answered, setAnswered] = useState<Map<string, string>>(new Map());
+  const cooldownUntil = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
+
+  const noteCooldown = useCallback((err: unknown) => {
+    if (err instanceof ApiHttpError && err.isTransient && err.retryAfterSeconds) {
+      cooldownUntil.current = Date.now() + err.retryAfterSeconds * 1000;
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
       const next = await fetchMessages(passengerId);
+      cooldownUntil.current = 0;
       setMessages(next);
       if (next.length === 0) {
         setAnswered((prev) => (prev.size === 0 ? prev : new Map()));
       }
       setError('');
-    } catch {
-      setError('Cannot reach the messaging service. Retrying.');
+    } catch (err) {
+      noteCooldown(err);
+      setError(formatTransientError(err, 'Cannot reach the messaging service. Retrying.'));
     }
-  }, [passengerId]);
+  }, [passengerId, noteCooldown]);
 
   useEffect(() => {
     const first = setTimeout(refresh, 0);
-    const timer = setInterval(refresh, pollMs);
+    const timer = setInterval(() => {
+      if (Date.now() < cooldownUntil.current) return;
+      void refresh();
+    }, pollMs);
     return () => {
       clearTimeout(first);
       clearInterval(timer);
@@ -72,8 +86,9 @@ export function ChatView({
       setDraft('');
       await refresh();
       onChanged?.();
-    } catch {
-      setError('Your message was not sent. Please try again.');
+    } catch (err) {
+      noteCooldown(err);
+      setError(formatTransientError(err, 'Your message was not sent. Please try again.'));
     } finally {
       setSending(false);
     }
@@ -86,13 +101,14 @@ export function ChatView({
       await postAction(passengerId, actionForButton(label));
       await refresh();
       onChanged?.();
-    } catch {
+    } catch (err) {
+      noteCooldown(err);
       setAnswered((s) => {
         const next = new Map(s);
         next.delete(msg.message_id);
         return next;
       });
-      setError('Your choice was not sent. Please try again.');
+      setError(formatTransientError(err, 'Your choice was not sent. Please try again.'));
     }
   }
 

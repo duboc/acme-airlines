@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { eventsUrl, getJourney, listJourneys, resetScenario, triggerCancellation } from './api';
+import {
+  eventsUrl,
+  formatTransientError,
+  getJourney,
+  listJourneys,
+  resetScenario,
+  triggerCancellation,
+} from './api';
 import './console.css';
 import { DemoPanel } from '../demo/DemoPanel';
 import type { ScenarioState } from '../demo/types';
@@ -10,6 +17,7 @@ import type { JourneyDetail, JourneyEvent } from './types';
 
 // Mariana's passenger id in the seeded AC1234 scenario.
 const PASSENGER_ID = 'P-MARIANA';
+const SSE_RECONNECT_MS = 5000;
 
 export function ConsolePage() {
   const [journey, setJourney] = useState<JourneyDetail | null>(null);
@@ -19,15 +27,20 @@ export function ConsolePage() {
   const [resetSeq, setResetSeq] = useState(0);
   const [chatSeq, setChatSeq] = useState(0);
   const source = useRef<EventSource | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const close = useCallback(() => {
+    if (reconnectTimer.current !== null) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
     source.current?.close();
     source.current = null;
   }, []);
   useEffect(() => close, [close]);
 
   const open = useCallback(
-    (id: string) => {
+    function connect(id: string) {
       close();
       const es = new EventSource(eventsUrl(id));
       source.current = es;
@@ -48,9 +61,14 @@ export function ConsolePage() {
             if (source.current !== es) return;
             setJourney(j);
           } while (dirty && source.current === es);
-        } catch {
+        } catch (err) {
           if (source.current === es) {
-            setError('Could not refresh the journey. Events are still streaming.');
+            setError(
+              formatTransientError(
+                err,
+                'Could not refresh the journey. Events are still streaming.',
+              ),
+            );
           }
         } finally {
           inflight = false;
@@ -65,6 +83,14 @@ export function ConsolePage() {
         const event = JSON.parse(m.data) as JourneyEvent;
         setEvents((prev) => [...prev, event]);
         void refreshJourney();
+      };
+
+      es.onerror = () => {
+        if (source.current === es && (es as { readyState?: number }).readyState === 2) {
+          reconnectTimer.current = setTimeout(() => {
+            if (source.current === es) connect(id);
+          }, SSE_RECONNECT_MS);
+        }
       };
     },
     [close],
@@ -86,8 +112,15 @@ export function ConsolePage() {
         const all = await listJourneys();
         const current = all.find((j) => j.status !== 'CLOSED') ?? all[0];
         if (current && !cancelled) await attach(current.journey_id);
-      } catch {
-        if (!cancelled) setError('Could not load the current journey. Reload the page to retry.');
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            formatTransientError(
+              err,
+              'Could not load the current journey. Reload the page to retry.',
+            ),
+          );
+        }
       }
     })();
     return () => {
@@ -111,8 +144,8 @@ export function ConsolePage() {
     try {
       if (source.current && currentId === id) setJourney(await getJourney(id));
       else await attach(id);
-    } catch {
-      setError('Could not refresh the journey.');
+    } catch (err) {
+      setError(formatTransientError(err, 'Could not refresh the journey.'));
     }
   }
 
@@ -125,9 +158,12 @@ export function ConsolePage() {
       const id = created ?? (await listJourneys())[0]?.journey_id;
       if (!id) throw new Error('no journey');
       await attach(id);
-    } catch {
+    } catch (err) {
       setError(
-        'Could not trigger the cancellation. Check that the API is running, then try again.',
+        formatTransientError(
+          err,
+          'Could not trigger the cancellation. Check that the API is running, then try again.',
+        ),
       );
     } finally {
       setBusy(false);
@@ -144,8 +180,8 @@ export function ConsolePage() {
       setEvents([]);
       setResetSeq((n) => n + 1);
       setChatSeq((n) => n + 1);
-    } catch {
-      setError('Could not reset the scenario. Try again.');
+    } catch (err) {
+      setError(formatTransientError(err, 'Could not reset the scenario. Try again.'));
     } finally {
       setBusy(false);
     }
