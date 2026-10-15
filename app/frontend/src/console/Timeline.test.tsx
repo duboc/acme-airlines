@@ -79,4 +79,101 @@ describe('Timeline', () => {
     );
     expect(screen.getByText('brand_new_rule')).toBeInTheDocument();
   });
+
+  it('renders payload.reason across duty-of-care, seat_held, and lifecycle events (#413)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'seat',
+            type: 'seat_held',
+            timestamp: '2026-10-10T08:01:00Z',
+            payload: {
+              flight: 'AC1240',
+              seat: '15A',
+              reason: '14A unavailable; assigned nearest window seat 15A',
+            },
+          },
+          {
+            actor: 'concierge_agent',
+            type: 'hotel_booked',
+            timestamp: '2026-10-10T08:02:00Z',
+            payload: { hotel_id: 'HT8842', reason: 'ANAC 400 Art. 27, III' },
+          },
+          {
+            actor: 'concierge_agent',
+            type: 'voucher_issued',
+            timestamp: '2026-10-10T08:03:00Z',
+            payload: { kind: 'meal', amount: '25.00', reason: 'ANAC 400 Art. 27, II' },
+          },
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText('14A unavailable; assigned nearest window seat 15A'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('ANAC 400 Art. 27, III')).toBeInTheDocument();
+    expect(screen.getByText('ANAC 400 Art. 27, II')).toBeInTheDocument();
+  });
+
+  it('renders needs_human step/error and duty_of_care_assessed rule_reasons (#413)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'rights_agent',
+            type: 'duty_of_care_assessed',
+            timestamp: '2026-10-10T08:01:00Z',
+            payload: {
+              rule_reasons: {
+                hotel: 'ANAC 400 Art. 27, III',
+                meals: 'ANAC 400 Art. 27, II',
+              },
+            },
+          },
+          {
+            actor: 'concierge_agent',
+            type: 'needs_human',
+            timestamp: '2026-10-10T08:02:00Z',
+            payload: { step: 'hotel', error: 'hotel HT8842 has no rooms' },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('hotel: ANAC 400 Art. 27, III')).toBeInTheDocument();
+    expect(screen.getByText('meals: ANAC 400 Art. 27, II')).toBeInTheDocument();
+    expect(screen.getByText('hotel: hotel HT8842 has no rooms')).toBeInTheDocument();
+  });
+
+  it('renders connection_constraint text and connection_verified margin summary (#413)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'customer_agent',
+            type: 'connection_constraint',
+            timestamp: '2026-10-10T08:01:00Z',
+            payload: {
+              airport: 'SCL',
+              mct_minutes: 90,
+              text: 'must arrive SCL by 2026-10-10 12:30',
+            },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'connection_verified',
+            timestamp: '2026-10-10T08:02:00Z',
+            payload: {
+              flight: 'AC1252',
+              connection_flight: 'AC0800',
+              feasible: true,
+              margin_minutes: 10,
+            },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('must arrive SCL by 2026-10-10 12:30')).toBeInTheDocument();
+    expect(screen.getByText('AC1252 → AC0800 (margin 10 min)')).toBeInTheDocument();
+  });
 });
