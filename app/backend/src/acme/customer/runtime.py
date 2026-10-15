@@ -93,12 +93,15 @@ class CustomerRuntime:
         # closed WITHOUT one (service closure never waits on Sales, #229).
         self.offer_window = offer_window
         self.auto_duty_of_care = auto_duty_of_care  # False isolates the rebuild in tests
+        self._initial_clock = clock  # reset() goes back to it; None means the wall clock (#321)
         self.clock = clock or SystemClock()
         self._custom_connector = connector
         self._connector_factory = connector_factory
         self.reset()
 
-    def reset(self) -> None:
+    def reset(self, clock: Clock | None = None) -> None:
+        """Fresh world. `clock` (a preset's fixed one) holds only until the next reset."""
+        self.clock = clock or self._initial_clock or SystemClock()
         self.sim = SimWorld.seeded(self.clock)
         # Every path authenticates as `customer` only (acme.sim.auth, #27).
         if self._custom_connector:

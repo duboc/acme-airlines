@@ -615,7 +615,7 @@ class CustomerEngineApp:
 
     @shared
     def reset(self) -> dict[str, str]:
-        self.runtime.reset()
+        self.scenarios.reset()  # world, clock and preset cursor (#321)
         self.runtime.llm.reset()  # a reset drops the tape with the state (#279)
         return {"status": "reset"}
 
@@ -623,6 +623,8 @@ class CustomerEngineApp:
     async def trigger_cancellation(self, flight: str, reason: str) -> dict[str, Any]:
         from acme.api.app import do_trigger
 
+        if self.scenarios.active is not None:  # a manual trigger ends the preset and its clock
+            self.scenarios.reset()
         return await self._api(do_trigger, flight, reason)
 
     @shared
