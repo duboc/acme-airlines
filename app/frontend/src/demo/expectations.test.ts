@@ -37,27 +37,90 @@ describe('evaluate', () => {
         seat: '2A',
         charged: '135.00',
         offer_status: 'accepted',
+        offers_sent: 1,
       })?.mismatches,
     ).toEqual([]);
     expect(
-      final('declines-upgrade', 5, { flight: 'AC1252', seat: '14A', offer_status: 'declined' })
-        ?.mismatches,
+      final('declines-upgrade', 5, {
+        flight: 'AC1252',
+        seat: '14A',
+        offer_status: 'declined',
+        offers_sent: 1,
+      })?.mismatches,
     ).toEqual([]);
     expect(
-      final('seat-taken', 2, { flight: 'AC1240', seat: '15A', journey_status: 'RESOLVED' })
-        ?.mismatches,
+      final('seat-taken', 2, {
+        flight: 'AC1240',
+        seat: '15A',
+        seat_reason: '14A unavailable; assigned nearest open window seat 15A',
+        journey_status: 'RESOLVED',
+      })?.mismatches,
     ).toEqual([]);
     expect(
       final('hotel-unavailable', 1, { needs_human: true, journey_status: 'RESOLVING' })?.mismatches,
     ).toEqual([]);
     expect(
-      final('upgrade-race', 6, { offer_status: 'invalidated', charged: '0.00', seat: '14A' })
-        ?.mismatches,
+      final('upgrade-race', 6, {
+        offer_status: 'invalidated',
+        offers_sent: 1,
+        charged: '0.00',
+        seat: '14A',
+      })?.mismatches,
     ).toEqual([]);
     expect(
       final('upgrade-race', 6, { offer_status: 'accepted', charged: '135.00', seat: '2A' })
         ?.mismatches.length,
     ).toBeGreaterThan(0);
+  });
+
+  it('flags offers_sent and seat_reason mismatches across presets (#403)', () => {
+    expect(
+      evaluate({
+        ...base,
+        scenario_id: 'happy-path',
+        step_index: 1,
+        journey_status: 'RESOLVED',
+        flight: 'AC1240',
+        seat: '14A',
+        offers_sent: 1,
+      })?.mismatches,
+    ).toEqual(['offers_sent: expected 0, saw 1']);
+
+    expect(
+      evaluate({
+        ...base,
+        scenario_id: 'unsatisfiable-request',
+        step_index: 3,
+        journey_status: 'RESOLVED',
+        flight: 'AC1240',
+        offer_status: 'sent',
+        offers_sent: 1,
+      })?.mismatches,
+    ).toEqual(['offer: expected none, saw sent', 'offers_sent: expected 0, saw 1']);
+
+    expect(
+      evaluate({
+        ...base,
+        scenario_id: 'hotel-unavailable',
+        step_index: 1,
+        journey_status: 'RESOLVING',
+        needs_human: true,
+        offer_status: 'sent',
+        offers_sent: 1,
+      })?.mismatches,
+    ).toEqual(['offer: expected none, saw sent', 'offers_sent: expected 0, saw 1']);
+
+    expect(
+      evaluate({
+        ...base,
+        scenario_id: 'seat-taken',
+        step_index: 1,
+        journey_status: 'RESOLVED',
+        flight: 'AC1240',
+        seat: '15A',
+        seat_reason: null,
+      })?.mismatches,
+    ).toEqual(['seat_reason: expected reason recorded, saw none']);
   });
 
   it('returns null for unknown presets', () => {

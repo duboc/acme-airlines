@@ -171,6 +171,9 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
               </ul>
             </>
           )}
+          {state.seat_reason && (
+            <p className="demo-seat-reason">Seat reason: {state.seat_reason}</p>
+          )}
           {state.last_message && (
             <p className="demo-msg">Last message to passenger: {state.last_message}</p>
           )}

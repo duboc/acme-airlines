@@ -72,15 +72,25 @@ describe('DemoPanel', () => {
     expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ journey_id: 'J-1' }));
   });
 
-  it('flags a mismatch in words', async () => {
+  it('flags a mismatch in words and renders seat_reason when present', async () => {
     render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
     fetchMock.mockImplementationOnce(() =>
-      json({ ...base, step_index: 1, journey_status: 'DETECTED', flight: 'AC1240', seat: '14A' }),
+      json({
+        ...base,
+        step_index: 1,
+        journey_status: 'DETECTED',
+        flight: 'AC1240',
+        seat: '14A',
+        seat_reason: '14A unavailable; assigned nearest open window seat 15A',
+      }),
     );
     await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
     expect(await screen.findByText('Differs from the expectation')).toBeInTheDocument();
     expect(screen.getByText('status: expected RESOLVED, saw DETECTED')).toBeInTheDocument();
+    expect(
+      screen.getByText('Seat reason: 14A unavailable; assigned nearest open window seat 15A'),
+    ).toBeInTheDocument();
   });
 
   it('disables Next step when the script is done', async () => {
