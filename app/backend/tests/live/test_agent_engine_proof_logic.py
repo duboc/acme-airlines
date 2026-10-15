@@ -323,7 +323,21 @@ def test_compare_flags_each_difference_without_echoing_content():
     out = compare_snapshots(snap(), snap(state={"seat": "9Z"}, messages=MSGS[:1]))
     assert len(out) == 2 and "1 entries, expected 2" in out[1]
     assert "9Z" not in " ".join(out)
-    assert "same size" in compare_snapshots(snap(), snap(journeys=[{"journey_id": "J-2"}]))[0]
+    assert (
+        "1 of 1 differ: index 0 [journey_id]"
+        in compare_snapshots(snap(), snap(journeys=[{"journey_id": "J-2"}]))[0]
+    )
+
+
+def test_compare_names_the_message_fields_and_indexes_without_content():
+    changed = [("outbound", "other words", (), (), "t1"), MSGS[1],
+               ("outbound", "x", ("btn",), (), "t3")]  # fmt: skip
+    ref = snap(messages=[MSGS[0], MSGS[1], ("outbound", "x", (), (), "t3")])
+    (msg,) = compare_snapshots(ref, snap(messages=changed))
+    assert msg.endswith("2 of 3 differ: index 0 [text], index 2 [buttons]")
+    assert "other words" not in msg and "btn" not in msg
+    (state,) = compare_snapshots(snap(), snap(state={"offers_sent": 1, "seat": "9Z"}))
+    assert state.endswith("fields ['seat']") and "9Z" not in state
 
 
 def test_duplicate_check_flags_repeated_message_extra_message_and_extra_offer():

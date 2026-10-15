@@ -600,7 +600,7 @@ DIAG_FIELDS: dict[str, dict[str, Callable[[Any], bool]]] = {
     "rebuild": {  # a scenario rebuilt by replay on this container (#266)
         "preset": _matches(_PRESET), "from_step": _is_int, "to_step": _is_int,
         "reason": _matches(_NAME), "ms": _is_num, "proc": _matches(_HEX8),
-        "container": _matches(_HEX8_OR_NA), "pid": _is_int,
+        "container": _matches(_HEX8_OR_NA), "pid": _is_int, "tape_miss": _is_int,
     },
 }  # fmt: skip
 
@@ -684,20 +684,41 @@ async def take_snapshot(backend: Any, state: dict[str, Any]) -> Snapshot:
     return Snapshot(structural(state), journeys, messages)
 
 
+MESSAGE_FIELDS = ("direction", "text", "buttons", "attachments", "timestamp")
+
+
+def _differing(want: Any, got: Any, names: tuple[str, ...] = ()) -> list[str]:
+    """Names of the fields that differ between two entries: never their values (PII)."""
+    if isinstance(want, dict) and isinstance(got, dict):
+        return sorted(k for k in want.keys() | got.keys() if want.get(k) != got.get(k))
+    if isinstance(want, tuple) and isinstance(got, tuple) and len(want) == len(got):
+        return [
+            names[i] if i < len(names) else str(i) for i in range(len(want)) if want[i] != got[i]
+        ]
+    return ["value"]
+
+
 def compare_snapshots(reference: Snapshot, rebuilt: Snapshot) -> list[str]:
-    """State, journeys and conversation of the rebuilt run must equal the non-rebuilt run."""
+    """State, journeys and conversation of the rebuilt run must equal the non-rebuilt run. A
+    failure names WHICH fields differ and at which index, never the content."""
     out = []
-    for name in ("state", "journeys", "messages"):
+    want_state, got_state = reference.state, rebuilt.state
+    if want_state != got_state:
+        fields = _differing(want_state, got_state)
+        out.append(f"rebuilt state differs from the non-rebuilt run: fields {fields}")
+    for name, names in (("journeys", ()), ("messages", MESSAGE_FIELDS)):
         want, got = getattr(reference, name), getattr(rebuilt, name)
-        if want != got:
-            out.append(f"rebuilt {name} differs from the non-rebuilt run ({_brief(want, got)})")
+        if want == got:
+            continue
+        if len(want) != len(got):
+            out.append(f"rebuilt {name} differs from the non-rebuilt run: {len(got)} entries, "
+                       f"expected {len(want)}")  # fmt: skip
+            continue
+        bad = [f"index {i} {_differing(w, g, names)}".replace("'", "")
+               for i, (w, g) in enumerate(zip(want, got, strict=True)) if w != g]  # fmt: skip
+        out.append(f"rebuilt {name} differs from the non-rebuilt run: {len(bad)} of {len(want)} "
+                   f"differ: {', '.join(bad)}")  # fmt: skip
     return out
-
-
-def _brief(want: Any, got: Any) -> str:
-    if isinstance(want, list) and isinstance(got, list) and len(want) != len(got):
-        return f"{len(got)} entries, expected {len(want)}"
-    return "same size, different content"  # never the content: it carries passenger text
 
 
 def duplicate_failures(reference: Snapshot, rebuilt: Snapshot) -> list[str]:
