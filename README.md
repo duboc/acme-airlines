@@ -11,7 +11,7 @@ builds and evaluates it (modeled after [`duboc/scion-experiment`](https://github
 | [`observatory/`](observatory/) | The evaluation & observability collector and dashboard (`acme-observatory`). |
 | [`docs/scion/`](docs/scion/README.md) | Scion setup, 2-project architecture, 10 role templates, 15-minute heartbeat, and GitHub issue protocol. |
 | [`docs/scion/templates/`](docs/scion/templates/) | Shared protocol (`_shared/agents.md`) + 10 role templates (`lead`, `backend`, `frontend`, `reviewer`, `deployer`, `eval-lead`, `factory-analyst`, `search-evaluator`, `ui-craftsman`, `eval-deployer`). |
-| [`docs/product/`](docs/product/) | Product brief ([IRROPS use case](docs/product/irrops-use-case.md)), [policy rules](docs/product/policy-rules.md), [engines](docs/product/engines.md), [test strategy](docs/product/test-strategy.md), and [try-it guide](docs/product/try-it.md). |
+| [`docs/product/`](docs/product/) | Product brief ([IRROPS use case](docs/product/irrops-use-case.md)), [policy rules](docs/product/policy-rules.md), [engines](docs/product/engines.md), [deploy & configuration](docs/product/deploy.md), [test strategy](docs/product/test-strategy.md), and [try-it guide](docs/product/try-it.md). |
 | [`infra/`](infra/) | Declarative Hub & GCP setup scripts ([`infra/setup-scion.sh`](infra/setup-scion.sh), [`infra/render-templates.py`](infra/render-templates.py), [`infra/verify.sh`](infra/verify.sh)). |
 | [`REVIEW.md`](REVIEW.md) / [`DEPLOYMENT.md`](DEPLOYMENT.md) | Review and deployment logs maintained by `reviewer` and `deployer`. |
 
@@ -33,6 +33,13 @@ docker compose -f app/compose.yaml up --build
 Then open:
 - **Operator Console:** `http://localhost:8080/console`
 - **WhatsApp Passenger Chat:** `http://localhost:8080/whatsapp`
+
+### Runtime configuration, Compose topology & engine state
+
+See the **[Configuration reference](docs/product/deploy.md#configuration-reference)** for every `ACME_*` and `LLM_*` variable:
+- **Fail-closed credentials & LLM bounds:** `ACME_SIM_TOKENS` (secret, set at deploy; random per-process in standalone `acme-sim`, required in Compose) maps callers to allowlists (`sales` can only reach `inventory` MCP, `403` elsewhere). `ACME_SALES_TOKEN` (secret, set at deploy; no default) is required in local mode: `acme-customer` and `acme-sales` refuse to start without it, and `SalesRouteGuard` denies any Sales-credentialed call outside `POST /a2a` with `403` (#230). `LLM_MODE` defaults to `fake` ($0, offline); `vertex` requires `ACME_GENAI_LOCATION=global` and ADC (refuses API keys or regional endpoints), and `LLM_TIMEOUT_SECONDS` (default `8.0`s) cancels slow model calls so compose falls back to deterministic templates and parse fails closed to `Other` (#231).
+- **Compose network split (#265):** `app/compose.yaml` isolates services across three networks: `web-net` (`10.89.1.0/24`), internal `a2a-net` (`10.89.2.0/24`), and internal `sim-net`. `customer-runtime` binds its passenger API (`ACME_CUSTOMER_HOST=10.89.1.2`, port `8800`) on `web-net` only and its A2A-only listener (`ACME_A2A_HOST=10.89.2.2`, `ACME_A2A_PORT=8802`) on `a2a-net` only, so `sales-agent` (`a2a-net`, `sim-net`) has no route to port `8800` or the browser network.
+- **Background loop, read-only GETs & engine state model (#200, #228, [ADR 0103](docs/decisions/0103-stateless-engine-scenarios.md)):** In local HTTP mode, `ACME_CUSTOMER_LOOP` (default `1`, `0` disables) runs the 1 s background OCC poll, proactive WhatsApp outreach, and no-offer service closure loop, keeping all HTTP `GET` endpoints strictly read-only. On [Vertex AI Agent Engine](docs/product/engines.md), workers within a container share SQLite state via `ACME_STATE_DB=/tmp/acme-state/state.db` (`max_instances=1`), and `EngineBackend` sends `{preset, step, tape}` on every scenario call so an unseeded or restarted container deterministically rebuilds state by offline replay and replays recorded LLM answers from the `RecordingLlm`/`TapeLlm` replay tape (degrading to `FakeLlm` on `tape_miss`).
 
 ## Scion Software Factory Configuration
 
