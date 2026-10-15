@@ -128,6 +128,7 @@ class EngineBackend:
         self._customer, self._sales = customer, sales
         self._active: str | None = None
         self._step = 0  # the caller-side step counter sent with every call (#266)
+        self._tape: list[Any] | None = None  # the replay tape the engine returned (#279)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> EngineBackend:
@@ -147,17 +148,29 @@ class EngineBackend:
     def _ctx(self) -> dict[str, Any]:
         """Where the scenario is, on every call: a container that does not hold that state (another
         replica, a restart) rebuilds it deterministically instead of failing (#266)."""
-        return {} if self._active is None else {"preset": self._active, "step": self._step}
+        if self._active is None:
+            return {}
+        ctx: dict[str, Any] = {"preset": self._active, "step": self._step}
+        if self._tape is not None:  # engines without a tape (older deploys) never get the key
+            ctx["tape"] = self._tape
+        return ctx
+
+    def _keep_tape(self, state: dict) -> dict:
+        """Remember the engine's replay tape and hand the plain state on: the tape holds passenger
+        text and goes back only to the Customer engine (never to Sales or the API client)."""
+        tape = state.pop("tape", None)
+        self._tape = tape if isinstance(tape, list) else None
+        return state
 
     async def scenario_start(self, scenario_id: str) -> dict:
         state = await self._customer.call("scenario_start", scenario_id=scenario_id)
         self._active, self._step = scenario_id, state["step_index"]
-        return state
+        return self._keep_tape(state)
 
     async def scenario_state(self) -> dict:
         state = await self._customer.call("scenario_state", **self._ctx())
         self._step = state["step_index"]
-        return state
+        return self._keep_tape(state)
 
     async def scenario_step(self, scenario_id: str) -> dict:
         """Customer step, then one Sales engine turn (its own trace). `409` conditions are the

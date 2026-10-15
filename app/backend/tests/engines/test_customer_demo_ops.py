@@ -92,7 +92,7 @@ async def test_engine_state_and_journey_equal_the_api(sid):
     app.scenario_start(sid)
     state = await drive(app)
     api_state, api_journeys, api_detail = await api_run(sid)
-    assert state == api_state
+    assert {k: v for k, v in state.items() if k != "tape"} == api_state  # tape: caller only
     assert app.journeys_list() == api_journeys
     if api_detail:
         assert stable(await app.journey_detail(api_journeys[0]["journey_id"])) == stable(api_detail)
