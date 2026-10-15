@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from acme.customer.closure import close_loop
 from acme.customer.skills import CustomerSkills
 from acme.domain.journey import OfferRecord
-from acme.policy.guardrail_offer import evaluate_traced
+from acme.policy.guardrail_offer import GuardrailDecision, evaluate_traced
 from acme.sim.client import ToolError
 
 if TYPE_CHECKING:
@@ -96,7 +96,10 @@ async def _convert(rt: CustomerRuntime, rec: JourneyRecord, record: OfferRecord)
         reasons = list(decision.reasons) if not decision.approved else ["no_inventory"]
         if record.status != "sent" and decision.approved:
             reasons = ["offer_already_made"]
-        skills._decision_event(state, offer, decision)  # noqa: SLF001
+        # What is recorded is what happened: a refusal, with its reasons, never the approval the
+        # guardrail alone would have given (#354).
+        refused = decision if not decision.approved else GuardrailDecision(False, reasons)
+        skills._decision_event(state, offer, refused)  # noqa: SLF001
         return await _refuse(rt, rec, record, reasons)
     seat = open_premium[0]
     pnr = rec.pnr_locator

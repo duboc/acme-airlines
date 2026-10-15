@@ -136,8 +136,20 @@ class SimWorld:
     def cabin_inventory(self, flight: str, cabin: str) -> CabinInventory:
         for inv in self.world.inventory:
             if inv.flight_number == flight and inv.cabin == cabin:
-                return inv
+                return self._live(inv)
         raise SimError(f"no {cabin} inventory for {flight}")
+
+    def _live(self, inv: CabinInventory) -> CabinInventory:
+        """The seed count capped by the seats that really are free: those the flight still lists
+        open and DCS does not hold, so inventory and DCS describe one world (#354)."""
+        from acme.sim.dcs import dcs_state
+
+        seats = self.flight(inv.flight_number).open_seats.get(inv.cabin)
+        if seats is None:
+            return inv
+        holds = dcs_state(self).holds
+        unheld = sum(1 for seat in seats if (inv.flight_number, seat) not in holds)
+        return inv.model_copy(update={"open_seats": min(inv.open_seats, unheld)})
 
     @staticmethod
     def money(value: Decimal) -> str:

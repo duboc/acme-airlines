@@ -127,6 +127,48 @@ async def test_convert_requires_a_sent_offer_even_if_the_guardrail_would_approve
     assert not charges(c) and seat_of(c).seat == "14A"
 
 
+def last_decision(c):
+    return [e for e in c.state.timeline if e.type == "guardrail_decision"][-1].payload
+
+
+async def test_accept_when_every_premium_seat_is_gone_logs_a_refusal_not_an_approval(c):
+    """#354: the inventory kept saying 4 seats after DCS had none, and the refusal was preceded by
+    a `guardrail_decision` with approved=True."""
+    c.rt.world.flights["AC1252"].open_seats["premium_business"].clear()  # DCS has none left
+    assert c.rt.sim.cabin_inventory("AC1252", "premium_business").open_seats == 0
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    assert not charges(c)
+    decision = last_decision(c)
+    assert decision["approved"] is False and "no_inventory" in decision["reasons"]
+
+
+async def test_a_refusal_after_an_approving_guardrail_is_logged_as_a_refusal(c, monkeypatch):
+    """The guardrail alone approves but there is no open seat to hold (a race): what the timeline
+    records is the refusal and its reason."""
+    from acme.customer import conversion
+    from acme.policy.guardrail_offer import GuardrailDecision
+
+    monkeypatch.setattr(
+        conversion, "evaluate_traced", lambda *a: GuardrailDecision(True, ["a", "b"])
+    )
+    c.rt.world.flights["AC1252"].open_seats["premium_business"].clear()
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    assert last_decision(c) == {
+        "approved": False, "reasons": ["no_inventory"], "offer_id": last_decision(c)["offer_id"]
+    }  # fmt: skip
+
+
+async def test_re_accepting_an_invalidated_offer_is_logged_as_offer_already_made(c, monkeypatch):
+    from acme.customer import conversion
+    from acme.policy.guardrail_offer import GuardrailDecision
+
+    c.state.offers[0].status = "invalidated"
+    monkeypatch.setattr(conversion, "evaluate_traced", lambda *a: GuardrailDecision(True, ["a"]))
+    assert await accept_offer(c.rt, c.rec) == "invalidated"
+    decision = last_decision(c)
+    assert decision["approved"] is False and decision["reasons"] == ["offer_already_made"]
+
+
 async def test_accept_after_journey_moved_to_another_flight_is_refused(c):
     await c.rt.sim.rebook(PNR, "AC1260")  # releases the AC1252 seat; no premium seat is touched
     before = sent_count(c)
