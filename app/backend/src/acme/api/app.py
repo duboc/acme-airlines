@@ -336,10 +336,17 @@ def create_local_app(clock: Clock | None = None, sales_token: str | None = None)
 
     @app.post("/whatsapp/{passenger_id}/messages", status_code=201, tags=["whatsapp"])
     async def whatsapp_reply(passenger_id: str, body: PassengerReply) -> WhatsAppMessage:
-        return await do_reply(rt, passenger_id, body.text)
+        msg = await do_reply(rt, passenger_id, body.text)
+        if runner.active is not None:
+            runner.advance_if_matches("whatsapp_reply", passenger_id, body.text)
+            await runner.radar.tick()
+        return msg
 
     @app.post("/whatsapp/{passenger_id}/actions", tags=["whatsapp"])
     async def whatsapp_action(passenger_id: str, body: PassengerAction) -> ActionResult:
-        return await do_action(rt, passenger_id, body.action)
+        res = await do_action(rt, passenger_id, body.action)
+        if runner.active is not None:
+            runner.advance_if_matches("whatsapp_action", passenger_id, body.action)
+        return res
 
     return app

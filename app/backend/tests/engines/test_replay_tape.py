@@ -277,3 +277,89 @@ async def test_the_rebuild_proof_reports_only_the_error_class(monkeypatch):
         and "passenger text" not in text
         and "tape" not in text.replace("forced rebuild", "").replace("replay tape", "")
     )
+
+
+async def test_manual_whatsapp_turns_matching_scripted_steps_survive_rebuild(monkeypatch):
+    """#322 AC2 & AC3: manual reply and action matching scripted preset steps advance _step,
+    refresh _tape, and survive a cross-container _ensure_scenario rebuild with tape_miss == 0."""
+    app, cust, sales = build(Creative())
+    backend = EngineBackend(cust, sales)
+    await backend.scenario_start("happy-path")
+    for _ in range(3):
+        await backend.scenario_step("happy-path")
+    await backend.api("whatsapp_reply", passenger_id=PID, text="Perfect, thanks!")
+    assert backend._step == 4  # noqa: SLF001
+    assert any(e.get("k") == "offer" for e in (backend._tape or []))  # noqa: SLF001
+    await backend.api("whatsapp_action", passenger_id=PID, action="accept_offer")
+    assert backend._step == 5 and backend.done  # noqa: SLF001
+    before_state = await backend.scenario_state()
+    before_snap = await snapshot(backend)
+    log = diags(monkeypatch)
+    rebuilt_state = await force_rebuild(backend, "happy-path", backend._step, backend._tape)  # noqa: SLF001
+    assert rebuilt_state == before_state
+    assert rebuilt_state["offer_status"] == "accepted" and rebuilt_state["charged"] == "135.00"
+    assert await snapshot(backend) == before_snap
+    (_, rebuild) = next(e for e in log if e[0] == "rebuild")
+    assert rebuild["tape_miss"] == 0
+
+
+async def test_adhoc_manual_whatsapp_turns_survive_cross_container_rebuild(monkeypatch):
+    """#322 AC2 & AC3: ad-hoc manual WhatsApp replies and button taps are recorded on the tape and
+    replayed across cold and same-step mismatched containers without losing state."""
+    app, cust, sales = build(Creative())
+    backend = EngineBackend(cust, sales)
+    await backend.scenario_start("happy-path")
+    for _ in range(3):
+        await backend.scenario_step("happy-path")
+    # Ad-hoc acknowledgement text (does not match steps[3].text == "Perfect, thanks!").
+    await backend.api("whatsapp_reply", passenger_id=PID, text="Sounds good, thank you!")
+    assert backend._step == 3  # noqa: SLF001
+    assert any(e.get("m") == "manual_reply" for e in (backend._tape or []))  # noqa: SLF001
+    assert any(e.get("k") == "offer" for e in (backend._tape or []))  # noqa: SLF001
+    await backend.api("whatsapp_action", passenger_id=PID, action="accept_offer")
+    assert any(e.get("m") == "manual_action" for e in (backend._tape or []))  # noqa: SLF001
+    before_state = await backend.scenario_state()
+    before_snap = await snapshot(backend)
+    (jid,) = [j["journey_id"] for j in before_snap[0]]
+    before_detail = await backend.journey_detail(jid)
+    assert before_detail["resolution_acknowledged"] is True
+    assert before_detail["status"] == "CLOSED" and before_detail["seat"]["seat"] == "2A"
+
+    # 1) Cold / decoy container rebuild:
+    log = diags(monkeypatch)
+    rebuilt_state = await force_rebuild(backend, "happy-path", backend._step, backend._tape)  # noqa: SLF001
+    assert rebuilt_state == before_state
+    assert await snapshot(backend) == before_snap
+    rebuilt_detail = await backend.journey_detail(jid)
+    assert rebuilt_detail["resolution_acknowledged"] is True
+    assert rebuilt_detail["status"] == "CLOSED" and rebuilt_detail["seat"]["seat"] == "2A"
+    assert rebuilt_detail["offer"]["status"] == "accepted"
+    (_, rebuild) = next(e for e in log if e[0] == "rebuild")
+    assert rebuild["tape_miss"] == 0
+
+    # 2) Same-step container parked at ("happy-path", 3) BEFORE the ad-hoc manual turns:
+    saved_tape = list(backend._tape or [])  # noqa: SLF001
+    await backend.scenario_start("happy-path")
+    for _ in range(3):
+        await backend.scenario_step("happy-path")
+    log.clear()
+    backend._tape = saved_tape  # noqa: SLF001
+    rebuilt_same_step = await backend.scenario_state()
+    assert rebuilt_same_step == before_state
+    assert next(e for e in log if e[0] == "rebuild")[1]["reason"] == "step_mismatch"
+
+
+def test_clean_tape_validates_manual_turn_entries():
+    valid = [
+        {"m": "manual_reply", "pid": "P-MARIANA", "text": "Thanks!", "step": 3.0},
+        {"m": "manual_action", "pid": "P-MARIANA", "action": "accept_offer", "step": 3},
+    ]
+    cleaned = clean_tape(valid)
+    assert cleaned is not None and cleaned[0]["step"] == 3 and isinstance(cleaned[0]["step"], int)
+    for bad in (
+        [{"m": "manual_reply", "pid": "", "text": "x", "step": 0}],
+        [{"m": "manual_reply", "pid": "P-MARIANA", "text": "x", "step": -1}],
+        [{"m": "manual_reply", "pid": "P-MARIANA", "text": "x", "step": 1.5}],
+        [{"m": "manual_action", "pid": "P-MARIANA", "action": "bogus", "step": 0}],
+    ):
+        assert clean_tape(bad) is None

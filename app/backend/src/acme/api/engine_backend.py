@@ -10,6 +10,7 @@ response bodies (they carry passenger data).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import random
@@ -33,9 +34,10 @@ from acme.api.app import (
 )
 from acme.api.errors import ApiError, add_error_handlers, not_found
 from acme.api.events import TimelineEvent
-from acme.api.scenarios import ACK, BY_ID, PresetView, ScenarioState
+from acme.api.scenarios import ACK, BY_ID, PresetView, ScenarioState, matches_step
 from acme.api.sse import event_stream, resume_from
 from acme.customer.runtime import WhatsAppMessage
+from acme.llm.tape import MAX_ENTRIES, manual_entry
 
 ENV_CUSTOMER, ENV_SALES = "AGENT_ENGINE_CUSTOMER", "AGENT_ENGINE_SALES"
 ASYNC_OPS = {
@@ -396,15 +398,41 @@ class EngineBackend:
         self._tape = None  # the tape belongs to the run that is over (#279)
         return await self._customer.call("reset")
 
+    def _note_manual(self, op: str, kwargs: Mapping[str, Any]) -> None:
+        if self._active not in BY_ID or op not in ("whatsapp_reply", "whatsapp_action"):
+            return
+        pid = kwargs.get("passenger_id", "")
+        value = kwargs.get("text", "") if op == "whatsapp_reply" else kwargs.get("action", "")
+        steps = BY_ID[self._active].steps
+        if self._step < len(steps) and matches_step(steps[self._step], op, pid, value):
+            self._step += 1
+            return
+        tape = list(self._tape or [])
+        if len(tape) < MAX_ENTRIES:
+            self._tape = [*tape, manual_entry(op, pid, value, self._step)]
+
     async def api(self, op: str, **kwargs: Any) -> Any:
         """Phone panel and trigger ops, which return API errors as data."""
+        if op in ("whatsapp_reply", "whatsapp_action") and self._sales_pending:
+            if await self._tick_sales() and self._active is not None:
+                await self.scenario_state()
         ctx = self._ctx() if op.startswith("whatsapp_") else {}  # not trigger_cancellation
         if op == "trigger_cancellation":  # the engine ends the preset: so does this cursor (#321)
             self._active, self._step, self._tape = None, 0, None
         reply = ok(await self._customer.call(op, **kwargs, **ctx))
-        if op != "whatsapp_messages":  # a write: the open streams should look again soon
+        if op == "whatsapp_messages":
+            return reply
+        try:
+            self._note_manual(op, kwargs)
+            if op == "whatsapp_reply":
+                self._sales_pending = True
+                await self._tick_sales()
+            if op in ("whatsapp_reply", "whatsapp_action") and self._active is not None:
+                with contextlib.suppress(EngineUnavailable):
+                    await self.scenario_state()
+            return reply
+        finally:
             self._stir()
-        return reply
 
 
 async def _timeline_after(backend: EngineBackend, journey_id: str, sent: int) -> list[dict]:
