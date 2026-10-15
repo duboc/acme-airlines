@@ -165,7 +165,7 @@ async def test_recorded_failures_are_replayed_as_failures_and_misses_fall_back()
     rec = RecordingLlm(Boom())
     with pytest.raises(TimeoutError):
         await rec.compose_passenger_message({})
-    assert rec.entries == [{"m": "compose", "fail": True}]
+    assert rec.entries == [{"m": "compose", "fail": True, "k": "notice"}]
     replay = TapeLlm(rec.entries)
     with pytest.raises(RuntimeError):
         await replay.compose_passenger_message({})
@@ -194,3 +194,86 @@ async def test_the_rebuild_proof_replays_the_plain_runs_tape_not_the_decoys(monk
     assert report.failures == []
     (_, rebuild) = next(e for e in log if e[0] == "rebuild")
     assert rebuild["tape_miss"] == 0
+
+
+class Terse(FakeLlm):
+    """Live-like: the notice and the offer come back without the facts the code requires."""
+
+    async def compose_passenger_message(self, context):
+        return "Hi, so sorry about your flight. Reply here if you need anything."
+
+
+async def shifted_rebuild(monkeypatch, mutate):
+    app, cust, sales = build(Terse())
+    backend = EngineBackend(cust, sales)
+    state = await plain_run(backend)
+    log = diags(monkeypatch)
+    rebuilt = await force_rebuild(
+        backend,
+        "happy-path",
+        state["step_index"],
+        mutate(backend._tape),  # noqa: SLF001
+    )
+    return state, rebuilt, next(kw for e, kw in log if e == "rebuild")
+
+
+def lose_first_parse_add_compose(tape):
+    kept = [e for e in tape if e.get("kind") != "departure_after"]
+    return kept + [{"m": "compose", "text": "extra", "k": "notice"}]
+
+
+async def test_a_shifted_tape_matches_by_input_and_never_crashes_the_rebuild(monkeypatch):
+    """#279 live run 4: a tape without the first parse used to hand the `ack` to the 'after 10am'
+    request, so no offer was sent and the rebuild died with NoSentOffer."""
+    state, rebuilt, diag = await shifted_rebuild(monkeypatch, lose_first_parse_add_compose)
+    assert rebuilt == state
+    assert diag["tape_miss"] == 1 and diag["tape_discarded"] == 0  # only the lost parse
+
+
+async def test_a_tape_that_still_breaks_the_replay_is_discarded_not_fatal(monkeypatch):
+    app, cust, sales = build(Terse())
+    backend = EngineBackend(cust, sales)
+    state = await plain_run(backend)
+    log = diags(monkeypatch)
+    real_step = app.scenarios.step
+
+    async def step(**kw):  # what the live run did: the flow dies when this tape is replayed
+        if any(app.runtime.llm._tape.values()):  # noqa: SLF001
+            raise RuntimeError("NoSentOffer")
+        return await real_step(**kw)
+
+    monkeypatch.setattr(app.scenarios, "step", step)
+    rebuilt = await force_rebuild(backend, "happy-path", state["step_index"], backend._tape)  # noqa: SLF001
+    (diag,) = (kw for e, kw in log if e == "rebuild")
+    assert rebuilt == state and diag["tape_discarded"] == 1
+
+
+async def test_entries_match_their_own_input_and_old_unkeyed_entries_match_by_position():
+    tape = [
+        {"m": "parse", "kind": "ack", "k": "other-input"},
+        {"m": "parse", "kind": "ack"},  # an older tape: no key
+    ]
+    replay = TapeLlm(tape)
+    assert isinstance(await replay.parse_passenger_request("after 10am"), Acknowledge)
+    assert replay.misses == 0  # the unkeyed entry, by position; the keyed one is not hers
+    assert not isinstance(await replay.parse_passenger_request("hello"), Acknowledge)  # fake
+    assert replay.misses == 1
+    assert clean_tape([{"m": "parse", "kind": "ack", "k": ""}]) is None
+    assert clean_tape([{"m": "parse", "kind": "ack", "k": 5}]) is None
+
+
+async def test_the_rebuild_proof_reports_only_the_error_class(monkeypatch):
+    from tests.live.agent_engine_proof import run_rebuild_proof
+
+    class Leaky(EngineBackend):
+        async def scenario_state(self):
+            raise RuntimeError("Request Data: {'tape': ['passenger text']}")
+
+    app, cust, sales = build(Creative())
+    report = await run_rebuild_proof(Leaky(cust, sales), lambda since: [], wait=0.0)
+    text = report.markdown() + str(report.failures)
+    assert (
+        "RuntimeError" in text
+        and "passenger text" not in text
+        and "tape" not in text.replace("forced rebuild", "").replace("replay tape", "")
+    )

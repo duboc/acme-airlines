@@ -9,6 +9,7 @@ input (`clean_tape`): at most MAX_ENTRIES well-formed entries; a malformed tape 
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from datetime import time
 from typing import Any
@@ -18,14 +19,29 @@ from acme.llm.port import Acknowledge, DepartureAfter, LlmPort, Other, Structure
 
 MAX_ENTRIES, MAX_TEXT = 32, 2000
 Entry = dict[str, Any]
+KEY = "k"  # optional: what the entry answers; entries without it (older tapes) replay by position
 
 
-def _encode(result: StructuredRequest) -> Entry:
+def text_key(text: str) -> str:
+    """A short digest of the passenger text: lets the replay tell which call an entry belongs to
+    without the tape (or a log) revealing more than it already holds."""
+    return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+
+def context_key(context: Mapping[str, Any]) -> str:
+    """What a compose is for: the Sales offer or the resolution notice. Never content."""
+    return "offer" if "offer" in context else "notice"
+
+
+def _encode(result: StructuredRequest, key: str | None = None) -> Entry:
+    extra = {} if key is None else {KEY: key}
     if isinstance(result, DepartureAfter):
-        return {"m": "parse", "kind": "departure_after", "time": result.time.strftime("%H:%M")}
-    if isinstance(result, Acknowledge):
-        return {"m": "parse", "kind": "ack"}
-    return {"m": "parse", "kind": "other", "text": result.text[:MAX_TEXT]}
+        kind = {"kind": "departure_after", "time": result.time.strftime("%H:%M")}
+    elif isinstance(result, Acknowledge):
+        kind = {"kind": "ack"}
+    else:
+        kind = {"kind": "other", "text": result.text[:MAX_TEXT]}
+    return {"m": "parse", **kind, **extra}
 
 
 def _decode(entry: Entry) -> StructuredRequest:
@@ -37,6 +53,11 @@ def _decode(entry: Entry) -> StructuredRequest:
 def _valid(entry: Any) -> bool:
     if not isinstance(entry, dict):
         return False
+    if KEY in entry:
+        key = entry[KEY]
+        if not isinstance(key, str) or not 0 < len(key) <= 32:
+            return False
+        entry = {k: v for k, v in entry.items() if k != KEY}
     if entry.get("fail") is True:
         return entry.get("m") in ("compose", "parse") and set(entry) == {"m", "fail"}
     if entry.get("m") == "compose":
@@ -85,10 +106,12 @@ class RecordingLlm:
             text = await self.inner.compose_passenger_message(context)
         except Exception:
             if self._room():
-                self.entries.append({"m": "compose", "fail": True})
+                self.entries.append({"m": "compose", "fail": True, KEY: context_key(context)})
             raise
         if self._room():
-            self.entries.append({"m": "compose", "text": text[:MAX_TEXT]})
+            self.entries.append(
+                {"m": "compose", "text": text[:MAX_TEXT], KEY: context_key(context)}
+            )
         return text
 
     async def parse_passenger_request(self, text: str) -> StructuredRequest:
@@ -96,42 +119,47 @@ class RecordingLlm:
             result = await self.inner.parse_passenger_request(text)
         except Exception:
             if self._room():
-                self.entries.append({"m": "parse", "fail": True})
+                self.entries.append({"m": "parse", "fail": True, KEY: text_key(text)})
             raise
         if self._room():
-            self.entries.append(_encode(result))
+            self.entries.append(_encode(result, text_key(text)))
         return result
 
 
 class TapeLlm:
-    """Replays a cleaned tape, per method and in order. A missing or mismatching entry falls back
-    to the fake model and is counted in `misses`; it never fails the call. What it answered is
-    in `entries`, the tape the rebuilt engine carries on."""
+    """Replays a cleaned tape, per method. An entry answers a call only if it was recorded for the
+    same input (the next unused entry whose key matches; entries without a key match by position).
+    A missing or mismatching entry falls back to the fake model and is counted in `misses`; it never
+    fails the call. What it answered is in `entries`, the tape the rebuilt engine carries on."""
 
     def __init__(self, tape: list[Entry]) -> None:
         self._tape = {m: [e for e in tape if e["m"] == m] for m in ("compose", "parse")}
-        self._seen = {"compose": 0, "parse": 0}
         self._fake, self.misses, self.entries = FakeLlm(), 0, []  # type: ignore[var-annotated]
 
-    def _next(self, method: str) -> Entry | None:
-        i, self._seen[method] = self._seen[method], self._seen[method] + 1
-        return self._tape[method][i] if i < len(self._tape[method]) else None
+    def _next(self, method: str, key: str) -> Entry | None:
+        for i, entry in enumerate(self._tape[method]):
+            if entry.get(KEY, key) == key:
+                return self._tape[method].pop(i)
+        return None
 
     async def compose_passenger_message(self, context: Mapping[str, Any]) -> str:
-        entry = self._next("compose")
+        key = context_key(context)
+        entry = self._next("compose", key)
         if entry is None:
             self.misses += 1
-            entry = {"m": "compose", "text": await self._fake.compose_passenger_message(context)}
+            text = await self._fake.compose_passenger_message(context)
+            entry = {"m": "compose", "text": text, KEY: key}
         self.entries.append(entry)
         if entry.get("fail"):
             raise RuntimeError("replayed LLM failure")
         return entry["text"]
 
     async def parse_passenger_request(self, text: str) -> StructuredRequest:
-        entry = self._next("parse")
+        key = text_key(text)
+        entry = self._next("parse", key)
         if entry is None:
             self.misses += 1
-            entry = _encode(await self._fake.parse_passenger_request(text))
+            entry = _encode(await self._fake.parse_passenger_request(text), key)
         self.entries.append(entry)
         if entry.get("fail"):
             raise RuntimeError("replayed LLM failure")
