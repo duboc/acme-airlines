@@ -287,3 +287,135 @@ async def test_given_a_stream_error_that_is_not_typed_then_it_still_surfaces():
 
     with pytest.raises(RuntimeError):
         [f async for f in event_stream(Request(), fetch, limit=None, poll_seconds=0.001)]
+
+
+# --- #351 and #356: the Sales tick of a step, and the timeline poller ---------------------------
+
+
+class ScriptedSales:
+    """A Sales engine whose tick fails `fail` times, then runs the real one."""
+
+    def __init__(self, real, fail=0, exc=None):
+        self.real, self.fail, self.calls = real, fail, 0
+        self.exc = exc or RuntimeError("tick rpc failed")
+
+    def stream(self, **kw):
+        self.calls += 1
+        if self.fail > 0:
+            self.fail -= 1
+            raise self.exc
+        return self.real.stream(**kw)
+
+    async def call(self, op, **kw):
+        return await self.real.call(op, **kw)
+
+
+async def to_step(backend, n):
+    await backend.scenario_start("happy-path")
+    for _ in range(n):
+        await backend.scenario_step("happy-path")
+
+
+async def test_given_a_transient_sales_failure_at_the_ack_step_then_one_retry_sends_the_offer():
+    backend = local_backend()
+    await to_step(backend, 3)
+    backend._sales = sales = ScriptedSales(backend._sales, fail=1)  # noqa: SLF001
+    state = await backend.scenario_step("happy-path")  # the ACK step
+    assert sales.calls == 2 and state["offer_status"] == "sent"  # retried once, offer delivered
+    assert not backend._sales_pending  # noqa: SLF001
+
+
+async def test_given_sales_down_at_the_ack_step_then_the_accept_step_waits_instead_of_wedging():
+    """#351: the swallowed tick left no offer, step 5 raised NoSentOffer inside the engine (503)
+    on every click, forever."""
+    backend = local_backend()
+    await to_step(backend, 3)
+    real_sales = backend._sales  # noqa: SLF001
+    backend._sales = down = ScriptedSales(real_sales, fail=99)  # noqa: SLF001
+    ack = await backend.scenario_step("happy-path")
+    assert ack["step_index"] == 4 and ack["offers_sent"] == 0 and backend._sales_pending  # noqa: SLF001
+    engine_calls = []
+    real_call = backend._customer.call  # noqa: SLF001
+
+    async def spy(op, **kw):
+        engine_calls.append(op)
+        return await real_call(op, **kw)
+
+    backend._customer.call = spy  # noqa: SLF001
+    with pytest.raises(EngineUnavailable) as err:  # still down: no Customer step, no NoSentOffer
+        await backend.scenario_step("happy-path")
+    assert "Sales engine could not be reached" in str(err.value) and not isinstance(
+        err.value, StepApplied
+    )
+    assert "scenario_step" not in engine_calls and backend._step == 4  # noqa: SLF001
+    assert down.calls >= 3  # the catch-up tried (with its retry) on the second click too
+    down.fail = 0  # Sales recovers: the catch-up tick proposes the offer, the accept goes through
+    state = await backend.scenario_step("happy-path")
+    assert state["offer_status"] == "accepted" and state["charged"] == "135.00"
+
+
+async def test_given_a_quota_error_on_the_tick_then_it_is_not_retried():
+    backend = local_backend()
+    await to_step(backend, 1)
+    backend._sales = sales = ScriptedSales(  # noqa: SLF001
+        backend._sales,
+        fail=99,
+        exc=engine_backend.EngineQuotaExceeded("quota"),  # noqa: SLF001
+    )
+    await backend.scenario_step("happy-path")
+    assert sales.calls == 1 and backend._sales_pending  # noqa: SLF001
+
+
+async def test_given_a_write_then_the_streams_are_stirred_after_the_sales_tick_not_before():
+    backend = local_backend()
+    await to_step(backend, 1)
+    seen = {}
+    real = backend._sales  # noqa: SLF001
+
+    class Probe(ScriptedSales):
+        def stream(self, **kw):
+            seen["seq_during_tick"] = backend._stir_seq  # noqa: SLF001
+            return super().stream(**kw)
+
+    backend._sales = Probe(real)  # noqa: SLF001
+    before = backend._stir_seq  # noqa: SLF001
+    await backend.scenario_step("happy-path")
+    assert seen["seq_during_tick"] == before  # nothing was stirred while Sales was working
+    assert backend._stir_seq == before + 1  # noqa: SLF001 - once, when the whole step is done
+
+
+async def test_given_a_poll_in_flight_when_a_write_stirs_then_the_stir_is_not_overwritten(clock):
+    backend = local_backend()
+    await to_step(backend, 1)
+    (jid,) = [j["journey_id"] for j in await backend.journeys_list()]
+    real = backend.journey_events
+
+    async def poll_during_a_write(journey_id, since=0):
+        out = await real(journey_id, since)
+        backend._stir()  # a step, reply or action lands while this poll is in flight
+        return out
+
+    backend.journey_events = poll_during_a_write
+    await backend.timeline(jid)
+    at, _, interval = backend._timelines[(backend.run, jid)]  # noqa: SLF001
+    assert at == float("-inf") and interval == engine_backend.TIMELINE_BASE_SECONDS
+
+
+async def test_given_a_step_or_a_detail_then_no_redundant_engine_query_is_made():
+    backend = local_backend()
+    counter = backend._customer = CountingEngine(backend._customer)  # noqa: SLF001
+    app = create_engine_app(backend)
+    async with client(app) as c:
+        await c.post("/scenarios/happy-path/start")
+        counter.calls.clear()
+        r = await c.post("/scenarios/happy-path/step")
+        assert r.status_code == 200
+        assert counter.calls.count("scenario_state") == 1  # the one that answers; none before
+        (jid,) = [j["journey_id"] for j in (await c.get("/journeys")).json()]
+        counter.calls.clear()
+        for _ in range(3):
+            assert (await c.get(f"/journeys/{jid}")).status_code == 200
+        assert counter.calls.count("journeys_list") <= 1  # cached, not one per request
+        while not backend.done:
+            await c.post("/scenarios/happy-path/step")
+        assert (await c.post("/scenarios/happy-path/step")).status_code == 409  # finished, no RPC
