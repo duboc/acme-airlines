@@ -135,6 +135,44 @@ async def test_other_is_honest_and_needs_human_keeps_request_open():
     assert last.direction == "outbound" and "colleague" in last.text
 
 
+async def test_other_clears_resolution_acknowledged_and_invalidates_live_offers():
+    from decimal import Decimal
+    from uuid import uuid4
+
+    from acme.domain.models import Offer
+
+    rt = make(FakeLlm({"Wheelchair please": Other(text="Wheelchair please")}))
+    rec = await resolved(rt)
+    await rt.handle_inbound(PID, "Perfect, thanks!")
+    assert rec.state.resolution_acknowledged is True
+
+    def make_offer():
+        return Offer(
+            offer_id=uuid4(),
+            journey_id=rec.state.journey_id,
+            flight="AC1240",
+            cabin="premium_business",
+            price=Decimal("135.00"),
+            standard_price=Decimal("290.00"),
+            net_margin=Decimal("80.00"),
+            currency="USD",
+            origin="sales",
+            optional=True,
+        )
+
+    for status in ("proposed", "approved", "sent", "rejected"):
+        r = rec.state.add_offer(make_offer())
+        r.status = status
+    await rt.handle_inbound(PID, "Wheelchair please")
+    assert rec.state.resolution_acknowledged is False
+    assert [r.status for r in rec.state.offers] == [
+        "invalidated",
+        "invalidated",
+        "invalidated",
+        "rejected",
+    ]
+
+
 async def test_scripted_parse_and_unknown_passenger_journey():
     rt = make(FakeLlm({"later pls": DepartureAfter(time=time(11, 0))}))
     rec = await resolved(rt)

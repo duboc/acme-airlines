@@ -49,6 +49,8 @@ def ineligible_reason(rec: JourneyRecord) -> str | None:
     state = rec.state
     if state.status is not DisruptionStatus.RESOLVED:
         return "disruption_not_resolved"
+    if state.open_requests:
+        return "open_request_pending"
     if not state.resolution_acknowledged:
         return "resolution_not_acknowledged"
     return None
@@ -81,7 +83,7 @@ class CustomerSkills:
         return JourneyStatusView(
             status=state.status.value,
             flight=flight,
-            resolution_acknowledged=state.resolution_acknowledged,
+            resolution_acknowledged=state.resolution_acknowledged and not state.open_requests,
             run_id=rec.run_id,
         )
 
