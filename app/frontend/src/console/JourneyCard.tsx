@@ -24,7 +24,8 @@ export function JourneyCard({ journey }: { journey: JourneyDetail | null }) {
     );
   }
   const current = isDisruptionState(journey.status) ? journey.status : null;
-  const { seat, hotel, offer } = journey;
+  const { seat, hotel, offer, verification } = journey;
+  const verificationChecks = verification ? Object.entries(verification) : [];
   return (
     <section className="panel" aria-labelledby="journey-h">
       <h2 id="journey-h">Journey {journey.journey_id}</h2>
@@ -64,6 +65,11 @@ export function JourneyCard({ journey }: { journey: JourneyDetail | null }) {
         </Row>
         <Row term="Upgrade offer">
           {offer ? `${offer.status}: ${offer.price} (standard ${offer.standard_price})` : 'None'}
+        </Row>
+        <Row term="Verification">
+          {verificationChecks.length > 0
+            ? verificationChecks.map(([k, ok]) => `${k}: ${ok ? '✓' : '✗'}`).join(' · ')
+            : NONE}
         </Row>
       </dl>
     </section>

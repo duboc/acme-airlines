@@ -5,6 +5,19 @@ export interface WhatsAppMessage {
   text: string;
   timestamp: string;
   buttons?: string[];
+  attachments?: string[];
+}
+
+const ATTACHMENT_LABELS: Record<string, string> = {
+  boarding_pass: 'Boarding pass',
+  hotel_voucher: 'Hotel voucher',
+  meal_voucher: 'Meal voucher',
+};
+
+export function attachmentLabel(kind: string): string {
+  if (ATTACHMENT_LABELS[kind]) return ATTACHMENT_LABELS[kind];
+  const text = kind.replaceAll('_', ' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export type PassengerActionName = 'accept_offer' | 'decline_offer';

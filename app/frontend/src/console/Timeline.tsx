@@ -10,7 +10,9 @@ function kindOf(e: JourneyEvent): string {
 
 function reasonsOf(e: JourneyEvent): string[] {
   const r = e.payload?.reasons;
-  return Array.isArray(r) ? r.map(String) : [];
+  if (Array.isArray(r)) return r.map(String);
+  if (e.type === 'sales_suppressed' && e.payload?.reason) return [String(e.payload.reason)];
+  return [];
 }
 
 export function Timeline({ events }: { events: JourneyEvent[] }) {

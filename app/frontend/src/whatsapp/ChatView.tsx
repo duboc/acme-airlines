@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { actionForButton, fetchMessages, postAction, sendReply, type WhatsAppMessage } from './api';
+import {
+  actionForButton,
+  attachmentLabel,
+  fetchMessages,
+  postAction,
+  sendReply,
+  type WhatsAppMessage,
+} from './api';
 import './chat.css';
 
 const POLL_MS = 3000;
@@ -106,6 +113,15 @@ export function ChatView({
                 </span>
                 {m.text}
               </p>
+              {m.attachments && m.attachments.length > 0 && (
+                <div className="attachments" aria-label="Attachments">
+                  {m.attachments.map((a) => (
+                    <span key={a} className="attachment-chip">
+                      {attachmentLabel(a)}
+                    </span>
+                  ))}
+                </div>
+              )}
               <time dateTime={m.timestamp}>{formatTime(m.timestamp)}</time>
               {m.buttons && m.buttons.length > 0 && (
                 <>
