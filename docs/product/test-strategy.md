@@ -124,6 +124,15 @@ Timeouts are kept generous (`timeout_constant`, `timeout_multiplier`): with the 
 31 survivors were misreported as "timeout", which mutmut scores as killed. The `mutation_gate.py`
 tests live next to the script under `.github/scripts/`.
 
+## Shared-state stress (#288)
+
+`SharedState` (one SQLite file, WAL, `busy_timeout` 10 s, one `BEGIN IMMEDIATE` transaction per write)
+is exercised by 4 real processes. The quick regression (`tests/state/test_shared_stress.py`, about
+2 s) is in the PR suite; the same worker for 30 s runs only on demand:
+`cd app/backend && uv run pytest tests/state/test_shared_stress.py -m stress --no-cov`. Both assert no
+`database is locked`, no lost update (clock and version advance once per write) and no version
+regression.
+
 ## Fact → test traceability
 
 `test_harness.py` fails if a scenario test is missing from this table (or the table cites a

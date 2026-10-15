@@ -12,7 +12,13 @@ wrote one, run, write a new snapshot if anything changed, release.
   deadlock) and acquired by polling, so a cancelled waiter never leaks it. A wait longer than
   `lock_timeout` is a `LockTimeout` error, not a hang.
 - State: the runtime snapshot (`acme.state.snapshot`, pydantic JSON) in table `meta`, journey
-  states in the existing `journeys` table of `SqliteJourneyStore` (#16), same SQLite file (WAL).
+  states in the existing `journeys` table of `SqliteJourneyStore` (#16), same SQLite file.
+- SQLite settings (#288, `acme.memory.store.configure_connection`): WAL, `busy_timeout` 10 s and
+  `synchronous=NORMAL` on every connection. The connection is in autocommit mode and every write
+  is ONE explicit `BEGIN IMMEDIATE` transaction (journeys + snapshot + version together, or
+  nothing), so the read-modify-write of the version is atomic even without the flock.
+- Versions never go backwards for a reader: `version()` returns the highest version this object
+  has seen, and `_load` never restores a snapshot older than the one already loaded.
 - Container-local and ephemeral, exactly like the in-memory state it replaces: a restart starts
   clean, and `max_instances=1` stays mandatory (a second container would not share the disk).
 """
@@ -30,7 +36,7 @@ import time
 from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING, Any
 
-from acme.memory.store import SqliteJourneyStore
+from acme.memory.store import SqliteJourneyStore, configure_connection
 from acme.state.snapshot import capture, restore
 
 if TYPE_CHECKING:
@@ -54,6 +60,7 @@ class SharedState:
         self._key = f"{id(self)}"  # reentrancy is per SharedState object, not per file
         self._lock_timeout = lock_timeout
         self._loaded_version: int | None = None
+        self._high_water = 0  # the highest version this object has returned
         self._last_json: str | None = None
         # The files hold passenger data: a directory WE create is 0700, and the database, its
         # -wal/-shm and the lock file are 0600 (umask 077 while they are created, chmod after).
@@ -63,16 +70,18 @@ class SharedState:
             os.chmod(parent, 0o700)
         previous_umask = os.umask(0o077)
         try:
-            self._db = sqlite3.connect(path, check_same_thread=False, timeout=10)
+            self._db = sqlite3.connect(
+                path, check_same_thread=False, timeout=10, isolation_level=None
+            )  # autocommit: transactions are explicit (`_write`)
             # Opening the file switches it to WAL and creates tables, which fails with "database
             # is locked" when two processes start at once: do it under the cross-process lock.
             with self.exclusive_sync():
-                self._db.execute("PRAGMA journal_mode=WAL")
+                configure_connection(self._db)
                 self._db.execute(
                     "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
                 )
-                self._db.commit()
-                self._journeys = SqliteJourneyStore(path)  # the #16 adapter, same file
+                # the #16 adapter on our connection: its writes join our transactions
+                self._journeys = SqliteJourneyStore(path, connection=self._db)
                 self._secure_files()
         finally:
             os.umask(previous_umask)
@@ -137,12 +146,27 @@ class SharedState:
 
     def version(self) -> int:
         v = self._get("version")
-        return int(v) if v else 0
+        self._high_water = max(self._high_water, int(v) if v else 0)
+        return self._high_water
+
+    @contextlib.contextmanager
+    def _write(self) -> Iterator[None]:
+        """One write transaction: takes the database write lock up front (`BEGIN IMMEDIATE`, waits
+        up to `busy_timeout`), commits on success and rolls back on any error."""
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self._db.execute("ROLLBACK")
+            raise
+        self._db.execute("COMMIT")
 
     def _load(self, rt: CustomerRuntime, scenarios: Any | None) -> None:
         version = self.version()
         if version == self._loaded_version:
             return
+        if self._loaded_version is not None and version < self._loaded_version:
+            return  # never go back to an older snapshot than the one already loaded
         text = self._get("snapshot")
         if text:
             try:
@@ -155,19 +179,16 @@ class SharedState:
         text = capture(rt, self._journeys, scenarios, save=False)
         if text == self._last_json:
             return  # nothing changed: no write, no version bump
-        capture(rt, self._journeys, scenarios, save=True)  # journeys -> `journeys` table
-        version = self.version() + 1
-        with self._db:
-            self._db.execute(
-                "INSERT INTO meta (key, value) VALUES ('snapshot', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (text,),
-            )
-            self._db.execute(
-                "INSERT INTO meta (key, value) VALUES ('version', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (str(version),),
-            )
+        with self._write():
+            capture(rt, self._journeys, scenarios, save=True)  # journeys -> `journeys` table
+            version = self.version() + 1
+            for key, value in (("snapshot", text), ("version", str(version))):
+                self._db.execute(
+                    "INSERT INTO meta (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (key, value),
+                )
+        self._high_water = version
         self._loaded_version, self._last_json = version, text
         self._secure_files()  # -wal/-shm are created lazily by the first write
 
@@ -176,7 +197,7 @@ class SharedState:
         return self._get(f"blob:{key}")
 
     def set_blob(self, key: str, value: str) -> None:
-        with self._db:
+        with self._write():
             self._db.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
