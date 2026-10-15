@@ -302,13 +302,15 @@ def create_local_app(clock: Clock | None = None, sales_token: str | None = None)
         async def events(sent: int) -> list[dict]:
             return [e.model_dump(mode="json") for e in rec.state.timeline[sent:]]
 
+        start_after = resume_from(request.headers.get("last-event-id"))
         stream = event_stream(
             request,
             events,
             limit=limit,
             poll_seconds=SSE_POLL_SECONDS,
             still_open=lambda: rt.journeys.get(journey_id) is rec,
-            start_after=resume_from(request.headers.get("last-event-id")),
+            start_after=start_after,
+            first_batch=await events(start_after),  # read before the 200: a failure is a status
         )
         return StreamingResponse(stream, media_type="text/event-stream")
 

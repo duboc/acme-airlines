@@ -439,13 +439,18 @@ def create_engine_app(backend: EngineBackend | None = None) -> FastAPI:
     ) -> StreamingResponse:
         known(await backend.known_journeys(), journey_id)
         run = backend.run  # the stream belongs to this run: a restart ends it (#305)
+        start_after = resume_from(request.headers.get("last-event-id"))
+        # The first batch is read BEFORE the 200 is sent: a quota or engine error is then a 429/503
+        # with Retry-After (EventSource stops or backs off), not an empty stream it reconnects to.
+        first_batch = await _timeline_after(backend, journey_id, start_after)
         stream = event_stream(
             request,
             lambda sent: _timeline_after(backend, journey_id, sent),
             limit=limit,
             poll_seconds=POLL_SECONDS,
             still_open=lambda: backend.run == run,
-            start_after=resume_from(request.headers.get("last-event-id")),
+            start_after=start_after,
+            first_batch=first_batch,
         )
         return StreamingResponse(stream, media_type="text/event-stream")
 

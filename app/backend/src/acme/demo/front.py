@@ -6,6 +6,7 @@ they answer 404 whether at the root or under `/api`, after normalising case, sla
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -15,6 +16,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+DISCONNECT_POLL_SECONDS = 1.0
 BLOCKED_PREFIXES = ("/api/a2a", "/api/.well-known", "/api/mcp")
 _BLOCKED_SEGMENTS = {"a2a", ".well-known", "mcp"}
 _HOP = {
@@ -74,10 +76,26 @@ async def _proxy(request: Request, upstream: httpx.AsyncClient, path: str) -> Re
     out = {k: v for k, v in resp.headers.items() if k.lower() not in _HOP}
 
     async def body():
+        # Waiting for the next chunk of a stream must not hide that the browser is gone: look at
+        # the client every second and close the upstream (the engine stops polling) (#305).
+        chunks = resp.aiter_bytes().__aiter__()
+        pending = None
         try:
-            async for chunk in resp.aiter_bytes():
+            while True:
+                pending = asyncio.ensure_future(chunks.__anext__())
+                while not pending.done():
+                    await asyncio.wait({pending}, timeout=DISCONNECT_POLL_SECONDS)
+                    if not pending.done() and await request.is_disconnected():
+                        return
+                try:
+                    chunk = pending.result()
+                except StopAsyncIteration:
+                    return
+                pending = None
                 yield chunk
         finally:
+            if pending is not None and not pending.done():
+                pending.cancel()
             await resp.aclose()
 
     return StreamingResponse(body(), status_code=resp.status_code, headers=out)

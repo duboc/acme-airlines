@@ -33,8 +33,13 @@ class Fetch:
         return self.events[sent:]
 
 
+HINT = "retry: 3000\n\n"
+
+
 async def _collect(stream):
-    return [frame async for frame in stream]
+    frames = [frame async for frame in stream]
+    assert frames[0] == HINT  # every stream starts with the reconnect hint (#305)
+    return frames[1:]
 
 
 async def drain(stream, timeout=5):
@@ -54,6 +59,7 @@ async def test_given_a_client_that_leaves_when_idle_then_polling_stops_within_a_
 async def test_given_an_idle_stream_then_a_keep_alive_comment_is_sent(monkeypatch):
     monkeypatch.setattr(sse, "SSE_KEEPALIVE_SECONDS", 0.01)
     stream = event_stream(Request(), Fetch(), limit=None, poll_seconds=0.001)
+    assert await asyncio.wait_for(anext(stream), 2) == HINT
     first = await asyncio.wait_for(anext(stream), 2)
     assert first == KEEPALIVE == ": keep-alive\n\n"
     await stream.aclose()
@@ -207,3 +213,35 @@ async def test_given_a_reconnect_in_engine_mode_then_the_timeline_is_not_replaye
         (jid,) = [j["journey_id"] for j in (await c.get("/journeys")).json()]
         resumed = await c.get(f"/journeys/{jid}/events?limit=2", headers={"Last-Event-ID": "2"})
         assert [x for x in resumed.text.splitlines() if x.startswith("id: ")] == ["id: 3", "id: 4"]
+
+
+def test_the_default_keep_alive_is_a_few_seconds_so_a_dead_client_is_noticed_quickly():
+    assert sse.SSE_KEEPALIVE_SECONDS <= 3.0 and sse.RECONNECT_MS == 3000
+
+
+async def test_given_a_first_batch_read_before_the_headers_then_it_is_sent_without_refetching():
+    fetch = Fetch([{"n": 1}])
+    frames = await drain(
+        event_stream(Request(), fetch, limit=1, poll_seconds=0.001, first_batch=[{"n": 7}])
+    )
+    assert [json.loads(f.split("data: ")[1])["n"] for f in frames] == [7]
+    assert fetch.calls == 0  # the route had already asked the engine
+
+
+async def test_given_an_engine_error_on_the_first_read_then_the_route_answers_a_status(monkeypatch):
+    backend = engine_backend()
+    app = create_engine_app(backend)
+    async with client(app) as c:
+        await c.post("/scenarios/happy-path/start")
+        await c.post("/scenarios/happy-path/step")
+        (jid,) = [j["journey_id"] for j in (await c.get("/journeys")).json()]
+
+        async def quota(journey_id, since=0):
+            from acme.api.engine_backend import EngineQuotaExceeded
+
+            raise EngineQuotaExceeded("The Agent Engine query quota is exhausted.")
+
+        monkeypatch.setattr(backend, "journey_events", quota)
+        r = await c.get(f"/journeys/{jid}/events")
+    assert r.status_code == 429 and r.headers["retry-after"] == "20"  # not an empty 200 stream
+    assert r.headers["content-type"].startswith("application/json")
