@@ -41,6 +41,7 @@ export function JourneyCard({ journey }: { journey: JourneyDetail | null }) {
           ? 'Passenger acknowledged the current resolution.'
           : 'Passenger has not acknowledged the resolution yet.'}
       </p>
+      {journey.needs_human === true && <p className="needs-human">Needs human: Yes</p>}
       <dl className="itinerary">
         <Row term="Flight">{journey.itinerary.map((s) => s.flight_number).join(', ')}</Row>
         <Row term="Seat">
@@ -52,12 +53,27 @@ export function JourneyCard({ journey }: { journey: JourneyDetail | null }) {
             NONE
           )}
         </Row>
-        <Row term="Bag routing">{journey.bags.map((b) => b.tag).join(', ') || NONE}</Row>
+        <Row term="Bag routing">
+          {journey.bags.map((b) => (b.routing ? `${b.tag} → ${b.routing}` : b.tag)).join(', ') ||
+            NONE}
+        </Row>
         <Row term="Hotel">
           {hotel
             ? `${hotel.hotel_id} · Booking ${hotel.booking_id}, ${hotel.nights} night${hotel.nights > 1 ? 's' : ''}`
             : NONE}
         </Row>
+        {journey.transfers !== undefined && (
+          <Row term="Transfers">
+            {journey.transfers.length > 0
+              ? journey.transfers
+                  .map(
+                    (t) =>
+                      `${t.leg.replaceAll('_', ' ')}${t.origin && t.destination ? ` (${t.origin} → ${t.destination})` : ''}`,
+                  )
+                  .join(' · ')
+              : NONE}
+          </Row>
+        )}
         <Row term="Vouchers">
           {journey.vouchers.length
             ? journey.vouchers.map((v) => `${v.kind} ${v.amount}`).join(' · ')

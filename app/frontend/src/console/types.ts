@@ -12,12 +12,20 @@ export interface SeatAssignment {
 export interface Bag {
   tag: string;
   checked?: boolean;
+  routing?: string | null;
 }
 export interface HotelBooking {
   booking_id: string;
   hotel_id: string;
   passenger_id: string;
   nights: number;
+}
+export interface TransferView {
+  transfer_ref: string;
+  leg: string;
+  origin: string;
+  destination: string;
+  pickup_at: string;
 }
 export interface Voucher {
   voucher_id: string;
@@ -41,9 +49,11 @@ export interface JourneyDetail {
   seat: SeatAssignment | null;
   bags: Bag[];
   hotel: HotelBooking | null;
+  transfers?: TransferView[];
   vouchers: Voucher[];
   offer: OfferView | null;
   verification?: Record<string, boolean> | null;
+  needs_human?: boolean;
 }
 export interface JourneyEvent {
   actor: string;

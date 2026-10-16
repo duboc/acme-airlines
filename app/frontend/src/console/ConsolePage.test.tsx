@@ -263,6 +263,62 @@ describe('ConsolePage', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       expect(FakeEventSource.instances).toHaveLength(1);
     });
+
+    it('sends the selected cancellation reason (DOC-11 severe weather) when triggering AC1234 (#478)', async () => {
+      let capturedBody: unknown = null;
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url === '/api/scenario/trigger-cancellation') {
+          capturedBody = JSON.parse(String(init?.body));
+          return json({ journey_ids: ['J-1'] });
+        }
+        if (url === '/api/scenarios') return json([]);
+        if (url.startsWith('/api/whatsapp/')) return json([]);
+        if (url === '/api/journeys') return json([]);
+        if (url === '/api/journeys/J-1') return json(resolved);
+        return json({}, 404);
+      });
+      render(<ConsolePage />);
+      await userEvent.selectOptions(
+        screen.getByRole('combobox', { name: 'Cancellation reason' }),
+        'severe weather',
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' }));
+      expect(await screen.findByText('14A')).toBeInTheDocument();
+      expect(capturedBody).toEqual({ flight: 'AC1234', reason: 'severe weather' });
+    });
+
+    it('renders and triggers a secondary flight cancellation button when open on a replacement flight (#478)', async () => {
+      existing = [summary];
+      detail = resolved;
+      const calls: unknown[] = [];
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url === '/api/scenario/trigger-cancellation') {
+          calls.push(JSON.parse(String(init?.body)));
+          detail = {
+            ...resolved,
+            itinerary: [{ flight_number: 'AC1252' }],
+            seat: { flight_number: 'AC1252', seat: '14A', cabin: 'economy' },
+          };
+          return json({ journey_ids: ['J-1'] });
+        }
+        if (url === '/api/scenarios') return json([]);
+        if (url.startsWith('/api/whatsapp/')) return json([]);
+        if (url === '/api/journeys') return json(existing);
+        if (url === '/api/journeys/J-1') return json(detail);
+        return json({}, 404);
+      });
+      render(<ConsolePage />);
+      expect(await screen.findByText('14A')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' })).toBeDisabled();
+
+      const secondaryBtn = screen.getByRole('button', { name: 'Trigger AC1240 cancellation' });
+      expect(secondaryBtn).toBeEnabled();
+      await userEvent.click(secondaryBtn);
+
+      expect(calls).toEqual([{ flight: 'AC1240', reason: 'unscheduled maintenance' }]);
+      expect(await screen.findByText('AC1252')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Trigger AC1252 cancellation' })).toBeEnabled();
+    });
   });
 
   describe('guided scenario wiring', () => {

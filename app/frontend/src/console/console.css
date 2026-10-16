@@ -17,6 +17,15 @@
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+.console select {
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--navy);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 0.25rem;
+}
 .console button {
   font: inherit;
   padding: 0.625rem 1rem;
