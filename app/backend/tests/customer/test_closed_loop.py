@@ -334,3 +334,49 @@ async def test_the_offer_window_closes_an_acknowledged_journey_that_got_no_offer
     assert a.payload["converted"] is False and a.payload["event"] == "no_offer"
     back = rt.store.load(jid, rt.clock)
     assert back.timeline == c.state.timeline and back.status == S.CLOSED
+
+
+async def test_a_secondary_disruption_closes_again_and_persists_end_to_end():  # #444, #462
+    """Disruption 1 closes without an offer (+10 min); a weather cancellation of AC1240 reopens
+    the journey, it is rebooked on AC1252, notified, acknowledged, upgraded and closed again."""
+    from datetime import datetime
+
+    rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT))
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    rt.clock.advance(timedelta(minutes=7))
+    await rt.tick()
+    await rt.handle_inbound("P-MARIANA", "Perfect, thanks!")  # stays on AC1240
+    rec = rt.journeys[jid]
+    c = type("C", (), {"rt": rt, "rec": rec, "state": rec.state, "jid": jid})
+    c.rt.clock.advance(timedelta(minutes=11))
+    await c.rt.tick()
+    assert c.state.status == S.CLOSED and len(events(c, "service_closure")) == 1
+
+    await c.rt.trigger_cancellation("AC1240", "weather")
+    assert c.state.status == S.RESOLVED and c.state.resolution_acknowledged is False
+    c.rt.clock.advance(timedelta(minutes=7))
+    await c.rt.tick()
+    await c.rt.handle_inbound("P-MARIANA", "Perfect, thanks!")
+    flight = c.rt.world.pnrs[PNR].segments[0].flight_number
+    out = await CustomerSkills(c.rt).propose_and_deliver(offer(c.jid, flight))
+    assert out["status"] == "approved", out
+    assert await accept_offer(c.rt, c.rec) == "accepted"
+
+    assert c.state.status == S.CLOSED
+    result = await verify_journey(c.rt, c.rec)
+    assert result.ok and set(result.checks) == CHECKS
+    back = c.rt.store.load(c.jid, c.rt.clock)
+    assert back.timeline == c.state.timeline and back.status == S.CLOSED
+    adapter = TypeAdapter(TimelineEvent)
+    for e in c.state.timeline:
+        adapter.validate_python(e.model_dump(mode="json"))
+    assert len(events(c, "verification_passed")) == 2 and len(events(c, "memory_committed")) == 2
+    assert [a.payload["event"] for a in events(c, "analytics_recorded")] == [
+        "no_offer",
+        "offer_accepted",
+    ]
+    last = c.rt.world.flights[c.rt.world.pnrs[PNR].segments[-1].flight_number]
+    trip_end = last.scheduled_arrival or last.scheduled_departure
+    assert all(
+        datetime.fromisoformat(s["send_after"]) > trip_end for s in c.rt.sim.partners.surveys
+    )
