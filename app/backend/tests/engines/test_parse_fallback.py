@@ -58,7 +58,7 @@ async def test_the_pattern_never_overrides_a_non_other_model_answer():
     app, cust, _ = build(AlwaysAck())
     from acme.customer import outreach
 
-    assert isinstance(await outreach.classify(app.runtime, "Can I leave after 10am?"), Acknowledge)
+    assert isinstance(await outreach.classify(app.runtime, "Perfect, thanks!"), Acknowledge)
     assert app.runtime.last_parse == {"parse_kind": "ack", "parse_source": "model"}
 
 
