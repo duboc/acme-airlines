@@ -367,4 +367,197 @@ describe('Timeline', () => {
     expect(screen.getByText('hotel: no booking found')).toBeInTheDocument();
     expect(screen.getByText('baggage')).toBeInTheDocument();
   });
+
+  it('surfaces Scenario 1-3 payload details: cancellation_detected, profile_loaded, seat_held, hotel_booked, transfer_arranged, and voucher_issued (#475)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'occ',
+            type: 'cancellation_detected',
+            timestamp: '2026-10-10T08:00:00Z',
+            payload: { flight: 'AC1234', reason: 'unscheduled maintenance' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'profile_loaded',
+            timestamp: '2026-10-10T08:00:01Z',
+            payload: {
+              tier: 'diamond',
+              seat: '14A',
+              bags: 1,
+              connection: { flight: 'AC2010', departure: '2026-10-10T14:00:00Z' },
+            },
+          },
+          {
+            actor: 'seat',
+            type: 'seat_held',
+            timestamp: '2026-10-10T08:00:02Z',
+            payload: {
+              flight: 'AC1240',
+              seat: '14A',
+              requested: '14A',
+              reason: 'equivalent_assigned',
+            },
+          },
+          {
+            actor: 'seat',
+            type: 'seat_held',
+            timestamp: '2026-10-10T08:00:03Z',
+            payload: {
+              flight: 'AC1240',
+              seat: '15A',
+              requested: '14A',
+              reason: '14A unavailable; assigned nearest window seat 15A',
+            },
+          },
+          {
+            actor: 'concierge_agent',
+            type: 'hotel_booked',
+            timestamp: '2026-10-10T08:00:04Z',
+            payload: {
+              booking_ref: 'HB-AD0362EF',
+              hotel_id: 'HT8842',
+              entitlement: 'DOC-05',
+              reason: 'ANAC 400 Art. 27, III',
+            },
+          },
+          {
+            actor: 'concierge_agent',
+            type: 'transfer_arranged',
+            timestamp: '2026-10-10T08:00:05Z',
+            payload: {
+              transfer_ref: 'TR-1',
+              leg: 'airport_to_hotel',
+              entitlement: 'DOC-06',
+              reason: 'ANAC 400 Art. 27, III',
+            },
+          },
+          {
+            actor: 'concierge_agent',
+            type: 'transfer_arranged',
+            timestamp: '2026-10-10T08:00:06Z',
+            payload: {
+              transfer_ref: 'TR-2',
+              leg: 'hotel_to_airport',
+              entitlement: 'DOC-06',
+              reason: 'rescheduled for the new departure',
+            },
+          },
+          {
+            actor: 'concierge_agent',
+            type: 'voucher_issued',
+            timestamp: '2026-10-10T08:00:07Z',
+            payload: {
+              voucher_id: 'V-1',
+              kind: 'meal',
+              meal_type: 'dinner',
+              amount: '25.00',
+              entitlement: 'DOC-07',
+              reason: 'ANAC 400 Art. 27, II',
+            },
+          },
+          {
+            actor: 'concierge_agent',
+            type: 'voucher_issued',
+            timestamp: '2026-10-10T08:00:08Z',
+            payload: {
+              voucher_id: 'V-2',
+              kind: 'meal',
+              meal_type: 'breakfast',
+              amount: '12.00',
+              entitlement: 'DOC-08',
+              reason: 'ANAC 400 Art. 27, II',
+            },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('AC1234')).toBeInTheDocument();
+    expect(screen.getByText('unscheduled maintenance')).toBeInTheDocument();
+    expect(screen.getByText('diamond · seat 14A · 1 bag · connection AC2010')).toBeInTheDocument();
+    expect(screen.getByText('AC1240 · 14A')).toBeInTheDocument();
+    expect(screen.getByText('AC1240 · 15A (requested 14A)')).toBeInTheDocument();
+    expect(screen.getByText('HT8842 (HB-AD0362EF)')).toBeInTheDocument();
+    expect(screen.getByText('airport to hotel')).toBeInTheDocument();
+    expect(screen.getByText('hotel to airport')).toBeInTheDocument();
+    expect(screen.getByText('dinner ($25.00)')).toBeInTheDocument();
+    expect(screen.getByText('breakfast ($12.00)')).toBeInTheDocument();
+  });
+
+  it('surfaces Scenario 4-5 commercial and closed-loop details: offer_proposed, analytics_recorded, memory_committed, crm_logged, and nps_scheduled (#475)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'sales',
+            type: 'offer_proposed',
+            timestamp: '2026-10-10T08:10:00Z',
+            payload: { offer_id: 'O-1', flight: 'AC1252' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'analytics_recorded',
+            timestamp: '2026-10-10T08:11:00Z',
+            payload: {
+              event: 'offer_accepted',
+              converted: true,
+              offer_id: 'O-1',
+              price: '135.00',
+              margin: '80.00',
+            },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'analytics_recorded',
+            timestamp: '2026-10-10T08:12:00Z',
+            payload: {
+              event: 'offer_declined',
+              converted: false,
+              offer_id: 'O-1',
+              price: null,
+              margin: null,
+            },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'analytics_recorded',
+            timestamp: '2026-10-10T08:13:00Z',
+            payload: {
+              event: 'no_offer',
+              converted: false,
+              offer_id: null,
+              price: null,
+              margin: null,
+            },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'memory_committed',
+            timestamp: '2026-10-10T08:14:00Z',
+            payload: { journey_id: 'J-MSLV42', events: 24 },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'crm_logged',
+            timestamp: '2026-10-10T08:15:00Z',
+            payload: { interaction_id: 'INT-0001' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'nps_scheduled',
+            timestamp: '2026-10-10T08:16:00Z',
+            payload: { survey_id: 'NPS-0001', send_after: '2026-10-11T08:16:00Z' },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('AC1252')).toBeInTheDocument();
+    expect(screen.getByText('offer_accepted · $135.00 (+$80.00 margin)')).toBeInTheDocument();
+    expect(screen.getByText('offer_declined')).toBeInTheDocument();
+    expect(screen.getByText('no_offer')).toBeInTheDocument();
+    expect(screen.getByText('24 events')).toBeInTheDocument();
+    expect(screen.getByText('INT-0001')).toBeInTheDocument();
+    expect(screen.getByText('NPS-0001')).toBeInTheDocument();
+  });
 });
