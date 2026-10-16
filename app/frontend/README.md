@@ -4,16 +4,21 @@ Vite + React + TypeScript (strict). Two views: the operations console (`/console
 simulated WhatsApp passenger chat (`/whatsapp`). See `docs/product/` for product and architecture specs.
 Design context: `PRODUCT.md` and `DESIGN.md` at the repo root.
 
-| Command         | What it does                                                                   |
-| --------------- | ------------------------------------------------------------------------------ |
-| `npm ci`        | Install pinned dependencies (Node 22+)                                         |
-| `npm run dev`   | Dev server; `/api` proxies to `localhost:8000` with the `/api` prefix stripped |
-| `npm run lint`  | ESLint (incl. a11y rules) + Prettier check                                     |
-| `npm test`      | Vitest + Testing Library                                                       |
-| `npm run build` | Type-check and production build                                                |
+| Command           | What it does                                                                                                                                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm ci`          | Install pinned dependencies (Node 22+)                                                                                                                                                                                                   |
+| `npm run dev`     | Dev server; `devProxy.ts` proxies `/api` to `localhost:8000` with `/api` stripped (`E2E_CUSTOMER_PORT=8000` in `e2e/serve_customer.py`; set `ACME_CUSTOMER_PORT=8000` when running standalone `acme-customer`, which defaults to `8800`) |
+| `npm run build`   | Type-check (`tsc -b`) and production build (`vite build`)                                                                                                                                                                                |
+| `npm run lint`    | ESLint (incl. a11y rules) + Prettier check                                                                                                                                                                                               |
+| `npm run format`  | Prettier write across the frontend workspace                                                                                                                                                                                             |
+| `npm test`        | Vitest + Testing Library                                                                                                                                                                                                                 |
+| `npm run preview` | Preview the production build locally (`vite preview`)                                                                                                                                                                                    |
+| `npm run e2e`     | Playwright E2E suite (`e2e/narrative.spec.ts`, `e2e/scenarios.spec.ts`)                                                                                                                                                                  |
 
-`src/api/types.ts` is a hand-written stub until the OpenAPI contract (#17) merges; then it
-should be generated from `app/backend/openapi.json`. The UI talks only to the app's own API.
+`src/api/types.ts` defines the disruption state enum (`DISRUPTION_STATES`), while
+`src/console/contract.test.ts` drift-checks `src/console/types.ts`, `src/console/fixtures.ts`, and
+`src/console/labels.ts` directly against the committed `app/backend/openapi.json`. The UI talks only
+to the app's own API.
 
 **Dev proxy:** the UI calls `/api/*`, and the backend serves its routes at the root, so `devProxy.ts` rewrites `^/api` to an empty prefix (`/api/journeys` reaches `/journeys`). Any other host (e.g. the production container) must do the same rewrite.
 
@@ -40,9 +45,10 @@ Guardrail decisions (`actor: guardrail`, `payload.approved`, `payload.reasons[]`
 `sales_suppressed` events render in distinct styles with their reasons. Reason codes are mapped
 to plain text in `labels.ts`; unknown codes are shown raw. Tests mock `fetch` and `EventSource`.
 
-On load, the console fetches `GET /journeys`, attaches to the first open journey and resubscribes
-to its SSE stream (which replays the timeline), so a refresh keeps context. Trigger is disabled
-while a journey is open; use Reset to start again.
+On load, the console fetches `GET /journeys`, attaches to the first non-`CLOSED` journey (or falls
+back to `all[0]` so a `CLOSED` journey stays visible across refreshes), and resubscribes to its SSE
+stream (which replays the timeline). `Trigger AC1234 cancellation` is disabled whenever any journey
+is loaded (`journey !== null`, including `CLOSED`) until `Reset` is clicked.
 
 ## Guided scenario runner (`src/demo/`)
 
@@ -51,5 +57,8 @@ chat beside the journey card and timeline. Pick a preset (from `GET /scenarios`)
 scenario**, then **Next step** runs the next scripted action. After each step, "Expected now"
 says what the tester should see and compares it with the observed state (`expectations.ts`),
 showing "Matches" or "Differs" plus the differing fields. Manual passenger actions (quick replies,
-Accept, No thanks) use the WhatsApp API. Presets only exist with the fake LLM mode; otherwise the
-panel reports that scenarios are unavailable. E2E: `e2e/scenarios.spec.ts` (happy path, seat taken).
+Accept, No thanks) use the WhatsApp API. In `ENGINE_MODE=local`, `/scenarios*` requires
+`LLM_MODE=fake` (`404` in `vertex` mode, so the panel reports that scenarios are unavailable); in
+`ENGINE_MODE=agent-engine`, presets remain enabled even when the Customer Agent Engine runs with
+`LLM_MODE=vertex`. E2E: `e2e/scenarios.spec.ts` (5 tests: `happy-path`, `seat-taken`,
+`declines-upgrade`, `upgrade-race`, and the 10-minute `no-offer` service closure).
