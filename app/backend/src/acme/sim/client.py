@@ -4,6 +4,8 @@ A `Connector` opens a short-lived MCP session to one server. Each connector
 acts as ONE caller and presents only that caller's token (`acme.sim.auth.client_config`, #27).
 """
 
+import json
+import logging
 import threading
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
@@ -12,15 +14,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from jsonschema import SchemaError, ValidationError
+from jsonschema.validators import validator_for
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult
+from referencing import Registry
 
 from acme.sim.app import DEFAULT_REGISTRY, ServerFactory, create_app
 from acme.sim.auth import client_config, load_tokens
 from acme.sim.current import CURRENT, WorldRef
 from acme.sim.world import SimWorld
 
+log = logging.getLogger(__name__)
 _SHARED: dict[str, FastMCP] = {}  # one tool registry per server for the whole process (#280)
 _SHARED_LOCK = threading.Lock()
 
@@ -81,6 +88,52 @@ class ToolError(RuntimeError):
     """An MCP tool returned an error result."""
 
 
+_VALIDATORS: dict[tuple[str, str], Any] = {}  # (tool, schema as JSON) -> checked validator
+
+
+def _validator(name: str, schema: dict[str, Any]) -> Any:
+    """The validator of a tool's output schema, schema-checked once per process (#438)."""
+    key = (name, json.dumps(schema, sort_keys=True))
+    if key not in _VALIDATORS:
+        cls = validator_for(schema)
+        try:
+            cls.check_schema(schema)
+        except SchemaError as exc:
+            raise RuntimeError(f"Invalid schema for tool {name}: {exc}") from exc
+        _VALIDATORS[key] = cls(schema, registry=Registry())
+    return _VALIDATORS[key]
+
+
+class _CachingSession(ClientSession):
+    """A `ClientSession` that checks a tool's output schema once, not once per call.
+
+    The SDK validates every result with `jsonschema.validate`, which re-checks the schema against
+    its metaschema each time: about a quarter of a 400 ms rebuild (#438). The result is validated
+    exactly as before (same schema, same errors); only the repeated schema check is gone."""
+
+    _checked: dict[str, Any]
+
+    async def _validate_tool_result(self, name: str, result: CallToolResult) -> None:
+        if name not in self._tool_output_schemas:
+            await self.list_tools()  # refresh the output schema cache
+        schema = self._tool_output_schemas.get(name)
+        if schema is None:
+            log.warning("Tool %s has no output schema, cannot validate structured content", name)
+            return
+        if result.structuredContent is None:
+            raise RuntimeError(f"Tool {name} has an output schema but did not return content")
+        if not hasattr(self, "_checked"):
+            self._checked = {}
+        if name not in self._checked:
+            self._checked[name] = _validator(name, schema)
+        try:
+            self._checked[name].validate(result.structuredContent)
+        except ValidationError as exc:
+            raise RuntimeError(
+                f"Invalid structured content returned by tool {name}: {exc}"
+            ) from exc
+
+
 @asynccontextmanager
 async def _session(http: httpx.AsyncClient, server: str):
     async with (
@@ -91,7 +144,7 @@ async def _session(http: httpx.AsyncClient, server: str):
             _,
         ),
     ):
-        async with ClientSession(read, write) as session:
+        async with _CachingSession(read, write) as session:
             await session.initialize()
             yield session
 
