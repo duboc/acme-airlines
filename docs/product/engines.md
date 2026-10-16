@@ -50,8 +50,7 @@ See the full **[Configuration reference](deploy.md#configuration-reference)** fo
 
 `engine_requirements()`, `engine_extra_packages()` and `DISPLAY_NAME` give the
 `requirements=`, `extra_packages=` and display name for the deploy workflow.
-The dependency is `google-cloud-aiplatform[adk,agent-engines]>=1.112,<2`: 2.x
-needs `google-adk>=1.27` and conflicts with the `fastapi` pin.
+The SDK dependency in `ENGINE_REQUIREMENTS` is pinned to `google-cloud-aiplatform[adk,agent-engines]==1.165.1` (matching `uv.lock`; `pyproject.toml` declares `>=1.112,<2` because 2.x needs `google-adk>=1.27` and conflicts with the `fastapi` pin).
 
 ### Run locally
 
@@ -127,7 +126,7 @@ Both engines run as `acme-agent-engine` (`AGENT_ENGINE_SA`, project-wide `aiplat
 ## Proof
 
 `tests/live/test_agent_engine_traces.py` is an opt-in live check (#167), never run in CI. It
-drives presets 1-5 (`ACME_PROOF_PRESETS` overrides) through the **deployed** engines with
+drives presets 1-6 (`happy-path`, `declines-upgrade`, `unsatisfiable-request`, `seat-taken`, `hotel-unavailable`, `upgrade-race`; `ACME_PROOF_PRESETS` overrides) through the **deployed** engines with
 `EngineBackend`, asserts every step's state is structurally equal to local mode, and queries
 Cloud Trace (v1 REST, ADC) for each turn. Per turn it needs the Customer `scenario_step` trace
 (root span with `acme.scenario`). Across the run it needs `acme.customer.specialist.*`,
@@ -149,7 +148,7 @@ Or run the `workflow_dispatch`-only `agent-engine-live-proof.yml` (WIF as the de
 ## Deploy
 
 `.github/workflows/agent-engine-deploy.yml` runs on push to `main` (paths: `app/backend/src/acme/**`,
-`pyproject.toml`, `uv.lock`, the workflow) and on `workflow_dispatch`. It has no `pull_request`
+`app/backend/pyproject.toml`, `app/backend/uv.lock`, `.github/workflows/agent-engine-deploy.yml`) and on `workflow_dispatch`. It has no `pull_request`
 trigger, uses WIF only (`OBSERVATORY_WIF_PROVIDER` + `OBSERVATORY_DEPLOYER_SA`) and holds no keys.
 Deploys never overlap (`concurrency: agent-engine-deploy`).
 
@@ -158,7 +157,7 @@ Deploys never overlap (`concurrency: agent-engine-deploy`).
 1. Looks up both engines by display name. More than one hit for a name fails the run before anything is written. One hit means update in place; none means create.
 2. Deploys `acme-customer-agent`, then `acme-sales-agent` with `ENGINE_MODE=agent-engine` and `ACME_CUSTOMER_ENGINE=<customer resource name>`.
 3. Settings: `service_account=$AGENT_ENGINE_SA`, staging bucket and location from `AGENT_ENGINE_*`, env `LLM_MODE=vertex`, `ACME_GENAI_LOCATION=global`, `ACME_GENAI_PROJECT=acme-airlines-factory`, `ACME_ENABLE_TRACING=true`, `ACME_STATE_DB=/tmp/acme-state/state.db` (no `GOOGLE_CLOUD_*` names: they are reserved, #190).
-4. **Tracing:** this SDK has no `enable_tracing` argument on `create`/`update` for custom templates, and it only wires `GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY` into its `AdkApp` template. The deploy therefore sets our own `ACME_ENABLE_TRACING=true` (a `GOOGLE_CLOUD_*` name is reserved, #190; `configure_cloud_trace` still honours the SDK flag too), and both engines' `set_up()` call `acme.telemetry.configure_cloud_trace(<display name>)`. It installs an SDK `TracerProvider` with the Cloud Trace exporter (ADC) and `service.name` = the display name only when the var is on and no SDK provider exists yet.
+4. **Tracing and startup (`_set_up()`):** this SDK has no `enable_tracing` argument on `create`/`update` for custom templates, and it only wires `GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY` into its `AdkApp` template. The deploy therefore sets our own `ACME_ENABLE_TRACING=true` (a `GOOGLE_CLOUD_*` name is reserved, #190; `configure_cloud_trace` still honours the SDK flag too), and both engines' `_set_up()` call `acme.telemetry.configure_cloud_trace(DISPLAY_NAME)` (which installs an SDK `TracerProvider` with `CloudTraceSpanExporter(project_id=..., resource_regex=r"service\.name")` so `service.name` is preserved on exported spans when tracing is enabled and no SDK provider exists yet, #400), `acme.metrics.configure_cloud_monitoring(DISPLAY_NAME)`, and refresh `self.llm_mode = validate_env()` after unpickling (#440).
 5. **Instances:** both `acme-customer-agent` and `acme-sales-agent` are pinned with `min_instances=1`, `max_instances=1` (#200, verified by `verify_started`), because `ACME_STATE_DB` lives on one container's disk. Cross-container calls or restarts are handled by stateless scenario replay and the replay tape ([ADR 0103](adr-0103-stateless-engine-scenarios.md)).
 
 Afterwards the workflow runs `gcloud run services update --update-env-vars` (everything else is kept) to set `AGENT_ENGINES=acme-customer-agent=<id>,acme-sales-agent=<id>` on the `acme-observatory` service and `AGENT_ENGINE_CUSTOMER` / `AGENT_ENGINE_SALES` (full resource names) on `vars.IRROPS_DEMO_SERVICE`. It does not set `ENGINE_MODE` on the demo.
@@ -188,9 +187,7 @@ Agent Engine injects `GOOGLE_CLOUD_PROJECT` as the project **number** (`49308480
 config accepts the project id or that number for the same project (never another one) and always
 hands the client the id; the deploy also sets `ACME_GENAI_PROJECT=acme-airlines-factory`, which wins.
 
-`ENGINE_REQUIREMENTS` pins the 9 direct dependencies plus 12 critical runtime transitive packages
-(`a2a-sdk`, `anyio`, `certifi`, `cloudpickle`, `cryptography`, `grpcio`, `httpcore`, `protobuf`,
-`pydantic-core`, `starlette`, `urllib3`, `uvicorn`) to exact `==` versions matching `uv.lock`
+`ENGINE_REQUIREMENTS` pins **23** exact `==` packages — **11** direct and OpenTelemetry packages (`google-cloud-aiplatform[adk,agent-engines]==1.165.1`, `google-adk[a2a]==1.39.1`, `google-genai==2.30.1`, `mcp==1.30.0`, `opentelemetry-api==1.41.1`, `opentelemetry-sdk==1.41.1`, `opentelemetry-exporter-gcp-trace==1.15.0`, `opentelemetry-exporter-gcp-monitoring==1.15.0a0`, `httpx==0.28.1`, `pydantic==2.14.0`, `fastapi==0.141.1`) plus **12** critical runtime transitive packages (`a2a-sdk`, `anyio`, `certifi`, `cloudpickle`, `cryptography`, `grpcio`, `httpcore`, `protobuf`, `pydantic-core`, `starlette`, `urllib3`, `uvicorn`) — matching `uv.lock`
 (enforced by `test_engine_requirements_match_uv_lock` and `test_engine_requirements_are_exact_pins_matching_uv_lock`):
 the container resolves requirements with `pip`, so unpinned ranges would let container builds drift
 from what CI tested.
