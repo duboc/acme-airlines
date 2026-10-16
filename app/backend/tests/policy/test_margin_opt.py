@@ -55,3 +55,10 @@ def test_price_never_above_standard():
 def test_no_quote_when_no_open_seats_or_cost_floor_meets_or_exceeds_standard(over):
     assert recovery_quote(inv(**over), "diamond") is None
     assert recovery_quote(inv(**over), "gold") is None
+
+
+def test_open_seats_boundary_one_yields_quote_and_zero_yields_none():
+    q = recovery_quote(inv(open_seats=1), "diamond")
+    assert q is not None
+    assert q.price == Decimal("135.00")
+    assert recovery_quote(inv(open_seats=0), "diamond") is None
