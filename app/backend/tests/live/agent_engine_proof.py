@@ -662,6 +662,7 @@ def write_engine_logs(path: str, by_engine: dict[str, list[dict[str, Any]]]) -> 
 # passenger and the demo UI would see with the run that was never rebuilt.
 DEFAULT_REBUILD = ("happy-path", "seat-taken")  # (preset to rebuild, decoy the engine is parked on)
 REBUILD_WAIT, REBUILD_POLL = 120.0, 15.0  # Cloud Logging lags: poll for the rebuild line
+REBUILD_BUDGET_MS = 600.0  # ADR 0103 / #280: enforced p95 < 600 ms per preset (500 ms target)
 
 
 def conversation(messages: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
@@ -819,6 +820,9 @@ class RebuildReport:
     to_step: int = 0
     wall_ms: float = 0.0  # client side: the forced call, network included
     engine_ms: list[float] = field(default_factory=list)  # the engine's own `rebuild` ms
+    budget_ms: float = REBUILD_BUDGET_MS
+    tape_miss: int | None = None
+    tape_discarded: int | None = None
     failures: list[str] = field(default_factory=list)
     offer_wording_differs: int = 0  # accepted relaxation, reported in the summary
 
@@ -827,8 +831,13 @@ class RebuildReport:
         verdict = "FAIL" if self.failures else "PASS"
         lines = [f"## Forced rebuild: {verdict}", "",
                  f"preset `{self.preset}`, rebuilt to step {self.to_step}", "",
-                 f"- rebuild latency (engine, `ACME_DIAG rebuild`): {engine}",
+                 f"- rebuild latency (engine, `ACME_DIAG rebuild`): {engine} "
+                 f"(budget < {self.budget_ms:.0f} ms)",
                  f"- forced call, client side: {self.wall_ms:.0f} ms"]  # fmt: skip
+        if self.tape_miss is not None or self.tape_discarded is not None:
+            lines.append(
+                f"- replay tape: tape_miss={self.tape_miss}, tape_discarded={self.tape_discarded}"
+            )
         if self.offer_wording_differs:
             lines.append(f"- offer wording differs (ADR 0103, accepted by PO on #279): "
                          f"{self.offer_wording_differs} offer message(s), same position, buttons, "
@@ -842,6 +851,7 @@ async def run_rebuild_proof(
     preset: str = DEFAULT_REBUILD[0],
     decoy: str = DEFAULT_REBUILD[1],
     *,
+    budget_ms: float = REBUILD_BUDGET_MS,
     wait: float = REBUILD_WAIT,
     poll: float = REBUILD_POLL,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -852,7 +862,7 @@ async def run_rebuild_proof(
 
     `fetch_logs(since)` returns the Customer engine's log entries (see `CloudLogging`).
     """
-    report = RebuildReport(preset=preset)
+    report = RebuildReport(preset=preset, budget_ms=budget_ms)
     try:
         state = await engine_call(backend.scenario_start(preset), "scenario_start", preset)
         while not state["done"]:
@@ -892,11 +902,22 @@ async def run_rebuild_proof(
         if events or monotonic() >= deadline:
             break
         await sleep(poll)
-    report.engine_ms = [e["ms"] for e in events if "ms" in e]
+    report.engine_ms = [e["ms"] for e in events if isinstance(e.get("ms"), (int, float))]
     if not events:
         report.failures.append("no ACME_DIAG rebuild event in the Customer engine log")
     elif len(events) > 1:
         report.failures.append(f"{len(events)} rebuilds logged for one forced call (expected 1)")
-    elif "ms" not in events[0]:
-        report.failures.append("the rebuild event carries no latency (ms)")
+    else:
+        ev = events[0]
+        ms = ev.get("ms")
+        report.tape_miss = ev.get("tape_miss")
+        report.tape_discarded = ev.get("tape_discarded")
+        if not isinstance(ms, (int, float)) or isinstance(ms, bool):
+            report.failures.append("the rebuild event carries no latency (ms)")
+        elif ms >= budget_ms:
+            report.failures.append(f"rebuild latency {ms:.1f} ms >= {budget_ms:.1f} ms budget")
+        for key in ("tape_miss", "tape_discarded"):
+            val = ev.get(key)
+            if key not in ev or val != 0 or isinstance(val, bool):
+                report.failures.append(f"rebuild had {key}={val} (expected 0)")
     return report
