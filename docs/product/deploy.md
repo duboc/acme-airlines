@@ -178,6 +178,7 @@ ids/enums only, never passenger data. In deploy, `configure_cloud_monitoring` (c
 | `acme.guardrail.decisions` | counter | `rule` (reason code, or `all` on approve), `outcome` (approve/reject), `step` | Guardrail decisions; one point per failed rule |
 | `acme.offers` | counter | `status` (proposed/accepted/declined) | Offer lifecycle |
 | `acme.llm.template_fallbacks` | counter | `surface` (resolution/offer) | LLM text rejected, template used |
+| `acme.llm.ack_vetoes` | counter | none | A model `Acknowledge` downgraded to `Other` by the deterministic veto (`can_be_acknowledgement`, #421); emitted by `customer/intent.py`, `parse_source="veto"` in `ACME_DIAG` |
 | `acme.needs_human` | counter | `specialist` | Escalations to a person |
 | `acme.notification.latency` | histogram (s) | none | RESOLVED to `notification_sent` |
 | `acme.scenario.rebuild.duration` | histogram (s) | `preset`, `reason` | Scenario rebuild by replay on a container (#280) |

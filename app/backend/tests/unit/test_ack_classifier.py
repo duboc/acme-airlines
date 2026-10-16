@@ -162,7 +162,7 @@ async def test_ac1_classify_vetoes_a_model_that_always_acknowledges(text):
 
     rt = SimpleNamespace(llm=AlwaysAck(), last_parse=None)
     assert await classify(rt, text) == Other(text=text)
-    assert rt.last_parse == {"parse_kind": "other", "parse_source": "model"}
+    assert rt.last_parse == {"parse_kind": "other", "parse_source": "veto"}
 
 
 @pytest.mark.parametrize(
@@ -210,3 +210,49 @@ async def test_a_model_that_raises_still_fails_closed_never_an_ack(text):  # #23
 
     rt = SimpleNamespace(llm=Raises(), last_parse=None)
     assert await classify(rt, text) == Other(text=text)
+
+
+async def test_ac1_a_vetoed_vertex_answer_is_recorded_as_a_veto_through_classify():
+    from acme.customer.intent import classify
+
+    llm, _ = _vertex(ACK_RAW)
+    rt = SimpleNamespace(llm=llm, last_parse=None)
+    got = await classify(rt, "Ok, accept the offer")
+    assert got == Other(text="Ok, accept the offer") and got.vetoed
+    assert rt.last_parse == {"parse_kind": "other", "parse_source": "veto"}
+    assert "text" not in rt.last_parse and "accept" not in repr(rt.last_parse)
+
+
+async def test_ac1_a_genuine_model_other_stays_a_model_decision():
+    from acme.customer.intent import classify
+
+    llm, _ = _vertex('{"kind": "other"}')
+    rt = SimpleNamespace(llm=llm, last_parse=None)
+    got = await classify(rt, "I would like a refund")
+    assert got == Other(text="I would like a refund") and not got.vetoed
+    assert rt.last_parse == {"parse_kind": "other", "parse_source": "model"}
+
+
+def test_ac1_parse_response_flags_only_a_vetoed_acknowledge():
+    assert parse_response(ACK_RAW, "Ok, accept the offer").vetoed is True
+    assert parse_response('{"kind": "other"}', "x").vetoed is False
+    assert parse_response("not json", "x").vetoed is False
+    assert Other(text="t", vetoed=True) == Other(text="t")  # telemetry only, never compared
+
+
+async def test_ac1_the_time_pattern_still_wins_over_a_veto_and_the_veto_is_still_counted(
+    metric_points,
+):
+    from acme.customer.intent import classify
+
+    llm, _ = _vertex(ACK_RAW)
+    rt = SimpleNamespace(llm=llm, last_parse=None)
+
+    def vetoes():
+        return sum(v for _, v in metric_points().get("acme.llm.ack_vetoes", []))
+
+    before = vetoes()
+    got = await classify(rt, "Not until after 8pm, thanks")
+    assert got == DepartureAfter(time=time(20, 0))
+    assert rt.last_parse == {"parse_kind": "departure_after", "parse_source": "pattern"}
+    assert vetoes() == before + 1
