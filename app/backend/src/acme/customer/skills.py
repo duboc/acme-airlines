@@ -148,12 +148,18 @@ class CustomerSkills:
                 return result
             record = rec.state.offers[-1]
         # The model call runs with NO lock held (#231); delivery re-validates under it.
-        inventory, text, key = await self._prepare_text(rec, record)
-        async with self._rt.journey_lock(journey_id):
-            decision = await self._deliver(rec, record, inventory, text, key)
-            if decision.approved:
-                return result
-            return {**result, "status": "rejected", "reasons": list(decision.reasons)}
+        try:
+            inventory, text, key = await self._prepare_text(rec, record)
+            async with self._rt.journey_lock(journey_id):
+                decision = await self._deliver(rec, record, inventory, text, key)
+        except Exception:
+            async with self._rt.journey_lock(journey_id):
+                if record.status == "approved":  # never sent: do not wedge the journey (#445)
+                    record.status = "invalidated"
+            raise
+        if decision.approved:
+            return result
+        return {**result, "status": "rejected", "reasons": list(decision.reasons)}
 
     # --- delivery ----------------------------------------------------------------------------
     async def _load_facts(self, rec: JourneyRecord, payload: dict[str, Any]) -> CabinInventory:
@@ -235,10 +241,12 @@ class CustomerSkills:
         rt, state, offer = self._rt, rec.state, record.offer
         inventory = await self._load_facts(rec, offer.model_dump(mode="json"))
         state.current_flight = self._current_flight(rec)
-        if self._facts_key(rec, inventory) != key:
-            text, _ = await self._compose(rec, offer, inventory, use_llm=False)
-        # time-of-use re-check: no await until send
         decision = evaluate_traced(state, offer, inventory, "send")
+        if decision.approved and self._facts_key(rec, inventory) != key:
+            text, _ = await self._compose(rec, offer, inventory, use_llm=False)
+            # the compose awaited: re-check right before sending
+            decision = evaluate_traced(state, offer, inventory, "send")
+        # time-of-use re-check: no await until send
         if not decision.approved:
             record.status = "invalidated"
             self._decision_event(state, offer, decision)
@@ -267,7 +275,8 @@ class CustomerSkills:
         profile = await rt.client.call("crm", "profile.get", passenger_id=rec.passenger_id)
         name = profile["name"].split()[0]
         flight = rec.state.current_flight or ""
-        open_premium = rt.world.flights[flight].open_seats.get(inventory.cabin, [])
+        current = rt.world.flights.get(flight)
+        open_premium = current.open_seats.get(inventory.cabin, []) if current else []
         seat = f" {open_premium[0]}" if open_premium else ""
         price = f"${offer.price:.2f}"
         attached = (

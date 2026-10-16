@@ -8,7 +8,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from acme.api.events import TimelineEvent
-from acme.customer.conversion import accept_offer, decline_offer
+from acme.customer.conversion import NoSentOffer, accept_offer, decline_offer
 from acme.customer.runtime import CustomerRuntime
 from acme.customer.skills import CustomerSkills
 from acme.customer.verify import verify_journey
@@ -16,6 +16,7 @@ from acme.domain.clock import FixedClock
 from acme.domain.fixtures import DISRUPTION_DETECTED_AT
 from acme.domain.journey import DisruptionStatus as S
 from acme.domain.models import SeatAssignment
+from acme.sim.client import ToolError
 from acme.sim.dcs import dcs_state
 
 PNR = "MSLV42"
@@ -172,3 +173,92 @@ async def test_api_shows_closed_with_verification_and_sse_emits_it():
     assert r.json() == {"offer_status": "accepted"}
     assert d["status"] == "CLOSED" and set(d["verification"]) == CHECKS
     assert "verification_passed" in sse.text and "analytics_recorded" in sse.text
+
+
+# --- a failed closure after the passenger decided is retried, never stranded (#445) -------------
+def fail_closure_once(c, monkeypatch):
+    """The CRM call of `close_loop` fails until `healed` is set."""
+    real, state = c.rt.client.call, {"healed": False}
+
+    async def call(server, tool, **kw):
+        if server == "crm" and tool == "interaction.log" and not state["healed"]:
+            raise ToolError("crm/interaction.log: transient")
+        return await real(server, tool, **kw)
+
+    monkeypatch.setattr(c.rt.client, "call", call)
+    return state
+
+
+def types(c):
+    return [e.type for e in c.state.timeline]
+
+
+def msgs(c):
+    return c.rt.sim.partners.transcripts["P-MARIANA"]
+
+
+async def test_failed_closure_after_accept_is_retried_by_accepting_again(c, monkeypatch):
+    healed = fail_closure_once(c, monkeypatch)
+    await sent_offer(c)
+    assert await accept_offer(c.rt, c.rec) == "accepted"
+    assert c.state.status is S.RESOLVED and "needs_human" in types(c)
+    messages, charged = len(msgs(c)), len(c.rt.sim.partners.charges)
+    healed["healed"] = True
+    assert await accept_offer(c.rt, c.rec) == "accepted"  # the duplicate tap retries the closure
+    assert c.state.status is S.CLOSED
+    assert (len(msgs(c)), len(c.rt.sim.partners.charges)) == (
+        messages,
+        charged,
+    )  # no second charge or message
+    (analytics,) = [e for e in c.state.timeline if e.type == "analytics_recorded"]
+    assert analytics.payload["event"] == "offer_accepted" and analytics.payload["converted"]
+    assert c.state.offers[-1].status == "accepted"
+
+
+async def test_failed_closure_after_accept_is_retried_by_the_tick_after_the_window(c, monkeypatch):
+    healed = fail_closure_once(c, monkeypatch)
+    await sent_offer(c)
+    await accept_offer(c.rt, c.rec)
+    healed["healed"] = True
+    await c.rt.tick()
+    assert c.state.status is S.RESOLVED  # not before a further window
+    c.rt.clock.advance(c.rt.offer_window + timedelta(minutes=1))
+    await c.rt.tick()
+    assert c.state.status is S.CLOSED
+    assert "service_closure" not in types(c)  # the offer's outcome is not overwritten
+    (analytics,) = [e for e in c.state.timeline if e.type == "analytics_recorded"]
+    assert analytics.payload["event"] == "offer_accepted"
+
+
+async def test_failed_closure_after_decline_recovers_on_retry_and_on_the_tick(c, monkeypatch):
+    healed = fail_closure_once(c, monkeypatch)
+    await sent_offer(c)
+    assert await decline_offer(c.rt, c.rec) == "declined"
+    assert c.state.status is S.RESOLVED
+    healed["healed"] = True
+    assert await decline_offer(c.rt, c.rec) == "declined"  # retried, not NoSentOffer
+    assert c.state.status is S.CLOSED
+    with pytest.raises(NoSentOffer):  # once closed, a repeat is an error as before
+        await decline_offer(c.rt, c.rec)
+
+
+async def test_failed_closure_after_decline_is_retried_by_the_tick(c, monkeypatch):
+    healed = fail_closure_once(c, monkeypatch)
+    await sent_offer(c)
+    await decline_offer(c.rt, c.rec)
+    healed["healed"] = True
+    c.rt.clock.advance(c.rt.offer_window + timedelta(minutes=1))
+    await c.rt.tick()
+    assert c.state.status is S.CLOSED and "service_closure" not in types(c)
+    (analytics,) = [e for e in c.state.timeline if e.type == "analytics_recorded"]
+    assert analytics.payload["event"] == "offer_declined"
+
+
+async def test_the_tick_does_not_retry_without_a_failure_or_with_a_live_offer(c):
+    from acme.customer.service_closure import decided_closure_due
+
+    await sent_offer(c)
+    assert not decided_closure_due(c.rt, c.rec)  # a sent offer, no failure
+    c.state.offers[-1].status = "declined"
+    c.rt.clock.advance(c.rt.offer_window + timedelta(minutes=1))
+    assert not decided_closure_due(c.rt, c.rec)  # decided, but no failed closure to retry
