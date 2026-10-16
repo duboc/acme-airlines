@@ -61,17 +61,20 @@ def collect_facts(rec: JourneyRecord) -> dict[str, Any] | None:
         "new_flight": rebooked["flight"],
         "departure": departure[11:16],  # local HH:MM from the ISO string
         "seat": seat["seat"],
+        "requested_seat": seat.get("requested") or seat["seat"],
         "hotel_id": hotel["hotel_id"] if hotel else None,
         "has_transfer": transfer is not None,
         "has_voucher": voucher is not None,
     }
 
 
-_WORD_FACTS = ("transfer", "voucher")
+_WORD_FACTS = ("transfer", "voucher", "window")
 
 
 def required_facts(facts: dict[str, Any]) -> list[str]:
     needed = [facts["cancelled_flight"], facts["new_flight"], facts["departure"], facts["seat"]]
+    if facts.get("requested_seat") and facts["requested_seat"] != facts["seat"]:
+        needed.extend((facts["requested_seat"], "window"))
     if facts["hotel_id"]:
         needed.append(facts["hotel_id"])
     if facts["has_transfer"]:
@@ -99,11 +102,19 @@ def _care_sentence(f: dict[str, Any]) -> str:
     return f"I have {arranged}. " if extras else ""
 
 
+def _seat_clause(f: dict[str, Any]) -> str:
+    if f.get("requested_seat") and f["requested_seat"] != f["seat"]:
+        return (
+            f"with nearest window seat {f['seat']} assigned ({f['requested_seat']} was unavailable)"
+        )
+    return f"with your seat {f['seat']} kept"
+
+
 def template_text(name: str, f: dict[str, Any]) -> str:
     return (
         f"Hi {name}, I'm sorry: flight {f['cancelled_flight']} was cancelled. "
         f"I have already rebooked you on {f['new_flight']}, departing at {f['departure']}, "
-        f"with your seat {f['seat']} kept and your bag re-routed. "
+        f"{_seat_clause(f)} and your bag re-routed. "
         f"{_care_sentence(f)}"
         "Reply here if you need anything changed."
     )

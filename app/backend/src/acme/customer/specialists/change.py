@@ -131,10 +131,16 @@ class ReplanningChangeAgent:
             ),
             None,
         )
+        if seat_now and old_seat and seat_now != old_seat:
+            seat_clause = f", nearest window seat {seat_now} ({old_seat} was unavailable)"
+        elif seat_now:
+            seat_clause = f", seat {seat_now}"
+        else:
+            seat_clause = ""
         await rt.send(
             rec.passenger_id,
             f"All set: you are now on {rebook.flight}, departing at {rebook.departure:%H:%M}"
-            + (f", seat {seat_now}" if seat_now else "")
+            + seat_clause
             + ", your bag is re-routed and your Santiago connection is protected. "
             "Please confirm that this works for you.",
         )
