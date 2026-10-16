@@ -93,7 +93,8 @@ async def test_a_forced_rebuild_after_a_run_spread_over_workers_replays_every_tu
                 for e, kw in log if e == "rebuild"]  # fmt: skip
 
     report = await asyncio.wait_for(  # a hang fails here, fast
-        run_rebuild_proof(backend, logs, "happy-path", "seat-taken", wait=0.0), timeout=120
+        run_rebuild_proof(backend, logs, "happy-path", "seat-taken", budget_ms=None, wait=0.0),
+        timeout=120,
     )
     assert report.failures == []  # transcript, journeys and state identical
     (rebuild,) = [kw for e, kw in log if e == "rebuild"]

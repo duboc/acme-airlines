@@ -190,7 +190,9 @@ async def test_the_rebuild_proof_replays_the_plain_runs_tape_not_the_decoys(monk
         return [{"ts": now, "text": "ACME_DIAG " + json.dumps({"event": e, **kw})}
                 for e, kw in log if e == "rebuild"]  # fmt: skip
 
-    report = await run_rebuild_proof(backend, logs, "happy-path", "seat-taken", wait=0.0)
+    report = await run_rebuild_proof(
+        backend, logs, "happy-path", "seat-taken", budget_ms=None, wait=0.0
+    )
     assert report.failures == []
     (_, rebuild) = next(e for e in log if e[0] == "rebuild")
     assert rebuild["tape_miss"] == 0
