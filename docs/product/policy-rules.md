@@ -93,7 +93,7 @@ Tier discount table (`RECOVERY_DISCOUNT_PCT`):
 3. **`genuine_discount`:** Offer standard price matches inventory, inventory has open seats in the offered cabin, offer price is strictly below standard fare and at or below tier recovery price, and passenger tier is courtesy-eligible.
 4. **`margin_verified`:** Net margin is non-negative and equals `price - cost_floor` recomputed from current inventory.
 5. **`zero_pressure`:** Offer is optional (`optional = True`), and no other live or answered offer exists for this journey (none in `approved`, `sent`, `accepted`, `declined`, and none `invalidated` on the same flight).
-6. **`origin_and_flight_verified`:** Offer origin is `"sales"` and offer flight matches the journey's current flight.
+6. **`origin_and_flight_verified`:** Offer origin is `"sales"`, the offer's `journey_id` is this journey's (`journey_mismatch` otherwise), and offer flight matches the journey's current flight.
 
 The guardrail is evaluated at proposal time, and re-evaluated in full at send time and accept time under the per-journey lock (`CustomerRuntime.journey_lock`).
 

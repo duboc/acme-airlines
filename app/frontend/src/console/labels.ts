@@ -27,6 +27,7 @@ export const REASONS: Record<string, string> = {
   offer_already_made: 'Another offer was already made for this journey',
   wrong_origin: 'Offer did not come from Sales',
   flight_mismatch: 'Offer is for a different flight',
+  journey_mismatch: 'Offer belongs to a different journey',
   // Legacy aliases retained for backward compatibility with older fixtures
   not_acknowledged: 'Passenger has not acknowledged the resolution',
   open_request: 'Passenger has an open request',
