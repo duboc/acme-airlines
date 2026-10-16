@@ -176,4 +176,114 @@ describe('Timeline', () => {
     expect(screen.getByText('must arrive SCL by 2026-10-10 12:30')).toBeInTheDocument();
     expect(screen.getByText('AC1252 → AC0800 (margin 10 min)')).toBeInTheDocument();
   });
+
+  it('separates multiple reason spans with whitespace so log text does not concatenate adjacent reasons (#432)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'rights_agent',
+            type: 'duty_of_care_assessed',
+            timestamp: '2026-10-10T08:01:00Z',
+            payload: {
+              rule_reasons: {
+                hotel: 'ANAC 400 Art. 27, III',
+                meals: 'ANAC 400 Art. 27, II',
+              },
+            },
+          },
+          {
+            actor: 'guardrail',
+            type: 'offer_decision',
+            timestamp: '2026-10-10T08:02:00Z',
+            payload: {
+              approved: false,
+              reasons: ['resolution_not_acknowledged', 'negative_margin'],
+            },
+          },
+        ]}
+      />,
+    );
+    const items = screen.getAllByRole('listitem');
+    expect(items[0]!.querySelector('.reasons')?.textContent).toBe(
+      'hotel: ANAC 400 Art. 27, III meals: ANAC 400 Art. 27, II',
+    );
+    expect(items[1]!.querySelector('.reasons')?.textContent).toBe(
+      'Passenger has not acknowledged the resolution Net margin is negative',
+    );
+  });
+
+  it('maps all four seat courtesy reason codes to human-readable labels (#432)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'seat',
+            type: 'seat_held',
+            timestamp: '2026-10-10T08:01:00Z',
+            payload: { reason: 'courtesy_upgrade_loyalty_tier' },
+          },
+          {
+            actor: 'seat',
+            type: 'seat_held',
+            timestamp: '2026-10-10T08:02:00Z',
+            payload: { reason: 'ancillary_preserved' },
+          },
+          {
+            actor: 'seat',
+            type: 'seat_held',
+            timestamp: '2026-10-10T08:03:00Z',
+            payload: { reason: 'equivalent_assigned' },
+          },
+          {
+            actor: 'seat',
+            type: 'seat_held',
+            timestamp: '2026-10-10T08:04:00Z',
+            payload: { reason: 'unavailable_refund_queued' },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('Courtesy upgrade for loyalty tier')).toBeInTheDocument();
+    expect(screen.getByText('Paid seat selection preserved')).toBeInTheDocument();
+    expect(screen.getByText('Equivalent seat assigned')).toBeInTheDocument();
+    expect(screen.getByText('Preferred seat unavailable; refund queued')).toBeInTheDocument();
+  });
+
+  it('renders status_changed from → to, rebooked flight, and bag_rerouted tag → flight details (#432)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'customer_agent',
+            type: 'status_changed',
+            timestamp: '2026-10-10T08:01:00Z',
+            payload: { from: 'DETECTED', to: 'OUTREACH_SENT' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'rebooked',
+            timestamp: '2026-10-10T08:02:00Z',
+            payload: { flight: 'AC1252' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'bag_rerouted',
+            timestamp: '2026-10-10T08:03:00Z',
+            payload: { tag: 'BAG998877', flight: 'AC1252' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'bag_rerouted',
+            timestamp: '2026-10-10T08:04:00Z',
+            payload: { tag: 'BAG112233' },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('DETECTED → OUTREACH_SENT')).toBeInTheDocument();
+    expect(screen.getByText('AC1252')).toBeInTheDocument();
+    expect(screen.getByText('BAG998877 → AC1252')).toBeInTheDocument();
+    expect(screen.getByText('BAG112233')).toBeInTheDocument();
+  });
 });

@@ -32,6 +32,11 @@ export const REASONS: Record<string, string> = {
   not_acknowledged: 'Passenger has not acknowledged the resolution',
   open_request: 'Passenger has an open request',
   margin_negative: 'Net margin is negative',
+  // Seat specialist & courtesy reason codes
+  courtesy_upgrade_loyalty_tier: 'Courtesy upgrade for loyalty tier',
+  ancillary_preserved: 'Paid seat selection preserved',
+  equivalent_assigned: 'Equivalent seat assigned',
+  unavailable_refund_queued: 'Preferred seat unavailable; refund queued',
 };
 
 export const reasonLabel = (code: string) => REASONS[code] ?? code;

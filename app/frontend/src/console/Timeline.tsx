@@ -36,6 +36,21 @@ function reasonsOf(e: JourneyEvent): string[] {
   ) {
     out.push(`${p.flight} → ${p.connection_flight} (margin ${p.margin_minutes} min)`);
   }
+  if (
+    e.type === 'status_changed' &&
+    typeof p.from === 'string' &&
+    p.from &&
+    typeof p.to === 'string' &&
+    p.to
+  ) {
+    out.push(`${p.from} → ${p.to}`);
+  }
+  if (e.type === 'rebooked' && typeof p.flight === 'string' && p.flight && !p.reason) {
+    out.push(p.flight);
+  }
+  if (e.type === 'bag_rerouted' && typeof p.tag === 'string' && p.tag) {
+    out.push(typeof p.flight === 'string' && p.flight ? `${p.tag} → ${p.flight}` : p.tag);
+  }
   return out;
 }
 
@@ -61,9 +76,11 @@ export function Timeline({ events }: { events: JourneyEvent[] }) {
               </span>
               {reasons.length > 0 && (
                 <div className="reasons">
-                  {reasons.map((r) => (
-                    <span key={r}>{reasonLabel(r)}</span>
-                  ))}
+                  {reasons.flatMap((r, idx) =>
+                    idx > 0
+                      ? [' ', <span key={r}>{reasonLabel(r)}</span>]
+                      : [<span key={r}>{reasonLabel(r)}</span>],
+                  )}
                 </div>
               )}
             </li>

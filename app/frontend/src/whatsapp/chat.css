@@ -124,6 +124,7 @@
   border-color: var(--line);
   cursor: default;
 }
+.chat button:focus-visible,
 .chat-input input:focus-visible,
 .chat-input button:focus-visible {
   outline-offset: -3px;
