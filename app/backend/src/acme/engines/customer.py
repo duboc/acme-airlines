@@ -433,6 +433,7 @@ class CustomerEngineApp:
         configure_logging()  # no passenger PII in Cloud Logging (#170)
         configure_cloud_trace(DISPLAY_NAME)
         configure_cloud_monitoring(DISPLAY_NAME)
+        self.llm_mode = validate_env()  # refresh in the unpickled container environment (#440)
         self.runtime = CustomerRuntime()  # in-process simulators, LlmPort from LLM_MODE
         self.runtime.llm = RecordingLlm(self.runtime.llm)  # the replay tape (#279)
         warm_registry()  # build the sim tool registries once, not during a rebuild (#280)

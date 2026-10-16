@@ -152,3 +152,88 @@ def test_engine_requirements_are_exact_pins_matching_uv_lock():
         m = re.fullmatch(r"([A-Za-z0-9_.-]+)(\[[^\]]+\])?==([\w.]+)", req)
         assert m, f"{req} is not an exact pin"
         assert locked[m.group(1).lower()] == m.group(3), f"{req} drifted from uv.lock"
+
+
+@pytest.mark.parametrize(
+    ("factory", "expected_engine"),
+    [
+        (build_customer_engine_app, "acme-customer-agent"),
+        (sales.build_sales_engine_app, "acme-sales-agent"),
+    ],
+)
+def test_given_pickled_fake_mode_app_when_set_up_runs_in_vertex_env_then_diagnostics_reports_vertex(
+    monkeypatch, factory, expected_engine
+):
+    """#440 AC1: Given an engine app constructed under LLM_MODE=fake and pickled/unpickled with
+    cloudpickle into a container where LLM_MODE=vertex and ACME_GENAI_PROJECT=acme-airlines-factory,
+    when set_up() runs, _set_up() refreshes self.llm_mode so diagnostics()['llm_mode'] == 'vertex'.
+    """
+    import cloudpickle
+    from google import genai
+
+    from acme.sales import client as sales_client
+
+    monkeypatch.setenv("LLM_MODE", "fake")
+    built_on_ci = factory()
+    assert built_on_ci.diagnostics()["llm_mode"] == "fake"
+    blob = cloudpickle.dumps(built_on_ci)
+
+    monkeypatch.setenv("LLM_MODE", "vertex")
+    monkeypatch.setenv("ACME_GENAI_PROJECT", "acme-airlines-factory")
+    monkeypatch.setenv("ACME_GENAI_LOCATION", "global")
+    monkeypatch.setenv(
+        "ACME_CUSTOMER_ENGINE",
+        "projects/acme-airlines-factory/locations/us-central1/reasoningEngines/111",
+    )
+    monkeypatch.setattr(genai, "Client", lambda **_kw: object())
+    monkeypatch.setattr(sales_client, "_AdcEngineHandle", lambda _res: object())
+
+    unpickled = cloudpickle.loads(blob)
+    assert unpickled.diagnostics()["llm_mode"] == "fake"  # before set_up(): pickled value
+    unpickled.set_up()
+    diag = unpickled.diagnostics()
+    assert diag["engine"] == expected_engine
+    assert diag["status"] == "ready" and diag["startup_error"] is None
+    assert diag["llm_mode"] == "vertex"
+
+
+@pytest.mark.parametrize("factory", [build_customer_engine_app, sales.build_sales_engine_app])
+@pytest.mark.parametrize(
+    ("bad_env", "expected_substr"),
+    [
+        (
+            {
+                "LLM_MODE": "vertex",
+                "ACME_GENAI_PROJECT": "acme-airlines-factory",
+                "ACME_GENAI_LOCATION": "us-central1",
+            },
+            "ACME_GENAI_LOCATION must be 'global'",
+        ),
+        (
+            {"LLM_MODE": "vertex"},
+            "GOOGLE_CLOUD_PROJECT",
+        ),
+    ],
+)
+def test_given_pickled_app_when_set_up_runs_with_invalid_vertex_env_then_diagnostics_reports_failed(
+    monkeypatch, factory, bad_env, expected_substr
+):
+    """#440 AC2: Given an engine app unpickled into a container where LLM_MODE=vertex has an
+    invalid setting, when set_up() runs, validate_env() raises EngineConfigError and diagnostics()
+    reports status == 'failed' with startup_error."""
+    import cloudpickle
+
+    monkeypatch.setenv("LLM_MODE", "fake")
+    blob = cloudpickle.dumps(factory())
+
+    for key in ("ACME_GENAI_PROJECT", "GOOGLE_CLOUD_PROJECT", "ACME_GENAI_LOCATION"):
+        monkeypatch.delenv(key, raising=False)
+    for key, val in bad_env.items():
+        monkeypatch.setenv(key, val)
+
+    unpickled = cloudpickle.loads(blob)
+    unpickled.set_up()
+    diag = unpickled.diagnostics()
+    assert diag["status"] == "failed"
+    assert "EngineConfigError" in diag["startup_error"]
+    assert expected_substr in diag["startup_error"]

@@ -422,8 +422,9 @@ async def test_forced_rebuild_against_the_real_engines_offline(monkeypatch):
         return [{"ts": datetime.now(UTC).isoformat(), "text": "ACME_DIAG " + json.dumps(c)}
                 for c in captured if c["event"] == "rebuild"]  # fmt: skip
 
-    r = await run_rebuild_proof(backend, logs, "happy-path", "seat-taken", wait=0.0)
+    r = await run_rebuild_proof(backend, logs, "happy-path", "seat-taken", budget_ms=None, wait=0.0)
     assert r.failures == [] and len(r.engine_ms) == 1 and r.to_step == 5
+    assert r.tape_miss == 0 and r.tape_discarded == 0 and "budget" not in r.markdown()
 
 
 OFFER = ("outbound", "Upgrade AC1252 to premium business for $135.00, seat 2A. Optional.",

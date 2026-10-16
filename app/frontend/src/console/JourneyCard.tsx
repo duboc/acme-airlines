@@ -1,5 +1,5 @@
 import { isDisruptionState } from '../api/types';
-import { STATUS_LABELS } from './labels';
+import { cabinLabel, STATUS_LABELS } from './labels';
 import type { JourneyDetail } from './types';
 
 const ORDER = Object.keys(STATUS_LABELS) as (keyof typeof STATUS_LABELS)[];
@@ -46,7 +46,7 @@ export function JourneyCard({ journey }: { journey: JourneyDetail | null }) {
         <Row term="Seat">
           {seat ? (
             <>
-              <span>{seat.seat}</span> ({seat.cabin ?? 'economy'})
+              <span>{seat.seat}</span> ({cabinLabel(seat.cabin ?? 'economy')})
             </>
           ) : (
             NONE
