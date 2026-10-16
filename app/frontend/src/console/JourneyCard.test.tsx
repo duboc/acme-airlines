@@ -102,4 +102,63 @@ describe('JourneyCard', () => {
     );
     expect(screen.getByText('Seat').nextElementSibling).toHaveTextContent('14A (economy)');
   });
+
+  it('renders Bag.routing when present and falls back to bag tag (#478)', () => {
+    render(
+      <JourneyCard
+        journey={{
+          ...resolved,
+          bags: [
+            { tag: 'BAG0001', routing: 'AC1240' },
+            { tag: 'BAG0002', routing: null },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText('Bag routing').nextElementSibling).toHaveTextContent(
+      'BAG0001 → AC1240, BAG0002',
+    );
+  });
+
+  it('renders Transfers row without snake_case when defined (#478)', () => {
+    const { rerender } = render(<JourneyCard journey={{ ...resolved, transfers: [] }} />);
+    expect(screen.getByText('Transfers').nextElementSibling).toHaveTextContent('Not arranged yet');
+
+    rerender(
+      <JourneyCard
+        journey={{
+          ...resolved,
+          transfers: [
+            {
+              transfer_ref: 'TR-1',
+              leg: 'airport_to_hotel',
+              origin: 'GRU',
+              destination: 'HT8842',
+              pickup_at: '2026-10-10T22:30:00Z',
+            },
+            {
+              transfer_ref: 'TR-2',
+              leg: 'hotel_to_airport',
+              origin: 'HT8842',
+              destination: 'GRU',
+              pickup_at: '2026-10-11T09:10:00Z',
+            },
+          ],
+        }}
+      />,
+    );
+    const transfersCell = screen.getByText('Transfers').nextElementSibling;
+    expect(transfersCell).toHaveTextContent(
+      'airport to hotel (GRU → HT8842) · hotel to airport (HT8842 → GRU)',
+    );
+    expect(transfersCell?.textContent).not.toContain('_');
+  });
+
+  it('renders Needs human: Yes only when needs_human is true (#478)', () => {
+    const { rerender } = render(<JourneyCard journey={{ ...resolved, needs_human: false }} />);
+    expect(screen.queryByText('Needs human: Yes')).not.toBeInTheDocument();
+
+    rerender(<JourneyCard journey={{ ...resolved, needs_human: true }} />);
+    expect(screen.getByText('Needs human: Yes')).toBeInTheDocument();
+  });
 });

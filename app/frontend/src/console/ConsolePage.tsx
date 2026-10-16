@@ -24,6 +24,7 @@ export function ConsolePage() {
   const [events, setEvents] = useState<JourneyEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState('unscheduled maintenance');
   const [resetSeq, setResetSeq] = useState(0);
   const [chatSeq, setChatSeq] = useState(0);
   const [chatRefresh, setChatRefresh] = useState(0);
@@ -130,6 +131,8 @@ export function ConsolePage() {
   }, [attach]);
 
   const currentId = journey?.journey_id ?? null;
+  const activeFlight = journey?.itinerary[0]?.flight_number;
+  const secondaryFlight = activeFlight && activeFlight !== 'AC1234' ? activeFlight : null;
 
   function demoStarted() {
     close();
@@ -152,13 +155,13 @@ export function ConsolePage() {
     }
   }
 
-  async function trigger() {
+  async function trigger(flight = 'AC1234') {
     setBusy(true);
     setError(null);
     try {
-      const [created] = await triggerCancellation('AC1234', 'unscheduled maintenance');
+      const [created] = await triggerCancellation(flight, reason);
       // The backend ignores a duplicate cancellation; fall back to the journey it already has.
-      const id = created ?? (await listJourneys())[0]?.journey_id;
+      const id = created ?? currentId ?? (await listJourneys())[0]?.journey_id;
       if (!id) throw new Error('no journey');
       await attach(id);
     } catch (err) {
@@ -195,14 +198,28 @@ export function ConsolePage() {
       <div className="console-head">
         <h1>Operations console</h1>
         <div className="actions">
+          <select
+            aria-label="Cancellation reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            disabled={busy}
+          >
+            <option value="unscheduled maintenance">Unscheduled maintenance (DOC-10)</option>
+            <option value="severe weather">Force majeure: severe weather (DOC-11)</option>
+          </select>
           <button
             type="button"
             className="primary"
-            onClick={trigger}
+            onClick={() => void trigger('AC1234')}
             disabled={busy || journey !== null}
           >
             Trigger AC1234 cancellation
           </button>
+          {secondaryFlight && (
+            <button type="button" onClick={() => void trigger(secondaryFlight)} disabled={busy}>
+              Trigger {secondaryFlight} cancellation
+            </button>
+          )}
           <button type="button" onClick={reset} disabled={busy}>
             Reset
           </button>
