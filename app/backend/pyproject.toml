@@ -89,6 +89,7 @@ pytest_add_cli_args_test_selection = [
     "tests/governance/test_sales_guard_audit.py",
     "tests/governance/test_service_closure.py",
     "tests/governance/test_service_closure_decision.py",
+    "tests/governance/test_decided_closure_due.py",
     "tests/engines/test_parse_fallback.py",
 ]
 
