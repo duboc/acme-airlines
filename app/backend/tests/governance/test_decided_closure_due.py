@@ -128,3 +128,21 @@ def test_the_two_failure_kinds_share_one_clock():
     ]
     assert due(timeline=mixed, now=T0 + WINDOW) is False
     assert due(timeline=mixed, now=T0 + timedelta(minutes=3) + WINDOW) is True
+
+
+@pytest.mark.parametrize("closed", [True, False])
+async def test_the_retry_forwards_the_runtime_and_the_record_and_returns_the_closure_result(
+    monkeypatch, closed
+):
+    from acme.customer import service_closure
+
+    seen = []
+
+    async def close_loop(rt, rec):
+        seen.append((rt, rec))
+        return closed
+
+    monkeypatch.setattr(service_closure, "close_loop", close_loop)
+    rt, rec = NS(name="rt"), NS(name="rec")
+    assert await service_closure.retry_decided_closure(rt, rec) is closed
+    assert seen == [(rt, rec)]
