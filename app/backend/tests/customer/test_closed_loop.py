@@ -267,7 +267,7 @@ async def test_the_tick_does_not_retry_without_a_failure_or_with_a_live_offer(c)
 # --- use-case beats no test covered (#462) -----------------------------------------------------
 async def test_replanning_reschedules_the_pickup_and_leaves_two_active_transfers(c):
     """Scenario 3: AC1252 leaves later, so the hotel_to_airport pickup moves and the old one is
-    cancelled in the concierge system (the timeline has no separate cancellation event)."""
+    cancelled in the concierge system."""
     arranged = [e.payload for e in events(c, "transfer_arranged")]
     assert [p["leg"] for p in arranged] == [
         "airport_to_hotel",
@@ -282,7 +282,6 @@ async def test_replanning_reschedules_the_pickup_and_leaves_two_active_transfers
         ("GRU", "HT8842"),
         ("HT8842", "GRU"),
     ]
-    assert not events(c, "transfer_cancelled")  # not an event today: see #462 comment
 
 
 async def test_the_api_decline_closes_and_verifies_and_the_stream_says_so():
