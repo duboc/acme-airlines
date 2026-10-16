@@ -58,7 +58,7 @@ async def test_approved_offer_is_sent_once_optional_with_buttons(ctx):
     assert out["status"] == "approved" and set(out) == {"status", "offer_id", "reasons"}
     (msg,) = offer_messages(ctx)
     assert msg["buttons"] == ["Accept", "No thanks"]
-    assert {"boarding_pass", "hotel_voucher"} <= set(msg["attachments"])
+    assert msg["attachments"] == ["boarding_pass"]  # no hotel was booked in this journey (#430)
     assert "optional" in msg["body"].lower() and "$135.00" in msg["body"]
     assert "AC1252" in msg["body"] and "premium business" in msg["body"].lower()
     (rec,) = ctx.state.offers
@@ -235,3 +235,38 @@ async def test_offer_compose_accepts_capitalized_word_tokens_and_rejects_any_mis
         fallback_text, _ = await ctx.skills._compose(rec, mod_offer, inv)  # noqa: SLF001
         assert fallback_text != valid_caps.replace(omitted, "XXX")
         assert fallback_count(metric_points, "offer") - b == 1, omitted
+
+
+async def test_ac2_hotel_voucher_is_attached_only_when_a_hotel_was_booked(ctx):
+    from acme.domain.models import HotelBooking
+
+    rec = ctx.rt.journeys[ctx.jid]
+    rec.hotel = HotelBooking(booking_id="B1", hotel_id="HT8842", passenger_id="P-MARIANA", nights=1)
+    await ctx.skills.propose_and_deliver(offer(ctx.jid))
+    (msg,) = offer_messages(ctx)
+    assert msg["attachments"] == ["boarding_pass", "hotel_voucher"]
+    assert "AC1252 and your hotel voucher (HT8842) are attached." in msg["body"]
+
+
+async def test_ac2_without_a_hotel_the_text_says_is_attached(ctx):
+    await ctx.skills.propose_and_deliver(offer(ctx.jid))
+    (msg,) = offer_messages(ctx)
+    assert "your boarding pass for AC1252 is attached." in msg["body"]
+    assert "hotel" not in msg["body"].lower()
+
+
+@pytest.mark.parametrize("status", [S.RESOLVING, S.REPLANNING, S.CLOSED])
+def test_ac3_a_proposal_during_a_disruption_records_no_pitch(ctx, status):
+    ctx.state.status = status  # any non-RESOLVED state
+    with pytest.raises(SkillError, match="disruption_not_resolved"):
+        ctx.skills.propose_offer(offer(ctx.jid))
+    types = [e.type for e in ctx.state.timeline]
+    assert "guardrail_decision" in types
+    assert "sales_opportunity" not in types and "offer_proposed" not in types
+    assert ctx.state.offers == []
+
+
+def test_ac3_a_direct_proposal_loads_the_tier_when_unset(ctx):
+    ctx.state.passenger_tier = None
+    out = ctx.skills.propose_offer(offer(ctx.jid))
+    assert ctx.state.passenger_tier == "diamond" and out["status"] == "approved"

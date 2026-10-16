@@ -50,8 +50,8 @@ describe('timeline event contract', () => {
 
     const allCodes = new Set([...approvalCodes, ...failureCodes, ...suppressionCodes]);
     expect(new Set(approvalCodes).size).toBe(6);
-    expect(new Set(failureCodes).size).toBe(12);
-    expect(allCodes.size).toBe(18);
+    expect(new Set(failureCodes).size).toBe(13);
+    expect(allCodes.size).toBe(19);
 
     for (const code of allCodes) {
       const label = reasonLabel(code);

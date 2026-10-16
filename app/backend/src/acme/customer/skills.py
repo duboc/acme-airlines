@@ -106,12 +106,17 @@ class CustomerSkills:
             raise SkillError("duplicate offer_id")
         state.current_flight = self._current_flight(rec)  # Customer-owned fact
         inventory = inventory or self._world_inventory(offer)
-        state.append_event(
-            "customer_agent",
-            "sales_opportunity",
-            {"flight": offer.flight, "open_seats": inventory.open_seats},
-        )
+        if state.passenger_tier is None and (
+            passenger := self._rt.world.passengers.get(rec.passenger_id)
+        ):
+            state.passenger_tier = passenger.tier  # a direct call skips `_load_facts`
         decision = evaluate_traced(state, offer, inventory, "propose")
+        if "disruption_not_resolved" not in decision.reasons:  # no pitch during a disruption
+            state.append_event(
+                "customer_agent",
+                "sales_opportunity",
+                {"flight": offer.flight, "open_seats": inventory.open_seats},
+            )
         self._decision_event(state, offer, decision)
         if "disruption_not_resolved" in decision.reasons:
             raise SkillError("rejected: disruption_not_resolved")
@@ -240,7 +245,7 @@ class CustomerSkills:
         msg = await rt.send(
             rec.passenger_id,
             text,
-            attachments=["boarding_pass", "hotel_voucher"],
+            attachments=["boarding_pass", *(["hotel_voucher"] if rec.hotel else [])],
             buttons=["Accept", "No thanks"],
         )
         record.status = "sent"
@@ -264,9 +269,13 @@ class CustomerSkills:
         open_premium = rt.world.flights[flight].open_seats.get(inventory.cabin, [])
         seat = f" {open_premium[0]}" if open_premium else ""
         price = f"${offer.price:.2f}"
-        hotel = f" and your hotel voucher ({rec.hotel.hotel_id})" if rec.hotel else ""
+        attached = (
+            f"your boarding pass for {flight} and your hotel voucher ({rec.hotel.hotel_id}) are"
+            if rec.hotel
+            else f"your boarding pass for {flight} is"  # DOC-06 / DOC-08: no hotel was booked
+        )
         summary = (
-            f"your boarding pass for {flight}{hotel} are attached. "
+            f"{attached} attached. "
             "Only if you would like it, and with no pressure at all, there is an optional upgrade: "
             f"a premium business (lie-flat) seat{seat} on {flight} for {price} instead of the "
             f"usual ${inventory.standard_upgrade_fare:.2f}. Tap Accept to take it, or No thanks "
