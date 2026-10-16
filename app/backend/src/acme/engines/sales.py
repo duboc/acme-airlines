@@ -83,6 +83,7 @@ class SalesEngineApp:
         configure_logging()  # no passenger PII in Cloud Logging (#170)
         configure_cloud_trace(DISPLAY_NAME)
         configure_cloud_monitoring(DISPLAY_NAME)
+        self.llm_mode = validate_env()  # refresh in the unpickled container environment (#440)
         env = {"ENGINE_MODE": "agent-engine", **self._env()}
         customer = build_customer_client(env, engine=self._customer_engine)
         sim = SimWorld.seeded()
