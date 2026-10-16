@@ -1,7 +1,6 @@
-# Deployment: local containers and Cloud Run (documented, not deployed)
+# Deployment: local containers, hosted IAP Cloud Run demo, and Agent Engine
 
-Status: the **local containers are the verified deliverable**. Cloud Run deployment is **documented
-only** in the MVP (ADR 0100 Decision 1): nothing here was deployed and no deploy identity exists.
+Status: the **local containers**, the single-container IAP Cloud Run service **`acme-irrops-demo`** (runtime SA `acme-irrops-demo@acme-airlines-factory.iam.gserviceaccount.com`, granted `roles/aiplatform.user`), and the Vertex AI Agent Engines **`acme-customer-agent`** and **`acme-sales-agent`** (runtime SA `acme-agent-engine@acme-airlines-factory.iam.gserviceaccount.com`) are deployed in `us-central1` via keyless WIF (`acme-observatory-deployer@acme-airlines-factory.iam.gserviceaccount.com`). Only the **4-service split Cloud Run topology** below (`## Cloud Run (target, not deployed)`) remains target-only (ADR 0100 Decision 1).
 
 ## Local: docker compose
 
@@ -54,7 +53,7 @@ child through its own environment only, and never logged. Non-root (uid 10001), 
 docker build -f app/demo/Dockerfile -t acme-demo app && docker run --rm -p 127.0.0.1:8080:8080 acme-demo
 ```
 
-`.github/workflows/irrops-deploy.yml` builds it on every push to main touching `app/**`, pushes it to
+`.github/workflows/irrops-deploy.yml` builds it on every push to `main` touching `app/**` or `.github/workflows/irrops-deploy.yml` (and on `workflow_dispatch`), pushes it to
 `IRROPS_AR_REPO` and swaps only the image on Cloud Run service `IRROPS_DEMO_SERVICE` (keyless WIF,
 `OBSERVATORY_*` variables), then checks the deployed image SHA. If the service does not exist yet it
 warns and succeeds. The `containers` CI job builds the image and smokes it (cancellation -> RESOLVED,
