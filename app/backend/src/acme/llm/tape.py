@@ -191,9 +191,12 @@ class TapeLlm:
         self._tape = {m: [e for e in tape if e["m"] == m] for m in ("compose", "parse")}
         self._fake, self.misses, self.entries = FakeLlm(), 0, []  # type: ignore[var-annotated]
 
-    def record_manual(self, op: str, passenger_id: str, value: str, step: int) -> None:
+    def _append(self, entry: Entry) -> None:
         if len(self.entries) < MAX_ENTRIES:
-            self.entries.append(manual_entry(op, passenger_id, value, step))
+            self.entries.append(entry)
+
+    def record_manual(self, op: str, passenger_id: str, value: str, step: int) -> None:
+        self._append(manual_entry(op, passenger_id, value, step))
 
     def _next(self, method: str, key: str) -> Entry | None:
         for i, entry in enumerate(self._tape[method]):
@@ -208,7 +211,7 @@ class TapeLlm:
             self.misses += 1
             text = await self._fake.compose_passenger_message(context)
             entry = {"m": "compose", "text": text, KEY: key}
-        self.entries.append(entry)
+        self._append(entry)
         if entry.get("fail"):
             raise RuntimeError("replayed LLM failure")
         return entry["text"]
@@ -219,7 +222,7 @@ class TapeLlm:
         if entry is None:
             self.misses += 1
             entry = _encode(await self._fake.parse_passenger_request(text), key)
-        self.entries.append(entry)
+        self._append(entry)
         if entry.get("fail"):
             raise RuntimeError("replayed LLM failure")
         return _decode(entry)

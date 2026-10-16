@@ -671,10 +671,11 @@ class CustomerEngineApp:
     ) -> None:
         if "error" in out or self.scenarios.active is None:
             return
-        if preset is not None and self.scenarios.advance_if_matches(op, passenger_id, value):
-            return
-        if hasattr(self.runtime.llm, "record_manual"):
-            self.runtime.llm.record_manual(op, passenger_id, value, self.scenarios.index)
+        if not (preset is not None and self.scenarios.advance_if_matches(op, passenger_id, value)):
+            if hasattr(self.runtime.llm, "record_manual"):
+                self.runtime.llm.record_manual(op, passenger_id, value, self.scenarios.index)
+        if preset is not None and hasattr(self.runtime.llm, "entries"):
+            out["tape"] = list(self.runtime.llm.entries)
 
     @shared
     async def whatsapp_reply(

@@ -268,7 +268,7 @@ async def test_manual_whatsapp_reply_ticks_sales_and_refreshes_state_in_local_an
             for _ in range(3):  # cancel, notify, "Can I leave after 10am?"
                 assert (await c.post("/scenarios/happy-path/step")).status_code == 200
             r = await c.post("/whatsapp/P-MARIANA/messages", json={"text": "Perfect, thanks!"})
-            assert r.status_code == 201
+            assert r.status_code == 201 and "tape" not in r.json()
             (jid,) = [j["journey_id"] for j in (await c.get("/journeys")).json()]
             detail = (await c.get(f"/journeys/{jid}")).json()
             assert detail["resolution_acknowledged"] is True
@@ -276,8 +276,10 @@ async def test_manual_whatsapp_reply_ticks_sales_and_refreshes_state_in_local_an
             assert detail["offer"]["flight"] == "AC1252" and detail["offer"]["price"] == "135.00"
             act = await c.post("/whatsapp/P-MARIANA/actions", json={"action": "accept_offer"})
             assert act.status_code == 200 and act.json()["offer_status"] == "accepted"
+            assert "tape" not in act.json()
             after = (await c.get(f"/journeys/{jid}")).json()
             assert after["status"] == "CLOSED" and after["seat"]["seat"] == "2A"
             assert after["offer"]["status"] == "accepted"
     assert backend._step == 5 and backend.done  # noqa: SLF001
+    assert any(e.get("m") == "parse" for e in (backend._tape or []))  # noqa: SLF001
     assert any(e.get("k") == "offer" for e in (backend._tape or []))  # noqa: SLF001

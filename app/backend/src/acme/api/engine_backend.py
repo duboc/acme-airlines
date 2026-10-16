@@ -37,7 +37,7 @@ from acme.api.events import TimelineEvent
 from acme.api.scenarios import ACK, BY_ID, PresetView, ScenarioState, matches_step
 from acme.api.sse import event_stream, resume_from
 from acme.customer.runtime import WhatsAppMessage
-from acme.llm.tape import MAX_ENTRIES, manual_entry
+from acme.llm.tape import MAX_ENTRIES, clean_tape, manual_entry
 
 ENV_CUSTOMER, ENV_SALES = "AGENT_ENGINE_CUSTOMER", "AGENT_ENGINE_SALES"
 ASYNC_OPS = {
@@ -399,18 +399,23 @@ class EngineBackend:
         self._tape = None  # the tape belongs to the run that is over (#279)
         return await self._customer.call("reset")
 
-    def _note_manual(self, op: str, kwargs: Mapping[str, Any]) -> None:
+    def _note_manual(self, op: str, kwargs: Mapping[str, Any], tape: Any = None) -> None:
         if self._active not in BY_ID or op not in ("whatsapp_reply", "whatsapp_action"):
             return
         pid = kwargs.get("passenger_id", "")
         value = kwargs.get("text", "") if op == "whatsapp_reply" else kwargs.get("action", "")
         steps = BY_ID[self._active].steps
-        if self._step < len(steps) and matches_step(steps[self._step], op, pid, value):
+        matched = self._step < len(steps) and matches_step(steps[self._step], op, pid, value)
+        if matched:
             self._step += 1
+        if (cleaned := clean_tape(tape)) is not None:
+            self._tape = cleaned
             return
-        tape = list(self._tape or [])
-        if len(tape) < MAX_ENTRIES:
-            self._tape = [*tape, manual_entry(op, pid, value, self._step)]
+        if matched:
+            return
+        entries = list(self._tape or [])
+        if len(entries) < MAX_ENTRIES:
+            self._tape = [*entries, manual_entry(op, pid, value, self._step)]
 
     async def api(self, op: str, **kwargs: Any) -> Any:
         """Phone panel and trigger ops, which return API errors as data."""
@@ -421,10 +426,11 @@ class EngineBackend:
         if op == "trigger_cancellation":  # the engine ends the preset: so does this cursor (#321)
             self._active, self._step, self._tape = None, 0, None
         reply = ok(await self._customer.call(op, **kwargs, **ctx))
+        tape = reply.pop("tape", None) if isinstance(reply, dict) else None
         if op == "whatsapp_messages":
             return reply
         try:
-            self._note_manual(op, kwargs)
+            self._note_manual(op, kwargs, tape)
             if op == "whatsapp_reply":
                 self._sales_pending = True
                 await self._tick_sales()

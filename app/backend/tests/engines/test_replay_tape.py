@@ -376,3 +376,94 @@ async def test_all_six_presets_preserve_structural_and_seat_reason_parity_after_
     if sid == "seat-taken":
         assert rebuilt["seat"] == "15A" and rebuilt["seat_reason"]
         assert "15A" in rebuilt["seat_reason"]
+
+
+async def test_given_tape_llm_at_max_entries_when_rebuilding_then_entries_never_exceed_limit():
+    """#429 AC1: Given TapeLlm at MAX_ENTRIES (32), when compose_passenger_message,
+    parse_passenger_request, or record_manual is called, len(entries) never exceeds 32 and
+    clean_tape(replay_llm.entries) is never None."""
+    seed = [{"m": "compose", "text": f"msg-{i}", "k": "notice"} for i in range(MAX_ENTRIES)]
+    replay = TapeLlm(seed)
+    for _ in range(MAX_ENTRIES - 1):
+        await replay.compose_passenger_message({})
+    assert len(replay.entries) == MAX_ENTRIES - 1
+
+    # 32nd entry via parse_passenger_request reaches MAX_ENTRIES (32).
+    await replay.parse_passenger_request("Can I leave after 11am?")
+    assert len(replay.entries) == MAX_ENTRIES
+    assert clean_tape(replay.entries) is not None
+
+    # Subsequent compose, parse, and record_manual calls never push entries past MAX_ENTRIES (32).
+    await replay.compose_passenger_message({})
+    assert len(replay.entries) == MAX_ENTRIES and clean_tape(replay.entries) is not None
+    await replay.parse_passenger_request("Perfect, thanks!")
+    assert len(replay.entries) == MAX_ENTRIES and clean_tape(replay.entries) is not None
+    replay.record_manual("whatsapp_reply", PID, "Extra reply", 2)
+    assert len(replay.entries) == MAX_ENTRIES and clean_tape(replay.entries) is not None
+
+
+@pytest.mark.parametrize(
+    ("reply_text", "expected_step", "suppress_first_state"),
+    [
+        ("Can I leave after 10am?", 3, False),
+        ("Can I leave after 11am?", 2, False),
+        ("Can I leave after 11am?", 2, True),
+    ],
+)
+async def test_given_manual_whatsapp_reply_when_next_state_hits_fresh_replica_then_zero_tape_miss(
+    monkeypatch, reply_text, expected_step, suppress_first_state
+):
+    """#429 AC2: Given an active preset where the passenger sends a manual whatsapp_reply (matching
+    the next scripted step or a custom reply like 'Can I leave after 11am?'), when the immediately
+    following scenario_state() (or next call after a suppressed EngineUnavailable) lands on a fresh
+    CustomerEngineApp replica, the replica's tape includes the parse entry, rebuilds with
+    tape_miss == 0 and tape_discarded == 0, and whatsapp_reply returns no 'tape' key."""
+    from acme.api.engine_backend import EngineUnavailable
+
+    class CustomAfterLlm(Creative):
+        async def parse_passenger_request(self, text):
+            if "11am" in text:
+                return DepartureAfter(time(11, 0))
+            return await super().parse_passenger_request(text)
+
+    app_a, cust_a, sales_a = build(CustomAfterLlm())
+    fresh_app = build_customer_engine_app()
+    fresh_app.set_up()
+    fresh_cust = SpyEngine(fresh_app)
+
+    backend = EngineBackend(cust_a, sales_a)
+    await backend.scenario_start("happy-path")
+    await backend.scenario_step("happy-path")  # step 0: cancel
+    await backend.scenario_step("happy-path")  # step 1: notify -> step_index == 2
+
+    log = diags(monkeypatch)
+    real_call = cust_a.call
+
+    async def route_state_to_fresh_replica(op, **kwargs):
+        if op == "scenario_state":
+            if suppress_first_state and not getattr(route_state_to_fresh_replica, "failed", False):
+                route_state_to_fresh_replica.failed = True
+                raise EngineUnavailable("transient replica failure")
+            return await fresh_cust.call(op, **kwargs)
+        return await real_call(op, **kwargs)
+
+    cust_a.call = route_state_to_fresh_replica
+    reply = await backend.api("whatsapp_reply", passenger_id=PID, text=reply_text)
+    assert "tape" not in reply
+    assert reply["direction"] == "inbound" and reply["text"] == reply_text
+    assert backend._step == expected_step  # noqa: SLF001
+    assert any(
+        e.get("m") == "parse" and e.get("kind") == "departure_after"
+        for e in (backend._tape or [])  # noqa: SLF001
+    )
+
+    if suppress_first_state:
+        assert not [e for e in log if e[0] == "rebuild"]
+        rebuilt_state = await backend.scenario_state()
+    else:
+        rebuilt_state = fresh_app.scenarios.state().model_dump(mode="json")
+
+    (_, rebuild) = next(e for e in log if e[0] == "rebuild")
+    assert rebuild["tape_miss"] == 0 and rebuild["tape_discarded"] == 0
+    assert rebuilt_state["flight"] == "AC1252"
+    assert clean_tape(fresh_app.runtime.llm.entries) is not None
