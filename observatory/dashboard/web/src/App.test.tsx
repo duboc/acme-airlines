@@ -24,6 +24,8 @@ const ok = {
   merges_per_day: [],
   engines: [],
   guardrail: [],
+  template_fallback_rate: null,
+  ack_vetoes: null,
   demo_health: 'unknown',
 };
 
@@ -62,6 +64,7 @@ describe('App shell', () => {
       expect(screen.getByRole('region', { name: t })).toBeInTheDocument();
     }
     expect(await screen.findAllByText('Live')).toHaveLength(7);
+    expect(screen.getByText('Acknowledge vetoes')).toBeInTheDocument();
     expect(screen.getByText('Latest data 2026-10-10 12:00Z')).toBeInTheDocument();
   });
 

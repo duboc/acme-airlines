@@ -176,6 +176,7 @@ class IrropsResponse(Envelope):
     template_fallback_rate: float | None = (
         None  # fallbacks / notifications, null if no notifications
     )
+    ack_vetoes: int | None = None
     needs_human: int | None = None
     notification_count: int | None = None
     notification_p50_s: float | None = None

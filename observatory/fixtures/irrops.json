@@ -8,6 +8,7 @@
   ],
   "offers": {"proposed": 7, "accepted": 4, "declined": 2},
   "template_fallbacks": 3,
+  "ack_vetoes": 2,
   "needs_human": 1,
   "notification": {"count": 12, "p50_s": 8.0, "p95_s": 41.5},
   "errors_5xx": 0,

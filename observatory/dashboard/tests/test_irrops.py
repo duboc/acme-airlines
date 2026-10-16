@@ -25,6 +25,7 @@ def test_fake_data_shows_every_metric_group():
     assert {"rule": "not_acknowledged", "outcome": "reject", "count": 4} in d["guardrail"]
     assert (d["offers_proposed"], d["offers_accepted"], d["offers_declined"]) == (7, 4, 2)
     assert d["template_fallbacks"] == 3 and d["template_fallback_rate"] == 0.25
+    assert d["ack_vetoes"] == 2
     assert d["needs_human"] == 1
     assert (d["notification_p50_s"], d["notification_p95_s"]) == (8.0, 41.5)
     assert d["errors_5xx"] == 0 and d["errors_5xx_per_hour"] == 0
@@ -37,6 +38,7 @@ def test_empty_is_pending_with_null_values_not_zeros():
     d = get("empty")
     assert d["state"] == "empty" and d["message"]
     assert d["offers_proposed"] is None and d["errors_5xx"] is None and d["guardrail"] == []
+    assert d["ack_vetoes"] is None
     assert d["demo_health"] == "unknown"
 
 
@@ -63,7 +65,8 @@ def test_missing_metric_series_stay_null():
 
     d = TestClient(create_app(Partial())).get("/api/irrops").json()
     assert d["offers_proposed"] == 1 and d["offers_accepted"] is None
-    assert d["needs_human"] is None and d["template_fallback_rate"] is None
+    assert d["ack_vetoes"] is None and d["needs_human"] is None
+    assert d["template_fallback_rate"] is None
 
 
 def test_hours_is_validated():
@@ -104,6 +107,8 @@ def test_gcp_reads_the_documented_metric_names():
             return [series({}, n=9, d=12.5)]
         if "acme.scenario.rebuild.duration" in flt:
             return [series({}, n=2, d=0.15)]
+        if "acme.llm.ack_vetoes" in flt:
+            return [series({}, n=4)]
         if "acme.needs_human" in flt:
             return [series({}, n=1)]
         if "acme.http.server.errors" in flt:
@@ -116,6 +121,7 @@ def test_gcp_reads_the_documented_metric_names():
     assert raw["notification"] == {"count": 9, "p50_s": 12.5, "p95_s": 12.5}
     assert raw["engine_rebuilds"] == 2
     assert raw["engine_latency"] == {"p50_ms": 150.0, "p95_ms": 150.0}
+    assert raw["ack_vetoes"] == 4
     assert raw["needs_human"] == 1 and raw["template_fallbacks"] is None
     assert raw["errors_5xx"] is None and raw["alive"] is True
     assert raw["last_point_at"] == NOW.isoformat()

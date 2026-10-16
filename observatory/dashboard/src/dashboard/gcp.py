@@ -350,6 +350,7 @@ class GcpDataSource:
             "guardrail": guardrail,
             "offers": offers or None,
             "template_fallbacks": total("llm.template_fallbacks"),
+            "ack_vetoes": total("llm.ack_vetoes"),
             "needs_human": total("needs_human"),
             "notification": notification,
             "errors_5xx": total("http.server.errors"),
@@ -358,7 +359,13 @@ class GcpDataSource:
         }
         if not (guardrail or offers or notification or engine_latency) and all(
             raw[k] is None
-            for k in ("template_fallbacks", "needs_human", "errors_5xx", "engine_rebuilds")
+            for k in (
+                "template_fallbacks",
+                "ack_vetoes",
+                "needs_human",
+                "errors_5xx",
+                "engine_rebuilds",
+            )
         ):
             raise SourceEmpty(
                 "No IRROPS metrics yet: the runtime has not exported to Cloud Monitoring."

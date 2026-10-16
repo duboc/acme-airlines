@@ -208,3 +208,18 @@ def test_collector_runs_error_is_unavailable():
     log.list_entries.side_effect = Forbidden("no")
     with pytest.raises(SourceUnavailable):
         make(log=log).collector_runs(1)
+
+
+def test_irrops_metrics_reads_ack_vetoes():
+    mon = MagicMock()
+    pt = NS(
+        value=NS(int64_value=3, double_value=0.0, distribution_value=NS(count=0)),
+        interval=NS(end_time=NOW),
+    )
+    mon.list_time_series.side_effect = lambda request: (
+        [NS(metric=NS(labels={}), points=[pt])]
+        if "acme.llm.ack_vetoes" in request["filter"]
+        else []
+    )
+    raw = make(mon=mon).irrops_metrics(24)
+    assert raw["ack_vetoes"] == 3 and raw["template_fallbacks"] is None

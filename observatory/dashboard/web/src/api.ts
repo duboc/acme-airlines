@@ -125,6 +125,7 @@ export interface IrropsResponse extends Envelope {
   offers_declined: number | null;
   template_fallbacks: number | null;
   template_fallback_rate: number | null;
+  ack_vetoes?: number | null;
   needs_human: number | null;
   notification_count: number | null;
   notification_p50_s: number | null;

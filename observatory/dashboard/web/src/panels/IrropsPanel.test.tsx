@@ -18,6 +18,7 @@ const full: IrropsResponse = {
   offers_declined: 2,
   template_fallbacks: 3,
   template_fallback_rate: 0.25,
+  ack_vetoes: 2,
   needs_human: 1,
   notification_count: 12,
   notification_p50_s: 8,
@@ -38,6 +39,7 @@ const pending: IrropsResponse = {
   offers_declined: null,
   template_fallbacks: null,
   template_fallback_rate: null,
+  ack_vetoes: null,
   needs_human: null,
   notification_count: null,
   notification_p50_s: null,
@@ -70,6 +72,7 @@ describe('IrropsPanel', () => {
     expect(p.getByText('Accepted').nextElementSibling).toHaveTextContent('4');
     expect(p.getByText('Declined').nextElementSibling).toHaveTextContent('2');
     expect(p.getByText('Template fallback rate').nextElementSibling).toHaveTextContent('25%');
+    expect(p.getByText('Acknowledge vetoes').nextElementSibling).toHaveTextContent('2');
     expect(p.getByText('Needs human').nextElementSibling).toHaveTextContent('1');
     expect(p.getByText('Engine rebuilds').nextElementSibling).toHaveTextContent('2');
     expect(p.getByText('Engine latency p50').nextElementSibling).toHaveTextContent('150 ms');
@@ -85,6 +88,7 @@ describe('IrropsPanel', () => {
     const p = within(panel());
     expect(await p.findByText('Offers proposed')).toBeInTheDocument();
     expect(p.getByText('Offers proposed').nextElementSibling).toHaveTextContent('No data yet');
+    expect(p.getByText('Acknowledge vetoes').nextElementSibling).toHaveTextContent('No data yet');
     expect(p.getByText('Needs human').nextElementSibling).toHaveTextContent('No data yet');
     expect(p.getByText('Engine rebuilds').nextElementSibling).toHaveTextContent('No data yet');
     expect(p.getByText('Engine latency p50').nextElementSibling).toHaveTextContent('No data yet');

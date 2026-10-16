@@ -62,6 +62,7 @@ function IrropsBody({ data: d }: { data: IrropsResponse }) {
               : `${Math.round(d.template_fallback_rate * 100)}%`
           }
         />
+        <Stat label="Acknowledge vetoes" value={count(d.ack_vetoes)} />
         <Stat label="Needs human" value={count(d.needs_human)} />
         <Stat label="Engine rebuilds" value={count(d.engine_rebuilds)} />
         <Stat label="Engine latency p50" value={ms(d.engine_latency_p50_ms)} />
