@@ -149,3 +149,18 @@ async def test_all_six_presets_match_fake_llm_parity_on_after_time_fallback(sid,
     got = await plain_run(EngineBackend(got_cust, got_sales), sid)
     assert got["done"] is True
     assert {k: got[k] for k in PARITY_FIELDS} == {k: want[k] for k in PARITY_FIELDS}
+
+
+async def test_a_veto_is_reported_in_the_op_diag_context_without_text():
+    class AckForEverything(FakeLlm):
+        async def parse_passenger_request(self, text):
+            return Acknowledge()
+
+    app, _, _ = build(AckForEverything())
+    from acme.customer import outreach
+
+    got = await outreach.classify(app.runtime, "Ok, accept the offer")
+    assert got == Other(text="Ok, accept the offer")
+    ctx = app._op_context()  # noqa: SLF001
+    assert (ctx["parse_kind"], ctx["parse_source"]) == ("other", "veto")
+    assert "accept" not in repr({k: v for k, v in ctx.items() if k.startswith("parse")})

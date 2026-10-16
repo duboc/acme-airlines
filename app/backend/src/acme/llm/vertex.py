@@ -65,8 +65,10 @@ def parse_response(raw: str, text: str) -> StructuredRequest:
         kind = str(data["kind"]).strip().lower()
         if kind == "departure_after":
             return DepartureAfter(time=time.fromisoformat(str(data["time"]).strip()))
-        if kind == "acknowledge" and can_be_acknowledgement(text):  # the model can be fooled
-            return Acknowledge()
+        if kind == "acknowledge":
+            if can_be_acknowledgement(text):
+                return Acknowledge()
+            return Other(text=text, vetoed=True)  # the model can be fooled: the veto caught it
     except (ValueError, KeyError, TypeError):
         pass
     return Other(text=text)

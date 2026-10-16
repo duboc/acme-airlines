@@ -138,3 +138,18 @@ def test_the_http_error_counter_is_exported_from_the_start(metric_points):
     metrics.seed_counters()
     pts = metric_points()["acme.http.server.errors"]
     assert any(a == {"status_code": "500"} for a, _ in pts)  # at 0 if nothing failed yet
+
+
+def test_ack_veto_counts_once_live_and_nothing_during_a_replay(metric_points):
+    from acme.replay import replaying
+
+    def total():
+        return sum(v for _, v in metric_points().get("acme.llm.ack_vetoes", []))
+
+    before = total()
+    metrics.ack_veto()
+    assert total() == before + 1
+    with replaying():
+        metrics.ack_veto()
+    assert total() == before + 1
+    assert all(a == {} for a, _ in metric_points()["acme.llm.ack_vetoes"])  # no passenger text

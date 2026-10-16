@@ -25,6 +25,9 @@ _offers = _meter.create_counter("acme.offers", description="Offers proposed/acce
 _fallbacks = _meter.create_counter(
     "acme.llm.template_fallbacks", description="Passenger messages that fell back to the template"
 )
+_ack_vetoes = _meter.create_counter(
+    "acme.llm.ack_vetoes", description="Model acknowledgements downgraded by the deterministic veto"
+)
 _needs_human = _meter.create_counter("acme.needs_human", description="needs_human escalations")
 _notify_latency = _meter.create_histogram(
     "acme.notification.latency", unit="s", description="RESOLVED to notification_sent"
@@ -64,6 +67,14 @@ def template_fallback(surface: str) -> None:
     if is_replaying():  # a scenario rebuild must not double count (#266)
         return
     _fallbacks.add(1, {"surface": _v(surface)})
+
+
+def ack_veto() -> None:
+    """A model Acknowledge the deterministic veto turned into Other (#421). No attributes: the
+    passenger's text must never reach telemetry."""
+    if is_replaying():  # a scenario rebuild must not double count (#266)
+        return
+    _ack_vetoes.add(1)
 
 
 def needs_human(payload: dict[str, object]) -> None:
