@@ -72,7 +72,7 @@ describe('DemoPanel', () => {
     expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ journey_id: 'J-1' }));
   });
 
-  it('flags a mismatch in words and renders seat_reason when present', async () => {
+  it('flags a mismatch in words and renders seat_reason through reasonLabel when present', async () => {
     render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
     fetchMock.mockImplementationOnce(() =>
@@ -82,14 +82,32 @@ describe('DemoPanel', () => {
         journey_status: 'DETECTED',
         flight: 'AC1240',
         seat: '14A',
-        seat_reason: '14A unavailable; assigned nearest open window seat 15A',
+        seat_reason:
+          '14A unavailable on AC1240; assigned nearest window seat 15A as a diamond tier courtesy',
       }),
     );
     await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
     expect(await screen.findByText('Differs from the expectation')).toBeInTheDocument();
     expect(screen.getByText('status: expected RESOLVED, saw DETECTED')).toBeInTheDocument();
     expect(
-      screen.getByText('Seat reason: 14A unavailable; assigned nearest open window seat 15A'),
+      screen.getByText(
+        'Seat reason: 14A unavailable on AC1240; assigned nearest window seat 15A as a diamond tier courtesy',
+      ),
+    ).toBeInTheDocument();
+
+    fetchMock.mockImplementationOnce(() =>
+      json({
+        ...base,
+        step_index: 2,
+        journey_status: 'RESOLVED',
+        flight: 'AC1240',
+        seat: '14A',
+        seat_reason: 'courtesy_upgrade_loyalty_tier',
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(
+      await screen.findByText('Seat reason: Courtesy upgrade for loyalty tier'),
     ).toBeInTheDocument();
   });
 

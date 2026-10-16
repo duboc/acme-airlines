@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { reasonLabel } from '../console/labels';
 import {
   ApiHttpError,
   formatTransientError,
@@ -172,7 +173,7 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
             </>
           )}
           {state.seat_reason && (
-            <p className="demo-seat-reason">Seat reason: {state.seat_reason}</p>
+            <p className="demo-seat-reason">Seat reason: {reasonLabel(state.seat_reason)}</p>
           )}
           {state.last_message && (
             <p className="demo-msg">Last message to passenger: {state.last_message}</p>
