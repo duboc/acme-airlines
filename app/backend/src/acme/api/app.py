@@ -298,8 +298,7 @@ def create_local_app(clock: Clock | None = None, sales_token: str | None = None)
 
     @app.post("/scenario/trigger-cancellation", tags=["scenario"])
     async def trigger_cancellation(body: TriggerCancellation) -> TriggerResult:
-        if runner.active is not None:  # a manual trigger ends the preset and its fixed clock
-            runner.reset()
+        runner.end_preset(body.flight)  # primary: full reset (#321); secondary: keep the journey
         return await do_trigger(rt, body.flight, body.reason)
 
     runner = ScenarioRunner(rt)
@@ -386,7 +385,7 @@ def create_local_app(clock: Clock | None = None, sales_token: str | None = None)
         msg = await do_reply(rt, passenger_id, body.text)
         if runner.active is not None:
             runner.advance_if_matches("whatsapp_reply", passenger_id, body.text)
-            await runner.radar.tick()
+        await runner.tick_sales()  # a manual reply is acknowledged with or without a preset (#485)
         return msg
 
     @app.post("/whatsapp/{passenger_id}/actions", tags=["whatsapp"])

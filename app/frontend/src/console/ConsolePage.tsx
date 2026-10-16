@@ -160,6 +160,8 @@ export function ConsolePage() {
     setError(null);
     try {
       const [created] = await triggerCancellation(flight, reason);
+      // A manual cancellation ends the preset on the backend: clear the demo panel's progress.
+      setResetSeq((n) => n + 1);
       // The backend ignores a duplicate cancellation; fall back to the journey it already has.
       const id = created ?? currentId ?? (await listJourneys())[0]?.journey_id;
       if (!id) throw new Error('no journey');

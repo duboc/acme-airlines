@@ -659,11 +659,17 @@ class CustomerEngineApp:
         return {"status": "reset"}
 
     @shared
-    async def trigger_cancellation(self, flight: str, reason: str) -> dict[str, Any]:
+    async def trigger_cancellation(
+        self,
+        flight: str,
+        reason: str,
+        preset: str | None = None,
+        step: int | None = None,
+        tape: list[Any] | None = None,
+    ) -> dict[str, Any]:
         from acme.api.app import do_trigger
 
-        if self.scenarios.active is not None:  # a manual trigger ends the preset and its clock
-            self.scenarios.reset()
+        self.scenarios.end_preset(flight)  # primary: full reset (#321); secondary: keep the journey
         return await self._api(do_trigger, flight, reason)
 
     @shared

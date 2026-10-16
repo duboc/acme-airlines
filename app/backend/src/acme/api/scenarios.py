@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from acme.customer.conversion import accept_offer, decline_offer
 from acme.customer.runtime import CustomerRuntime, JourneyRecord
 from acme.customer.skills import CustomerSkills
-from acme.domain.clock import FixedClock
+from acme.domain.clock import FixedClock, SystemClock
 from acme.domain.fixtures import DISRUPTION_DETECTED_AT, GRU
 from acme.sales.client import A2ACustomerClient
 from acme.sales.radar import SalesRadar
@@ -173,6 +173,46 @@ class ScenarioRunner:
         self.rt = rt
         self.active: Preset | None = None
         self.index = 0
+        self.radar: SalesRadar | None = None
+        self._radar_sim: object | None = None  # the world `radar` reads
+
+    def _radar_for_world(self) -> SalesRadar:
+        """The Sales radar of the CURRENT world; kept while the world is (its sent-set with it)."""
+        if self.radar is None or self._radar_sim is not self.rt.sim:
+            skills = CustomerSkills(self.rt)
+
+            async def handler(request: httpx.Request) -> httpx.Response:
+                return httpx.Response(
+                    200, json=await skills.handle_a2a(json.loads(request.content))
+                )
+
+            http = httpx.AsyncClient(
+                transport=httpx.MockTransport(handler), base_url="http://customer"
+            )
+            self.radar = SalesRadar(
+                A2ACustomerClient(http), SimClient(inprocess_connector(self.rt.sim, "sales"))
+            )
+            self._radar_sim = self.rt.sim
+        return self.radar
+
+    async def tick_sales(self) -> None:
+        """One Sales radar pass, preset or not (a manual reply is acknowledged either way)."""
+        await self._radar_for_world().tick()
+
+    def end_preset(self, flight: str) -> None:
+        """A manual cancellation ends the preset. The primary flight (or no journey yet) is a
+        fresh start: the full reset of #321. A secondary one acts on the journey the preset left
+        open (#444): drop the cursor and the fixed clock, keep the world and its journeys (#485)."""
+        if self.active is None:
+            return
+        if flight == "AC1234" or not self.rt.journeys:
+            self.reset()
+            return
+        self.active, self.index = None, 0
+        self.rt.clock = self.rt._initial_clock or SystemClock()  # noqa: SLF001
+        self.rt.sim.clock = self.rt.clock
+        for rec in self.rt.journeys.values():
+            rec.state.set_clock(self.rt.clock)
 
     def reset(self) -> None:
         """Back to no preset, the initial clock and an empty world (#321)."""
@@ -184,15 +224,7 @@ class ScenarioRunner:
         self.active, self.index = preset, 0
         if preset.seed:
             preset.seed(self.rt)
-        skills = CustomerSkills(self.rt)
-
-        async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=await skills.handle_a2a(json.loads(request.content)))
-
-        http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://customer")
-        self.radar = SalesRadar(
-            A2ACustomerClient(http), SimClient(inprocess_connector(self.rt.sim, "sales"))
-        )
+        self._radar_for_world()
         return self.state()
 
     async def step(self, sales_tick: bool = True) -> ScenarioState:
@@ -211,7 +243,7 @@ class ScenarioRunner:
             assert rec is not None
             await (accept_offer if step.kind == "accept" else decline_offer)(rt, rec)
         if sales_tick:
-            await self.radar.tick()
+            await self.tick_sales()
         self.index += 1
         return self.state()
 
