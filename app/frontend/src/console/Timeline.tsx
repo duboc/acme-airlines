@@ -45,8 +45,58 @@ function reasonsOf(e: JourneyEvent): string[] {
   ) {
     out.push(`${p.from} → ${p.to}`);
   }
-  if (e.type === 'rebooked' && typeof p.flight === 'string' && p.flight && !p.reason) {
+  if (
+    (e.type === 'cancellation_detected' ||
+      e.type === 'offer_proposed' ||
+      (e.type === 'rebooked' && !p.reason)) &&
+    typeof p.flight === 'string' &&
+    p.flight
+  ) {
     out.push(p.flight);
+  }
+  if (e.type === 'profile_loaded') {
+    const parts: string[] = [];
+    if (typeof p.tier === 'string' && p.tier) parts.push(p.tier);
+    if (typeof p.seat === 'string' && p.seat) parts.push(`seat ${p.seat}`);
+    if (typeof p.bags === 'number') parts.push(`${p.bags} ${p.bags === 1 ? 'bag' : 'bags'}`);
+    const conn =
+      p.connection && typeof p.connection === 'object' && !Array.isArray(p.connection)
+        ? (p.connection as Record<string, unknown>)
+        : null;
+    if (conn && typeof conn.flight === 'string' && conn.flight) {
+      parts.push(`connection ${conn.flight}`);
+    }
+    if (parts.length > 0) out.push(parts.join(' · '));
+  }
+  if (
+    e.type === 'seat_held' &&
+    typeof p.flight === 'string' &&
+    p.flight &&
+    typeof p.seat === 'string' &&
+    p.seat
+  ) {
+    const req =
+      typeof p.requested === 'string' && p.requested && p.requested !== p.seat
+        ? ` (requested ${p.requested})`
+        : '';
+    out.push(`${p.flight} · ${p.seat}${req}`);
+  }
+  if (e.type === 'hotel_booked' && typeof p.hotel_id === 'string' && p.hotel_id) {
+    const ref = typeof p.booking_ref === 'string' && p.booking_ref ? ` (${p.booking_ref})` : '';
+    out.push(`${p.hotel_id}${ref}`);
+  }
+  if (e.type === 'transfer_arranged' && typeof p.leg === 'string' && p.leg) {
+    out.push(p.leg.replaceAll('_', ' '));
+  }
+  if (e.type === 'voucher_issued' && typeof p.amount === 'string' && p.amount) {
+    const label =
+      typeof p.meal_type === 'string' && p.meal_type
+        ? p.meal_type
+        : typeof p.kind === 'string' && p.kind
+          ? p.kind
+          : 'voucher';
+    const amt = p.amount.startsWith('$') ? p.amount.slice(1) : p.amount;
+    out.push(`${label} ($${amt})`);
   }
   if (e.type === 'bag_rerouted' && typeof p.tag === 'string' && p.tag) {
     out.push(typeof p.flight === 'string' && p.flight ? `${p.tag} → ${p.flight}` : p.tag);
@@ -97,6 +147,26 @@ function reasonsOf(e: JourneyEvent): string[] {
         if (typeof f === 'string' && f) out.push(f);
       }
     }
+  }
+  if (e.type === 'analytics_recorded' && typeof p.event === 'string' && p.event) {
+    const price =
+      typeof p.price === 'string' && p.price
+        ? ` · $${p.price.startsWith('$') ? p.price.slice(1) : p.price}`
+        : '';
+    const margin =
+      typeof p.margin === 'string' && p.margin
+        ? ` (+$${p.margin.replace(/^[+$]+/, '')} margin)`
+        : '';
+    out.push(`${p.event}${price}${margin}`);
+  }
+  if (e.type === 'memory_committed' && typeof p.events === 'number') {
+    out.push(`${p.events} events`);
+  }
+  if (e.type === 'crm_logged' && typeof p.interaction_id === 'string' && p.interaction_id) {
+    out.push(p.interaction_id);
+  }
+  if (e.type === 'nps_scheduled' && typeof p.survey_id === 'string' && p.survey_id) {
+    out.push(p.survey_id);
   }
   return out;
 }
