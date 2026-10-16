@@ -225,3 +225,8 @@ def test_all_failed_rules_listed_without_duplicates():
         "price_claim_mismatch", "no_inventory", "tier_not_eligible", "negative_margin",
         "not_optional", "wrong_origin", "flight_mismatch",
     }  # fmt: skip
+
+
+def test_ac1_rule6_another_journeys_offer_is_never_approved():
+    decision = evaluate(make_journey(), make_offer(journey_id="J-deadbeef"), INVENTORY)
+    assert not decision.approved and decision.reasons == ["journey_mismatch"]

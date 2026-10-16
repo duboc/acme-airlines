@@ -115,6 +115,8 @@ def evaluate(journey: JourneyState, offer: Offer, inventory: CabinInventory) -> 
     f6 = []
     if offer.origin != "sales":
         f6.append("wrong_origin")
+    if offer.journey_id != journey.journey_id:
+        f6.append("journey_mismatch")
     if journey.current_flight != offer.flight:
         f6.append("flight_mismatch")
     rule("origin_and_flight_verified", f6)

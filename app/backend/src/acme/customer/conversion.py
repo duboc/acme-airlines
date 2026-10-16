@@ -32,6 +32,7 @@ REASON_TEXT = {
     "resolution_not_acknowledged": "your trip has not been confirmed yet",
     "open_request_pending": "you have an open request with us",
     "flight_mismatch": "your flight has changed",
+    "journey_mismatch": "it is no longer valid",
     "no_inventory": "the seat is no longer available",
     "not_a_genuine_discount": "the price is no longer valid",
     "price_claim_mismatch": "the price is no longer valid",
