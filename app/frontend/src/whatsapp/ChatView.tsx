@@ -39,7 +39,9 @@ export function ChatView({
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   // Message ids whose buttons were already tapped: one action per offer.
-  const [answered, setAnswered] = useState<Map<string, string>>(new Map());
+  const [answered, setAnswered] = useState<
+    Map<string, { chosen: string | null; invalidated?: boolean }>
+  >(new Map());
   const cooldownUntil = useRef(0);
   const prevRefreshToken = useRef(refreshToken);
   const endRef = useRef<HTMLDivElement>(null);
@@ -108,14 +110,21 @@ export function ChatView({
 
   async function onButton(msg: WhatsAppMessage, label: string) {
     if (answered.has(msg.message_id)) return;
-    setAnswered((s) => new Map(s).set(msg.message_id, label));
+    setAnswered((s) => new Map(s).set(msg.message_id, { chosen: label }));
     try {
-      await postAction(passengerId, actionForButton(label));
+      const res = await postAction(passengerId, actionForButton(label));
+      if (res?.offer_status === 'invalidated') {
+        setAnswered((s) => new Map(s).set(msg.message_id, { chosen: null, invalidated: true }));
+      }
       await refresh();
       onChanged?.();
     } catch (err) {
       noteCooldown(err);
-      if (!(err instanceof ApiHttpError && err.status === 409)) {
+      if (err instanceof ApiHttpError && err.status === 409) {
+        setAnswered((s) => new Map(s).set(msg.message_id, { chosen: null }));
+        await refresh();
+        onChanged?.();
+      } else {
         setAnswered((s) => {
           const next = new Map(s);
           next.delete(msg.message_id);
@@ -143,12 +152,19 @@ export function ChatView({
       <div className="chat-log" role="log" aria-label="Conversation">
         {messages.length === 0 && <p className="chat-empty">No messages yet.</p>}
         {messages.map((m, idx) => {
+          const answer = answered.get(m.message_id);
+          const isLatestOffer = !messages
+            .slice(idx + 1)
+            .some((later) => later.buttons && later.buttons.length > 0);
+          const isInvalidated =
+            Boolean(answer?.invalidated) || (isLatestOffer && offerStatus === 'invalidated');
           const statusSettled = offerStatus != null && offerStatus !== 'sent';
           const isSettled =
             answered.has(m.message_id) || idx < messages.length - 1 || statusSettled;
-          const chosenLabel = answered.get(m.message_id);
+          const chosenLabel = isInvalidated ? null : answer?.chosen;
           const isChosen = (b: string) => {
-            if (chosenLabel !== undefined) return chosenLabel === b;
+            if (isInvalidated) return false;
+            if (chosenLabel !== undefined && chosenLabel !== null) return chosenLabel === b;
             if (idx === messages.length - 1) {
               if (offerStatus === 'declined') return actionForButton(b) === 'decline_offer';
               if (offerStatus === 'accepted') return actionForButton(b) === 'accept_offer';
@@ -176,7 +192,11 @@ export function ChatView({
                 <time dateTime={m.timestamp}>{formatTime(m.timestamp)}</time>
                 {m.buttons && m.buttons.length > 0 && (
                   <>
-                    <p className="quick-hint">Optional. You can ignore this.</p>
+                    <p className="quick-hint">
+                      {isInvalidated
+                        ? 'Offer no longer available.'
+                        : 'Optional. You can ignore this.'}
+                    </p>
                     <div className="quick-replies" role="group" aria-label="Quick replies">
                       {m.buttons.map((b) => (
                         <button

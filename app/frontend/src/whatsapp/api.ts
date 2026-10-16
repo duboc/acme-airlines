@@ -43,7 +43,7 @@ export class ApiHttpError extends Error {
   }
 
   get isTransient(): boolean {
-    return this.status === 429 || this.status === 503;
+    return this.status === 429 || this.status === 502 || this.status === 503 || this.status === 504;
   }
 }
 
@@ -62,10 +62,15 @@ export async function throwApiError(res: Response, fallbackMessage?: string): Pr
 }
 
 export function formatTransientError(err: unknown, fallback: string): string {
-  if (err instanceof ApiHttpError && err.isTransient) {
-    const base = err.detail || 'Engine is temporarily busy.';
-    const wait = err.retryAfterSeconds ? ` Retry in ${err.retryAfterSeconds}s.` : '';
-    return `Engine busy (${err.status}): ${base}${wait}`;
+  if (err instanceof ApiHttpError) {
+    if (err.isTransient) {
+      const base = err.detail || 'Engine is temporarily busy.';
+      const wait = err.retryAfterSeconds ? ` Retry in ${err.retryAfterSeconds}s.` : '';
+      return `Engine busy (${err.status}): ${base}${wait}`;
+    }
+    if (err.status === 409 && err.detail) {
+      return err.detail;
+    }
   }
   return fallback;
 }

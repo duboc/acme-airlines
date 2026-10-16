@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatView } from './ChatView';
-import type { WhatsAppMessage } from './api';
+import { ApiHttpError, formatTransientError, type WhatsAppMessage } from './api';
 
 const RESOLUTION =
   'AC1234 is cancelled. You are rebooked on AC1250 at 06:40, hotel Aeroporto Inn is booked, and a meal voucher of $25 is in your wallet.';
@@ -193,7 +193,7 @@ describe('ChatView', () => {
     expect(pollCalls).toBe(1);
   });
 
-  it('disables offer buttons and sets aria-pressed when offerStatus is settled (declined, accepted, invalidated) (#402)', async () => {
+  it('disables offer buttons and sets aria-pressed when offerStatus is settled (declined, accepted, invalidated) (#402, #431)', async () => {
     const { rerender } = render(<ChatView passengerId="P-MARIANA" offerStatus="sent" />);
     const accept = await screen.findByRole('button', { name: 'Accept upgrade $135' });
     const decline = screen.getByRole('button', { name: 'No thanks' });
@@ -217,29 +217,121 @@ describe('ChatView', () => {
     expect(screen.getByRole('button', { name: 'No thanks' })).toBeDisabled();
 
     rerender(<ChatView passengerId="P-MARIANA" offerStatus="invalidated" />);
-    expect(screen.getByRole('button', { name: 'Accept upgrade $135' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'No thanks' })).toBeDisabled();
+    const invAccept = screen.getByRole('button', { name: 'Accept upgrade $135' });
+    const invDecline = screen.getByRole('button', { name: 'No thanks' });
+    expect(invAccept).toBeDisabled();
+    expect(invDecline).toBeDisabled();
+    expect(invAccept).toHaveAttribute('aria-pressed', 'false');
+    expect(invDecline).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText('Offer no longer available.')).toBeInTheDocument();
+    expect(screen.queryByText('Optional. You can ignore this.')).not.toBeInTheDocument();
   });
 
-  it('keeps offer buttons disabled when postAction fails with 409 Conflict (#402)', async () => {
+  it('does not mark Accept as chosen and shows Offer no longer available when postAction returns offer_status invalidated (#431 AC1)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
-        if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/actions')) {
+        const method = init?.method ?? 'GET';
+        calls.push({ url, method });
+        if (method === 'POST' && url.endsWith('/actions')) {
+          return new Response(JSON.stringify({ offer_status: 'invalidated' }), { status: 200 });
+        }
+        return new Response(JSON.stringify(transcript), { status: 200 });
+      }),
+    );
+    render(<ChatView passengerId="P-MARIANA" />);
+    const accept = await screen.findByRole('button', { name: 'Accept upgrade $135' });
+    await userEvent.click(accept);
+
+    await waitFor(() => expect(accept).toBeDisabled());
+    const decline = screen.getByRole('button', { name: 'No thanks' });
+    expect(decline).toBeDisabled();
+    expect(accept).toHaveAttribute('aria-pressed', 'false');
+    expect(decline).toHaveAttribute('aria-pressed', 'false');
+    expect(accept.textContent).not.toMatch(/^✓ /);
+    expect(decline.textContent).not.toMatch(/^✓ /);
+    expect(screen.getByText('Offer no longer available.')).toBeInTheDocument();
+    expect(screen.queryByText('Optional. You can ignore this.')).not.toBeInTheDocument();
+  });
+
+  it('keeps offer buttons disabled without marking chosen, calls refresh and onChanged, and surfaces err.detail on 409 Conflict (#431 AC2)', async () => {
+    const onChanged = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        calls.push({ url, method });
+        if (method === 'POST' && url.endsWith('/actions')) {
           return new Response(
-            JSON.stringify({ code: 'no_offer_sent', detail: 'no offer has been sent' }),
+            JSON.stringify({
+              code: 'no_offer_sent',
+              detail: 'no offer has been sent to this passenger',
+            }),
             { status: 409 },
           );
         }
         return new Response(JSON.stringify(transcript), { status: 200 });
       }),
     );
-    render(<ChatView passengerId="P-MARIANA" />);
+    render(<ChatView passengerId="P-MARIANA" onChanged={onChanged} pollMs={60_000} />);
     const decline = await screen.findByRole('button', { name: 'No thanks' });
+    const getCallsBefore = calls.filter((c) => c.method === 'GET').length;
+
     await userEvent.click(decline);
-    expect(await screen.findByRole('alert')).toHaveTextContent(/your choice was not sent/i);
-    expect(screen.getByRole('button', { name: '✓ No thanks' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Accept upgrade $135' })).toBeDisabled();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'no offer has been sent to this passenger',
+    );
+    const accept = screen.getByRole('button', { name: 'Accept upgrade $135' });
+    const declineAfter = screen.getByRole('button', { name: 'No thanks' });
+    expect(accept).toBeDisabled();
+    expect(declineAfter).toBeDisabled();
+    expect(accept).toHaveAttribute('aria-pressed', 'false');
+    expect(declineAfter).toHaveAttribute('aria-pressed', 'false');
+    expect(calls.filter((c) => c.method === 'GET').length).toBeGreaterThan(getCallsBefore);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats 502 and 504 as transient errors and clears optimistic answer so the user can retry (#431 AC3)', async () => {
+    for (const status of [429, 502, 503, 504]) {
+      const err = new ApiHttpError(status, 'Gateway timeout.', 5);
+      expect(err.isTransient).toBe(true);
+      expect(formatTransientError(err, 'fallback')).toBe(
+        `Engine busy (${status}): Gateway timeout. Retry in 5s.`,
+      );
+      const emptyErr = new ApiHttpError(status, '', null);
+      expect(emptyErr.isTransient).toBe(true);
+      expect(formatTransientError(emptyErr, 'fallback')).toBe(
+        `Engine busy (${status}): Engine is temporarily busy.`,
+      );
+    }
+
+    let postCount = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/actions')) {
+          postCount += 1;
+          if (postCount === 1) {
+            return new Response(JSON.stringify({ detail: 'Bad gateway.' }), { status: 502 });
+          }
+          return new Response(JSON.stringify({ offer_status: 'accepted' }), { status: 200 });
+        }
+        return new Response(JSON.stringify(transcript), { status: 200 });
+      }),
+    );
+    render(<ChatView passengerId="P-MARIANA" pollMs={60_000} />);
+    const accept = await screen.findByRole('button', { name: 'Accept upgrade $135' });
+    await userEvent.click(accept);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Engine busy (502): Bad gateway.');
+    expect(accept).toBeEnabled();
+    expect(accept).toHaveAttribute('aria-pressed', 'false');
+
+    await userEvent.click(accept);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '✓ Accept upgrade $135' })).toBeDisabled(),
+    );
   });
 
   it('refreshes immediately when refreshToken increments unless in cooldown (#402)', async () => {
