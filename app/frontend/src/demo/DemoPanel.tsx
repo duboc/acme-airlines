@@ -15,6 +15,7 @@ import type { PresetView, ScenarioState } from './types';
 const QUICK_REPLIES = [
   { label: 'Can I leave after 10am?', text: 'Can I leave after 10am?' },
   { label: 'Perfect, thanks!', text: 'Perfect, thanks!' },
+  { label: 'after 12pm', text: 'Can I leave after 12pm?' },
   { label: 'after 1pm', text: 'Can I leave after 1pm?' },
 ];
 const TAPS: { label: string; action: PassengerActionName }[] = [
@@ -155,6 +156,9 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
             {state.done ? '. Scenario finished.' : `. Next: ${state.next_step}`}
           </p>
         )}
+        {active && state.last_step && (
+          <p className="demo-last-step">Last step: {state.last_step}</p>
+        )}
       </div>
       {active && result && (
         <div className="demo-expected" aria-live="polite">
@@ -172,6 +176,8 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
               </ul>
             </>
           )}
+          <p className="demo-charged">Charged: ${state.charged}</p>
+          {state.needs_human && <p className="demo-needs-human">Needs human assistance</p>}
           {state.seat_reason && (
             <p className="demo-seat-reason">Seat reason: {reasonLabel(state.seat_reason)}</p>
           )}

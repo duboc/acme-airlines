@@ -64,11 +64,15 @@ describe('DemoPanel', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/scenarios/happy-path/start', { method: 'POST' });
     expect(onStarted).toHaveBeenCalled();
     expect(screen.getByText(/next: occ cancels ac1234/i)).toBeInTheDocument();
+    expect(screen.queryByText(/last step:/i)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
     expect(await screen.findByText(/Rebooked on AC1240 with seat 14A/)).toBeInTheDocument();
     expect(screen.getByText('Matches the expectation')).toBeInTheDocument();
     expect(screen.getByText('Step 1 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Last step: OCC cancels AC1234')).toBeInTheDocument();
+    expect(screen.getByText('Charged: $0.00')).toBeInTheDocument();
+    expect(screen.queryByText('Needs human assistance')).not.toBeInTheDocument();
     expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ journey_id: 'J-1' }));
   });
 
@@ -79,9 +83,11 @@ describe('DemoPanel', () => {
       json({
         ...base,
         step_index: 1,
+        last_step: 'OCC cancels AC1234',
         journey_status: 'DETECTED',
         flight: 'AC1240',
         seat: '14A',
+        needs_human: true,
         seat_reason:
           '14A unavailable on AC1240; assigned nearest window seat 15A as a diamond tier courtesy',
       }),
@@ -89,6 +95,7 @@ describe('DemoPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
     expect(await screen.findByText('Differs from the expectation')).toBeInTheDocument();
     expect(screen.getByText('status: expected RESOLVED, saw DETECTED')).toBeInTheDocument();
+    expect(screen.getByText('Needs human assistance')).toBeInTheDocument();
     expect(
       screen.getByText(
         'Seat reason: 14A unavailable on AC1240; assigned nearest window seat 15A as a diamond tier courtesy',
@@ -124,7 +131,12 @@ describe('DemoPanel', () => {
 
   it('sends quick replies and offer taps through the WhatsApp API', async () => {
     render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'after 1pm' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'after 12pm' }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/whatsapp/P-MARIANA/messages',
+      expect.objectContaining({ body: JSON.stringify({ text: 'Can I leave after 12pm?' }) }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'after 1pm' }));
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/whatsapp/P-MARIANA/messages',
       expect.objectContaining({ body: JSON.stringify({ text: 'Can I leave after 1pm?' }) }),
@@ -139,7 +151,7 @@ describe('DemoPanel', () => {
       '/api/whatsapp/P-MARIANA/actions',
       expect.objectContaining({ body: JSON.stringify({ action: 'decline_offer' }) }),
     );
-    expect(onChanged).toHaveBeenCalledTimes(3);
+    expect(onChanged).toHaveBeenCalledTimes(4);
   });
 
   it('shows an actionable alert when the scenarios cannot load', async () => {
@@ -311,15 +323,18 @@ describe('DemoPanel', () => {
     render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
     expect(screen.getByText('Last message to passenger: Upgrade offer sent.')).toBeInTheDocument();
+    expect(screen.getByText('Charged: $0.00')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Next step' }));
     expect(await screen.findByText('Step 5 of 5')).toBeInTheDocument();
     expect(screen.getByText(/scenario finished/i)).toBeInTheDocument();
+    expect(screen.getByText('Last step: Mariana taps Accept on the upgrade')).toBeInTheDocument();
     expect(
       screen.getByText('Journey CLOSED on AC1252, seat 2A, $135.00 charged once.', {
         selector: '.demo-expected p',
       }),
     ).toBeInTheDocument();
+    expect(screen.getByText('Charged: $135.00')).toBeInTheDocument();
     expect(screen.getByText('Matches the expectation')).toBeInTheDocument();
     expect(screen.queryByText('Differs from the expectation')).not.toBeInTheDocument();
     expect(screen.queryByText(/last message to passenger/i)).not.toBeInTheDocument();
