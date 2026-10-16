@@ -117,6 +117,7 @@ class CustomerRuntime:
         self.journeys: dict[str, JourneyRecord] = {}
         self._journey_locks: dict[str, asyncio.Lock] = {}
         self._cursor = 0
+        self._epoch = getattr(self, "_epoch", 0) + 1  # a poll started before this must not land
         self._lock = asyncio.Lock()
 
     @property
@@ -212,21 +213,31 @@ class CustomerRuntime:
 
     async def poll(self, timeout_s: float = 0) -> list[str]:
         """Ingest new OCC events; returns the ids of journeys opened by this call."""
+        epoch = self._epoch
         async with self._lock:
             res = await self.client.call(
                 "occ", "flight_ops.subscribe", cursor=self._cursor, timeout_s=timeout_s
             )
+            if epoch != self._epoch:
+                return []  # reset() swapped the world while this poll awaited: its news is stale
             self._cursor = res["next_cursor"]
             opened: list[str] = []
             for event in res["events"]:
                 if event["type"] == "flight_cancelled":
-                    opened += await self._on_cancellation(event["flight"], event["reason"])
+                    opened += await self._on_cancellation(event["flight"], event["reason"], epoch)
+                    if epoch != self._epoch:
+                        break
             return opened
 
-    async def _on_cancellation(self, flight: str, reason: str) -> list[str]:
+    async def _on_cancellation(
+        self, flight: str, reason: str, epoch: int | None = None
+    ) -> list[str]:
+        epoch = self._epoch if epoch is None else epoch
         manifest = await self.client.call("pss", "flight.manifest", flight=flight)
         opened = []
         for entry in manifest["pnrs"]:
+            if epoch != self._epoch:
+                break  # a reset happened while this was running: write nothing to the new world
             jid = journey_id_for(entry["pnr"])
             if jid in self.journeys:
                 rec = self.journeys[jid]
