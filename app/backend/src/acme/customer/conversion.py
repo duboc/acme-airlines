@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from acme.customer.closure import close_loop
 from acme.customer.skills import CustomerSkills
-from acme.domain.journey import OfferRecord
+from acme.domain.journey import DisruptionStatus, OfferRecord
 from acme.policy.guardrail_offer import GuardrailDecision, evaluate_traced
 from acme.sim.client import ToolError
 
@@ -53,11 +53,23 @@ def _sent(rec: JourneyRecord) -> OfferRecord | None:
     return sent[-1] if sent else None
 
 
+def _closure_failed(rec: JourneyRecord) -> bool:
+    """The journey is still open after the passenger decided because the closure failed."""
+    return rec.state.status is DisruptionStatus.RESOLVED and any(
+        e.type == "verification_failed"
+        or (e.type == "needs_human" and e.payload.get("specialist") == "closure")
+        for e in rec.state.timeline
+    )
+
+
 async def decline_offer(rt: CustomerRuntime, rec: JourneyRecord) -> str:
     """ "No thanks": mark declined; change nothing else and send nothing (no nudges)."""
     async with rt.journey_lock(rec.state.journey_id):
         record = _sent(rec)
         if record is None:
+            if any(r.status == "declined" for r in rec.state.offers) and _closure_failed(rec):
+                await close_loop(rt, rec)  # the earlier closure failed: retry it (#445)
+                return "declined"
             raise NoSentOffer
         record.status = "declined"
         rec.state.append_event(
@@ -73,7 +85,9 @@ async def accept_offer(rt: CustomerRuntime, rec: JourneyRecord) -> str:
         record = _sent(rec)
         if record is None:
             if any(r.status == "accepted" for r in rec.state.offers):
-                return "accepted"  # duplicate tap after success: idempotent, no new work
+                if _closure_failed(rec):
+                    await close_loop(rt, rec)  # the earlier closure failed: retry it (#445)
+                return "accepted"  # duplicate tap after success: no new charge or message
             stale = [r for r in rec.state.offers if r.status == "invalidated"]
             if not stale:
                 raise NoSentOffer

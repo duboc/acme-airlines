@@ -186,6 +186,12 @@ class CustomerRuntime:
             async with self.journey_lock(rec.state.journey_id):
                 if service_closure.service_closure_due(self, rec):
                     await service_closure.close_without_offer(self, rec)
+        for rec in list(self.journeys.values()):
+            if not service_closure.decided_closure_due(self, rec):
+                continue
+            async with self.journey_lock(rec.state.journey_id):
+                if service_closure.decided_closure_due(self, rec):
+                    await service_closure.retry_decided_closure(self, rec)
 
     def journey_for_passenger(self, passenger_id: str) -> JourneyRecord | None:
         for rec in self.journeys.values():

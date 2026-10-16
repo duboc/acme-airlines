@@ -270,3 +270,80 @@ def test_ac3_a_direct_proposal_loads_the_tier_when_unset(ctx):
     ctx.state.passenger_tier = None
     out = ctx.skills.propose_offer(offer(ctx.jid))
     assert ctx.state.passenger_tier == "diamond" and out["status"] == "approved"
+
+
+# --- delivery failures and the send-time check (#445) ------------------------------------------
+async def test_ac2_a_failed_prepare_invalidates_the_approved_offer_and_the_journey_can_close(
+    ctx, monkeypatch
+):
+    from datetime import timedelta
+
+    async def boom(self, rec, record):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr(CustomerSkills, "_prepare_text", boom)
+    with pytest.raises(RuntimeError):
+        await ctx.skills.propose_and_deliver(offer(ctx.jid))
+    (rec,) = ctx.state.offers
+    assert rec.status == "invalidated"  # never left "approved"
+    ctx.state.append_event("passenger", "resolution_acknowledged", {})
+    ctx.rt.clock.advance(ctx.rt.offer_window + timedelta(minutes=1))
+    await ctx.rt.tick()
+    assert [e for e in ctx.state.timeline if e.type == "service_closure"]  # not blocked
+
+
+async def test_ac2_a_failed_send_invalidates_the_approved_offer(ctx, monkeypatch):
+    async def boom(*a, **k):
+        raise RuntimeError("whatsapp down")
+
+    monkeypatch.setattr(ctx.rt, "send", boom)
+    with pytest.raises(RuntimeError):
+        await ctx.skills.propose_and_deliver(offer(ctx.jid))
+    assert ctx.state.offers[0].status == "invalidated"
+
+
+async def test_ac3_a_send_time_rejection_composes_nothing_and_counts_no_fallback(ctx, monkeypatch):
+    from acme.customer import skills as skills_mod
+
+    fallbacks = []
+    monkeypatch.setattr(skills_mod.metrics, "template_fallback", fallbacks.append)
+    real = CustomerSkills._prepare_text
+
+    async def prepare_then_sell_out(self, rec, record):
+        out = await real(self, rec, record)
+        ctx.rt.world.flights["AC1252"].open_seats["premium_business"] = []  # facts moved
+        return out
+
+    monkeypatch.setattr(CustomerSkills, "_prepare_text", prepare_then_sell_out)
+    out = await ctx.skills.propose_and_deliver(offer(ctx.jid))
+    assert out["status"] == "rejected" and "no_inventory" in out["reasons"]
+    assert ctx.state.offers[0].status == "invalidated" and not offer_messages(ctx)
+    assert fallbacks == []  # the template of a refused offer was never composed
+
+
+async def test_ac3_a_flight_lost_while_preparing_is_a_clean_rejection_not_a_key_error(
+    ctx, monkeypatch
+):
+    real = CustomerSkills._prepare_text
+
+    async def prepare_then_lose_the_flight(self, rec, record):
+        out = await real(self, rec, record)
+        monkeypatch.setattr(CustomerSkills, "_current_flight", lambda self, rec: None)
+        return out
+
+    monkeypatch.setattr(CustomerSkills, "_prepare_text", prepare_then_lose_the_flight)
+    out = await ctx.skills.propose_and_deliver(offer(ctx.jid))
+    assert out["status"] == "rejected" and "flight_mismatch" in out["reasons"]
+    assert ctx.state.offers[0].status == "invalidated"
+
+
+async def test_ac3_compose_survives_a_flight_missing_from_the_world(ctx):
+    rec = ctx.rt.journeys[ctx.jid]
+    rec.state.current_flight = "ZZ0000"
+    from acme.domain.models import Offer
+
+    inventory = ctx.skills._world_inventory(Offer.model_validate(offer(ctx.jid)))  # noqa: SLF001
+    text, _ = await ctx.skills._compose(  # noqa: SLF001
+        rec, Offer.model_validate(offer(ctx.jid)), inventory, use_llm=False
+    )
+    assert "ZZ0000" in text

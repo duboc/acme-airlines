@@ -39,6 +39,35 @@ def service_closure_due(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
     return bool(anchors) and rt.clock.now() >= max(anchors) + rt.offer_window
 
 
+_DECIDED = frozenset({"accepted", "declined"})
+
+
+def decided_closure_due(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
+    """A journey whose passenger DECIDED an offer but whose closure failed (verification, CRM or
+    scheduler), still RESOLVED: retry the closure once a further window has passed since the
+    failure (#445). Without this a decided offer blocks `service_closure_due` for ever."""
+    state = rec.state
+    if state.status is not DisruptionStatus.RESOLVED or state.open_requests:
+        return False
+    if any(o.status in LIVE_OR_DECIDED - _DECIDED for o in state.offers):
+        return False
+    if not any(o.status in _DECIDED for o in state.offers):
+        return False
+    failures = [
+        e.timestamp
+        for e in state.timeline
+        if e.type == "verification_failed"
+        or (e.type == "needs_human" and e.payload.get("specialist") == "closure")
+    ]
+    return bool(failures) and rt.clock.now() >= max(failures) + rt.offer_window
+
+
+async def retry_decided_closure(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
+    """Close again. No `service_closure` event: the offer's outcome stays as the passenger left
+    it. The caller holds the journey lock."""
+    return await close_loop(rt, rec)
+
+
 async def close_without_offer(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
     """Verify and close a journey no offer was made on. The caller holds the journey lock."""
     rec.state.append_event("customer_agent", "service_closure", {"reason": "offer_window_elapsed"})
