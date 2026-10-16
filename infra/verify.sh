@@ -511,8 +511,18 @@ check_webaccess() {
     if gcloud run services describe "${s}" --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
       pol="$(gcloud iap web get-iam-policy --project="${PROJECT_ID}" --resource-type=cloud-run --service="${s}" --region="${REGION}" --format=json 2>/dev/null)"
       for d in "${doms[@]}"; do
-        jq -e --arg m "domain:${d}" '.bindings[]? | select(.role=="roles/iap.httpsResourceAccessor") | .members | index($m)' <<<"${pol}" >/dev/null \
-          || missing+=" iap(${s}):domain:${d}"
+        if ! jq -e --arg m "domain:${d}" '.bindings[]? | select(.role=="roles/iap.httpsResourceAccessor") | .members | index($m)' <<<"${pol}" >/dev/null; then
+          # Secondary Google Workspace domains are canonicalized by GCP IAM to the customer's primary domain;
+          # verify that binding domain:${d} succeeds as a no-op and leaves the canonicalized bindings unchanged.
+          local after_pol
+          if ! gcloud iap web add-iam-policy-binding --project="${PROJECT_ID}" \
+                 --resource-type=cloud-run --service="${s}" --region="${REGION}" \
+                 --member="domain:${d}" --role=roles/iap.httpsResourceAccessor --condition=None --format=none >/dev/null 2>&1 \
+             || ! after_pol="$(gcloud iap web get-iam-policy --project="${PROJECT_ID}" --resource-type=cloud-run --service="${s}" --region="${REGION}" --format=json 2>/dev/null)" \
+             || [[ "$(jq -cS '.bindings' <<<"${after_pol}")" != "$(jq -cS '.bindings' <<<"${pol}")" ]]; then
+            missing+=" iap(${s}):domain:${d}"
+          fi
+        fi
       done
     fi
   done
