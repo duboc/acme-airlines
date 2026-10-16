@@ -62,8 +62,9 @@ def test_configure_cloud_trace_installs_the_always_on_provider(monkeypatch):
     monkeypatch.setattr(trace, "set_tracer_provider", installed.append)
 
     class Exporter(InMemorySpanExporter):
-        def __init__(self, project_id=None):
+        def __init__(self, project_id=None, resource_regex=None):
             super().__init__()
+            assert resource_regex == telemetry.RESOURCE_REGEX
 
     assert telemetry.configure_cloud_trace("acme-customer-agent", Exporter) is True
     (prov,) = installed
