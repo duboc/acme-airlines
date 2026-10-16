@@ -229,12 +229,34 @@ class CustomerRuntime:
         for entry in manifest["pnrs"]:
             jid = journey_id_for(entry["pnr"])
             if jid in self.journeys:
-                continue
-            state = JourneyState(jid, self.clock)
-            rec = JourneyRecord(state, entry["passenger_id"], entry["pnr"])
-            self.journeys[jid] = rec
-            state.append_event("occ", "cancellation_detected", {"flight": flight, "reason": reason})
-            state.transition(DisruptionStatus.RESOLVING, actor="customer_agent")
+                rec = self.journeys[jid]
+                state = rec.state
+                if state.status not in (
+                    DisruptionStatus.RESOLVED,
+                    DisruptionStatus.CLOSED,
+                ) or any(
+                    e.type == "cancellation_detected" and e.payload.get("flight") == flight
+                    for e in state.timeline
+                ):
+                    continue
+                rec.run_id = uuid4().hex[:12]
+                accepted = [r for r in state.offers if r.status == "accepted"]
+                state.append_event(
+                    "occ", "cancellation_detected", {"flight": flight, "reason": reason}
+                )
+                state.reopen_for_disruption(actor="customer_agent")
+                if accepted:
+                    from acme.customer.conversion import void_disrupted_upgrades  # noqa: PLC0415
+
+                    await void_disrupted_upgrades(self, rec, accepted)
+            else:
+                state = JourneyState(jid, self.clock)
+                rec = JourneyRecord(state, entry["passenger_id"], entry["pnr"])
+                self.journeys[jid] = rec
+                state.append_event(
+                    "occ", "cancellation_detected", {"flight": flight, "reason": reason}
+                )
+                state.transition(DisruptionStatus.RESOLVING, actor="customer_agent")
             await self._load_context(rec, flight)
             result = await rebuild_journey(
                 self.client, rec, flight, mct_minutes=self.world.mct_minutes

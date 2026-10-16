@@ -24,8 +24,15 @@ if TYPE_CHECKING:
     from acme.customer.runtime import CustomerRuntime, JourneyRecord
 
 
-def _last(rec: JourneyRecord, type_: str) -> dict[str, Any] | None:
-    found = [e.payload for e in rec.state.timeline if e.type == type_]
+def _current_disruption_events(rec: JourneyRecord):
+    tl = rec.state.timeline
+    idx = max((i for i, e in enumerate(tl) if e.type == "cancellation_detected"), default=0)
+    return tl[idx:]
+
+
+def _last(rec: JourneyRecord, type_: str, *, current: bool = True) -> dict[str, Any] | None:
+    events = _current_disruption_events(rec) if current else rec.state.timeline
+    found = [e.payload for e in events if e.type == type_]
     return found[-1] if found else None
 
 
@@ -36,9 +43,9 @@ def collect_facts(rec: JourneyRecord) -> dict[str, Any] | None:
     hotel, a transfer and meal vouchers are required only when they were due.
     """
     detected, rebooked = _last(rec, "cancellation_detected"), _last(rec, "rebooked")
-    seat, hotel = _last(rec, "seat_held"), _last(rec, "hotel_booked")
-    transfer = _last(rec, "transfer_arranged")
-    voucher = _last(rec, "voucher_issued")
+    seat, hotel = _last(rec, "seat_held"), _last(rec, "hotel_booked", current=False)
+    transfer = _last(rec, "transfer_arranged", current=False)
+    voucher = _last(rec, "voucher_issued", current=False)
     if not (detected and rebooked and seat):
         return None
     due = _last(rec, "duty_of_care_assessed") or {}  # no assessment: the full DOC-05 care
@@ -182,11 +189,12 @@ def notification_due(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
     state, now = rec.state, rt.clock.now()
     if state.status is not DisruptionStatus.RESOLVED:
         return False
-    if any(e.type == "notification_sent" for e in state.timeline):
+    current_events = _current_disruption_events(rec)
+    if any(e.type == "notification_sent" for e in current_events):
         return False
     resolved_at = max(
         e.timestamp
-        for e in state.timeline
+        for e in current_events
         if e.type == "status_changed" and e.payload.get("to") == DisruptionStatus.RESOLVED
     )
     return now >= resolved_at + rt.notify_delay and can_send_proactive(state, now.astimezone(GRU))

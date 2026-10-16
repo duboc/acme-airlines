@@ -230,3 +230,70 @@ def test_all_failed_rules_listed_without_duplicates():
 def test_ac1_rule6_another_journeys_offer_is_never_approved():
     decision = evaluate(make_journey(), make_offer(journey_id="J-deadbeef"), INVENTORY)
     assert not decision.approved and decision.reasons == ["journey_mismatch"]
+
+
+def test_rule5_declined_offer_on_subsequently_cancelled_flight_allows_new_disruption_offer():
+    j = make_journey(flight="AC1252")
+    add_other(j, "declined", flight="AC1240")
+    j.append_event("occ", "cancellation_detected", {"flight": "AC1240", "reason": "weather"})
+    assert evaluate(j, make_offer(flight="AC1252"), INVENTORY).approved
+
+    # A second offer in the new disruption after a decline on AC1252 is still blocked.
+    add_other(j, "declined", flight="AC1252")
+    assert evaluate(j, make_offer(flight="AC1252"), INVENTORY).reasons == ["offer_already_made"]
+
+
+async def test_decline_followed_by_secondary_cancellation_allows_one_new_pitch():
+    from datetime import timedelta
+
+    import httpx
+
+    from acme.api.app import create_app
+    from acme.customer.conversion import decline_offer
+    from acme.domain.models import CabinInventory
+    from acme.sales.client import A2ACustomerClient
+    from acme.sales.radar import SalesRadar
+    from acme.sim.client import SimClient, inprocess_connector
+
+    app = create_app(FixedClock(DISRUPTION_DETECTED_AT))
+    rt = app.state.runtime
+    # Seed premium inventory on AC1240 as well so Disruption 1 can pitch and decline on AC1240.
+    rt.world.inventory.append(
+        CabinInventory(
+            flight_number="AC1240",
+            cabin="premium_business",
+            open_seats=4,
+            standard_upgrade_fare=Decimal("290.00"),
+            cost_floor=Decimal("55.00"),
+        )
+    )
+    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://customer")
+    radar = SalesRadar(A2ACustomerClient(http), SimClient(inprocess_connector(rt.sim, "sales")))
+    try:
+        (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+        rec = rt.journeys[jid]
+        rt.clock.advance(timedelta(minutes=7))
+        await rt.tick()
+        await rt.handle_inbound("P-MARIANA", "Perfect, thanks!")
+        assert len(await radar.tick()) == 1
+        assert await decline_offer(rt, rec) == "declined"
+        assert rec.state.status == S.CLOSED
+
+        # Secondary disruption: AC1240 is cancelled -> rebooked to AC1252, notified, acknowledged.
+        assert await rt.trigger_cancellation("AC1240", "weather") == [jid]
+        assert rec.state.status == S.RESOLVED
+        rt.clock.advance(timedelta(minutes=7))
+        await rt.tick()
+        await rt.handle_inbound("P-MARIANA", "Perfect, thanks!")
+        assert rec.state.resolution_acknowledged is True
+
+        # SalesRadar and guardrail_offer permit 1 pitch on AC1252 for the new disruption.
+        sent = await radar.tick()
+        assert len(sent) == 1 and sent[0].flight == "AC1252"
+        assert [o.status for o in rec.state.offers] == ["sent"]
+
+        # Declining the second disruption's offer still blocks any further offer in Disruption 2.
+        await decline_offer(rt, rec)
+        assert await radar.tick() == []
+    finally:
+        await http.aclose()

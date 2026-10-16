@@ -101,7 +101,12 @@ def evaluate(journey: JourneyState, offer: Offer, inventory: CabinInventory) -> 
     f5 = []
     if offer.optional is not True:
         f5.append("not_optional")
+    cancelled_flights = {
+        e.payload.get("flight") for e in journey.timeline if e.type == "cancellation_detected"
+    }
     for rec in journey.offers:
+        if rec.offer.flight in cancelled_flights:
+            continue
         if rec.offer.offer_id == offer.offer_id and rec.status in _LIVE_STATUSES:
             continue
         if rec.status in _BLOCKING_OTHER_STATUSES or (

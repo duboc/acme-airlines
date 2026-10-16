@@ -113,10 +113,18 @@ async def test_trigger_reflects_real_agent_state(client):
     (jid,) = await trigger(client)
     d = (await client.get(f"/journeys/{jid}")).json()
     assert d["status"] == "RESOLVED"
-    r = await client.post(
+    dup = await client.post(
+        "/scenario/trigger-cancellation", json={"flight": "AC1234", "reason": "maintenance"}
+    )
+    assert dup.json() == {"journey_ids": []}
+    empty = await client.post(
+        "/scenario/trigger-cancellation", json={"flight": "AC1260", "reason": "crew"}
+    )
+    assert empty.json() == {"journey_ids": []}
+    secondary = await client.post(
         "/scenario/trigger-cancellation", json={"flight": "AC1240", "reason": "crew"}
     )
-    assert r.json() == {"journey_ids": []}
+    assert secondary.json() == {"journey_ids": [jid]}
 
 
 async def test_whatsapp_unknown_passenger_404(client):

@@ -270,4 +270,26 @@ async def _refuse(
     return "invalidated"
 
 
-__all__ = ["NoSentOffer", "accept_offer", "decline_offer"]
+async def void_disrupted_upgrades(
+    rt: CustomerRuntime, rec: JourneyRecord, accepted: list[OfferRecord]
+) -> None:
+    """Void any accepted upgrade charge when a secondary cancellation reopens the journey (#444)."""
+    state = rec.state
+    skills = CustomerSkills(rt)
+    for record in accepted:
+        inventory = await skills._load_facts(rec, record.offer.model_dump(mode="json"))  # noqa: SLF001
+        decision = evaluate_traced(state, record.offer, inventory, "recheck")
+        skills._decision_event(state, record.offer, decision)  # noqa: SLF001
+        charge_id = next(
+            (
+                e.payload["charge_id"]
+                for e in reversed(state.timeline)
+                if e.type == "upgrade_confirmed" and e.payload.get("flight") == record.offer.flight
+            ),
+            None,
+        )
+        if charge_id is not None:
+            await _void(rt, rec, record, charge_id, reason="journey_changed")
+
+
+__all__ = ["NoSentOffer", "accept_offer", "decline_offer", "void_disrupted_upgrades"]
