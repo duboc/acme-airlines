@@ -132,6 +132,10 @@ class JourneyState:
         self.status = target
         self.append_event(actor, "status_changed", {"from": current, "to": target})
 
+    def set_clock(self, clock: Clock) -> None:
+        """Time moves on this clock from now on (a preset's fixed clock was dropped, #485)."""
+        self._clock = clock
+
     def reopen_for_disruption(self, actor: str = "customer_agent") -> None:
         """Re-enter RESOLVING for a secondary cancellation on a RESOLVED or CLOSED journey."""
         current = self.status

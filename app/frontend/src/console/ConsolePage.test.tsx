@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { base, presets } from '../demo/fixtures';
 import { detected, events, resolved } from './fixtures';
 import { ConsolePage } from './ConsolePage';
 
@@ -27,6 +28,7 @@ describe('ConsolePage', () => {
   let detail = detected;
   let existing: unknown[] = [];
   let journeysStatus = 200;
+  let scenarioList: unknown[] = [];
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -34,13 +36,15 @@ describe('ConsolePage', () => {
     detail = detected;
     existing = [];
     journeysStatus = 200;
+    scenarioList = [];
     fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url === '/api/scenario/trigger-cancellation') {
         expect(JSON.parse(String(init?.body))).toMatchObject({ flight: 'AC1234' });
         return json({ journey_ids: ['J-1'] });
       }
       if (url === '/api/scenario/reset') return json({ status: 'reset' });
-      if (url === '/api/scenarios') return json([]);
+      if (url === '/api/scenarios') return json(scenarioList);
+      if (url.endsWith('/start')) return json(base);
       if (url.startsWith('/api/whatsapp/')) return json([]);
       if (url === '/api/journeys') return json(existing, journeysStatus);
       if (url === '/api/journeys/J-1') return json(detail);
@@ -56,6 +60,15 @@ describe('ConsolePage', () => {
     expect(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled();
     expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
+  it('clears the demo panel preset progress when a manual cancellation is triggered', async () => {
+    scenarioList = presets;
+    render(<ConsolePage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+    expect(screen.getByRole('button', { name: 'Next step' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger AC1234 cancellation' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled());
   });
 
   it('triggers, streams events live and refreshes the journey card', async () => {

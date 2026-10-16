@@ -423,9 +423,12 @@ class EngineBackend:
         if op in ("whatsapp_reply", "whatsapp_action") and self._sales_pending:
             if await self._tick_sales() and self._active is not None:
                 await self.scenario_state()
-        ctx = self._ctx() if op.startswith("whatsapp_") else {}  # not trigger_cancellation
-        if op == "trigger_cancellation":  # the engine ends the preset: so does this cursor (#321)
-            self._active, self._step, self._tape = None, 0, None
+        ctx = self._ctx() if op.startswith("whatsapp_") else {}
+        if op == "trigger_cancellation":
+            if kwargs.get("flight") != "AC1234" and self._active is not None and self._step > 0:
+                ctx = self._ctx()  # a secondary one acts on the preset's journey: the engine may
+                # have to rebuild it first (#485)
+            self._active, self._step, self._tape = None, 0, None  # the engine ends the preset
         reply = ok(await self._customer.call(op, **kwargs, **ctx))
         tape = reply.pop("tape", None) if isinstance(reply, dict) else None
         if op == "whatsapp_messages":
