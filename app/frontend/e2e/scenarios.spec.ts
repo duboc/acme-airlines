@@ -63,6 +63,7 @@ test('declines-upgrade preset: declining closes the journey on AC1252 seat 14A w
   await page.goto('/console');
   await page.getByRole('combobox', { name: 'Scenario' }).selectOption('declines-upgrade');
   await page.getByRole('button', { name: 'Start scenario' }).click();
+  await expect(page.getByText(/no journey open/i)).toBeVisible();
 
   for (let i = 1; i <= 5; i += 1) {
     await nextStep(page, i, 5);
@@ -82,6 +83,7 @@ test('upgrade-race preset: replanning invalidates the upgrade offer and keeps AC
   await page.goto('/console');
   await page.getByRole('combobox', { name: 'Scenario' }).selectOption('upgrade-race');
   await page.getByRole('button', { name: 'Start scenario' }).click();
+  await expect(page.getByText(/no journey open/i)).toBeVisible();
 
   for (let i = 1; i <= 6; i += 1) {
     await nextStep(page, i, 6);
@@ -99,6 +101,7 @@ test('no-offer journey on AC1240 closes after the 10-minute offer window elapses
   await request.post(`${API}/scenario/reset`);
   await page.goto('/console');
   await page.getByRole('button', { name: 'Reset' }).click();
+  await expect(page.getByText(/no journey open/i)).toBeVisible();
   await page.getByRole('button', { name: 'Trigger AC1234 cancellation' }).click();
   await expect(status(page)).toHaveText('Resolved');
   await expect(row(page, 'Flight')).toContainText('AC1240');
