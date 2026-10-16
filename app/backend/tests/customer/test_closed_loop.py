@@ -262,3 +262,76 @@ async def test_the_tick_does_not_retry_without_a_failure_or_with_a_live_offer(c)
     c.state.offers[-1].status = "declined"
     c.rt.clock.advance(c.rt.offer_window + timedelta(minutes=1))
     assert not decided_closure_due(c.rt, c.rec)  # decided, but no failed closure to retry
+
+
+# --- use-case beats no test covered (#462) -----------------------------------------------------
+async def test_replanning_reschedules_the_pickup_and_leaves_two_active_transfers(c):
+    """Scenario 3: AC1252 leaves later, so the hotel_to_airport pickup moves and the old one is
+    cancelled in the concierge system (the timeline has no separate cancellation event)."""
+    arranged = [e.payload for e in events(c, "transfer_arranged")]
+    assert [p["leg"] for p in arranged] == [
+        "airport_to_hotel",
+        "hotel_to_airport",
+        "hotel_to_airport",
+    ]
+    superseded, rescheduled = arranged[1]["transfer_ref"], arranged[2]
+    assert rescheduled["reason"] == "rescheduled for the new departure"
+    active = c.rt.sim.partners.transfers
+    assert superseded not in active and rescheduled["transfer_ref"] in active
+    assert sorted((t["origin"], t["destination"]) for t in active.values()) == [
+        ("GRU", "HT8842"),
+        ("HT8842", "GRU"),
+    ]
+    assert not events(c, "transfer_cancelled")  # not an event today: see #462 comment
+
+
+async def test_the_api_decline_closes_and_verifies_and_the_stream_says_so():
+    import httpx
+
+    from acme.api.app import create_app
+
+    app = create_app(FixedClock(DISRUPTION_DETECTED_AT))
+    rt = app.state.runtime
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    rt.clock.advance(timedelta(minutes=7))
+    await rt.tick()
+    await rt.handle_inbound("P-MARIANA", "Can I leave after 10:00 AM instead?")
+    await rt.handle_inbound("P-MARIANA", "Thanks, that all works for me!")
+    rec = rt.journeys[jid]
+    await sent_offer(type("C", (), {"rt": rt, "rec": rec, "state": rec.state, "jid": jid}))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as h:
+        r = await h.post("/whatsapp/P-MARIANA/actions", json={"action": "decline_offer"})
+        d = (await h.get(f"/journeys/{jid}")).json()
+        n = len(rec.state.timeline)
+        sse = await h.get(f"/journeys/{jid}/events?limit={n}")
+    assert r.json() == {"offer_status": "declined"}
+    assert d["status"] == "CLOSED" and set(d["verification"]) == CHECKS
+    assert all(d["verification"].values())
+    assert "verification_passed" in sse.text and "decline_offer" in sse.text
+
+
+async def test_the_offer_window_closes_an_acknowledged_journey_that_got_no_offer():
+    rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT))
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    rt.clock.advance(timedelta(minutes=7))
+    await rt.tick()
+    await rt.handle_inbound("P-MARIANA", "Perfect, thanks!")  # AC1240, no replan, no Sales
+    rec = rt.journeys[jid]
+    c = type("C", (), {"rt": rt, "rec": rec, "state": rec.state, "jid": jid})
+    assert c.state.status == S.RESOLVED and not c.state.offers
+    rt.clock.advance(timedelta(minutes=9))
+    await rt.tick()
+    assert c.state.status == S.RESOLVED  # the 10 min window has not passed
+    rt.clock.advance(timedelta(minutes=2))
+    await rt.tick()
+    assert c.state.status == S.CLOSED
+    (closure,) = events(c, "service_closure")
+    assert closure.payload == {"reason": "offer_window_elapsed"}
+    (passed,) = events(c, "verification_passed")
+    assert set(passed.payload["checks"]) == CHECKS and all(passed.payload["checks"].values())
+    for kind in ("memory_committed", "crm_logged", "nps_scheduled"):
+        assert len(events(c, kind)) == 1
+    (a,) = events(c, "analytics_recorded")
+    assert a.payload["converted"] is False and a.payload["event"] == "no_offer"
+    back = rt.store.load(jid, rt.clock)
+    assert back.timeline == c.state.timeline and back.status == S.CLOSED

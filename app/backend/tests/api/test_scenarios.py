@@ -157,3 +157,44 @@ async def test_scripted_accept_or_decline_with_no_sent_offer_returns_409(
     # A second attempt still sees step_index == 4 (not scenario_finished).
     r2 = await client.post(f"/scenarios/{sid}/step")
     assert r2.status_code == 409 and r2.json()["code"] == "no_offer_sent"
+
+
+async def states(client, sid):
+    """The ScenarioState after start and after each step."""
+    out = [(await client.post(f"/scenarios/{sid}/start")).json()]
+    while not out[-1]["done"]:
+        r = await client.post(f"/scenarios/{sid}/step")
+        assert r.status_code == 200, r.text
+        out.append(r.json())
+    return out
+
+
+async def test_happy_path_beats_step_by_step(client):  # irrops-use-case.md scenarios 1-5
+    _, cancel, notify, after10, ack, accept = await states(client, "happy-path")
+    assert (cancel["journey_status"], cancel["flight"], cancel["seat"]) == (
+        "RESOLVED", "AC1240", "14A",
+    )  # fmt: skip
+    assert cancel["last_message"] is None and cancel["offers_sent"] == 0  # silent: settling
+    assert all(k in notify["last_message"] for k in ("AC1234", "AC1240", "14A", "HT8842"))
+    assert notify["offers_sent"] == 0
+    assert (after10["flight"], after10["seat"], after10["journey_status"]) == (
+        "AC1252", "14A", "RESOLVED",
+    )  # fmt: skip
+    assert after10["offers_sent"] == 0  # not acknowledged yet: Sales stays suppressed
+    assert (ack["offers_sent"], ack["offer_status"], ack["journey_status"]) == (
+        1, "sent", "RESOLVED",
+    )  # fmt: skip
+    assert (accept["journey_status"], accept["seat"], accept["offer_status"]) == (
+        "CLOSED", "2A", "accepted",
+    )  # fmt: skip
+    assert accept["charged"] == "135.00"
+
+
+async def test_declines_upgrade_closes_and_verifies_the_five_systems(client):
+    s = (await states(client, "declines-upgrade"))[-1]
+    assert s["journey_status"] == "CLOSED"
+    d = (await client.get(f"/journeys/{s['journey_id']}")).json()
+    assert d["status"] == "CLOSED"
+    assert d["verification"] == {
+        "flight": True, "seat": True, "hotel": True, "baggage": True, "upgrade": True,
+    }  # fmt: skip
