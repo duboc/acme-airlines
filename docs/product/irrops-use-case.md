@@ -50,9 +50,12 @@ opportunities.
   nonstop)**, preserving the 2:00 PM connection.
 - **Seat & luggage continuity:** Seat Agent holds **14A** on the new aircraft; an
   MCP call updates WorldTracer to retag and route the bag to AC1240.
-- **Duty of care:** Rights & Compensation Agent runs a compliance script confirming
-  overnight accommodation, meals and ground transport; Concierge Agent books partner
-  hotel **#HT8842**, arranges transfers, issues a digital dinner voucher.
+- **Duty of care:** Rights & Compensation Agent evaluates **ANAC Resolution 400/2016**
+  (`DOC-01`..`DOC-11`, measuring the wait from `min(detected_at, original_departure)` `#396`
+  and reading `origin_resident` / `special_needs` from the CRM profile `#324`); for Mariana
+  (`DOC-03`, `DOC-04`, `DOC-05`) Concierge Agent books partner hotel **#HT8842**, arranges
+  round-trip `airport_to_hotel` and `hotel_to_airport` transfers, and issues digital **dinner
+  and breakfast** meal vouchers.
 - **Sales containment:** Sales Agent watches Premium Business inventory but is
   suppressed by governance — **no pitches during active disruption resolution**.
 
@@ -60,8 +63,11 @@ opportunities.
 - **10:09 PM:** empathetic WhatsApp message with the cancellation **and** the
   completed resolution (flight, seat, hotel, transfer, vouchers).
 - **New constraint:** Mariana asks for a departure **after 10:00 AM**.
-- **Replanning:** Change Agent finds **AC1252 (11:40 AM)**, re-verifies the Santiago
-  connection, keeps 14A, updates the itinerary in seconds.
+- **Replanning:** Change Agent (`ReplanningChangeAgent`) finds **AC1252 (11:40 AM)**,
+  re-verifies the Santiago connection, keeps 14A, re-routes the checked bag, reschedules
+  the `hotel_to_airport` pickup from the booked `rec.hotel.hotel_id` (`new_departure - 3h`)
+  and cancels the superseded pickup via `concierge` `transfer.cancel`, and sends an explicit
+  WhatsApp escalation reply if any replanning step escalates to `needs_human` (`#398`).
 
 ### Scenario 4 — Inter-agent negotiation & guardrailed upsell
 - **Opportunity:** with the issue resolved and the customer positive, Sales Agent
