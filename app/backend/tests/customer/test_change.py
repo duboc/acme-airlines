@@ -194,3 +194,13 @@ async def test_ac3_replan_honours_the_worlds_mct(setup):
     closed = of(rec, "request_closed")[-1]
     assert closed.payload["outcome"] == "unsatisfiable"
     assert [s.flight_number for s in rt.world.pnrs["MSLV42"].segments] == ["AC1240", "AC0800"]
+
+
+async def test_replan_with_preferred_seat_taken_explains_courtesy_window_seat(setup):
+    rt, rec = setup
+    rt.world.flights["AC1252"].open_seats["economy"] = ["15A"]
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    assert rec.state.status == S.RESOLVED
+    last = sent(rt)[-1].text
+    assert "nearest window seat 15A (14A was unavailable)" in last
+    assert all(k in last for k in ("AC1252", "11:40", "15A", "14A", "window"))

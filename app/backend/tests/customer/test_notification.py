@@ -298,3 +298,41 @@ async def test_secondary_disruption_sends_proactive_notification_for_new_cancell
     assert len(msgs) == 2
     assert "AC1240" in msgs[-1].text and "AC1252" in msgs[-1].text and "11:40" in msgs[-1].text
     assert len([e for e in rec.state.timeline if e.type == "notification_sent"]) == 2
+
+
+async def test_seat_taken_notification_explains_window_seat_substitution(metric_points):
+    from acme.customer.outreach import prepare_notification
+
+    class CustomLlm(FakeLlm):
+        def __init__(self, reply: str):
+            super().__init__()
+            self.reply = reply
+
+        async def compose_passenger_message(self, context):
+            return self.reply
+
+    rt = make()
+    rt.world.flights["AC1240"].open_seats["economy"] = ["15A"]
+    rec = await resolved(rt)
+    await at_2209(rt)
+    (msg,) = sent(rt)
+    assert "nearest window seat 15A assigned (14A was unavailable)" in msg.text
+    assert "seat 15A kept" not in msg.text
+
+    valid_llm = (
+        "Flight AC1234 cancelled; rebooked AC1240 at 08:15, Window seat 15A (14A unavailable), "
+        "hotel HT8842, transfer and voucher arranged."
+    )
+    rt.llm = CustomLlm(valid_llm)
+    before = fallback_count(metric_points)
+    p = await prepare_notification(rt, rec)
+    assert p is not None and p.source == "llm" and p.text == valid_llm
+    assert fallback_count(metric_points) - before == 0
+
+    for omitted in ("14A", "Window"):
+        rt.llm = CustomLlm(valid_llm.replace(omitted, "XXX"))
+        b = fallback_count(metric_points)
+        p2 = await prepare_notification(rt, rec)
+        assert p2 is not None and p2.source == "template", omitted
+        assert fallback_count(metric_points) - b == 1, omitted
+        assert "nearest window seat 15A assigned (14A was unavailable)" in p2.text

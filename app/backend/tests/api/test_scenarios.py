@@ -62,6 +62,8 @@ async def test_seat_taken_gets_nearest_window_seat_with_explanation(client):
     s = await run_to_end(client, "seat-taken")
     assert s["flight"] == "AC1240" and s["seat"] == "15A"
     assert "14A unavailable on AC1240" in s["seat_reason"]
+    assert all(k in s["last_message"] for k in ("15A", "14A", "window"))
+    assert "seat 15A kept" not in s["last_message"]
 
 
 async def test_hotel_unavailable_needs_human_never_resolved_never_offered(client):
