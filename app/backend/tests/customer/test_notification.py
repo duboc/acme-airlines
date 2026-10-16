@@ -275,3 +275,26 @@ async def test_tick_holds_the_journey_lock_while_sending():
     lock.release()
     await asyncio.wait_for(task, timeout=30)
     assert len(sent(rt)) == 1
+
+
+async def test_secondary_disruption_sends_proactive_notification_for_new_cancellation():
+    rt = make()
+    rec = await resolved(rt)
+    await at_2209(rt)
+    assert len(sent(rt)) == 1
+    await rt.handle_inbound(PID, "Perfect, thanks!")
+    assert rec.state.resolution_acknowledged is True
+
+    # Secondary cancellation on AC1240 -> rebooks onto AC1252 (11:40).
+    await rt.trigger_cancellation("AC1240", "weather")
+    assert rec.state.status == S.RESOLVED and rec.state.resolution_acknowledged is False
+    rt.clock.advance(timedelta(minutes=2))
+    await rt.tick()
+    assert len(sent(rt)) == 1  # settle window for the 2nd disruption has not elapsed yet
+
+    rt.clock.advance(timedelta(minutes=5))
+    await rt.tick()
+    msgs = sent(rt)
+    assert len(msgs) == 2
+    assert "AC1240" in msgs[-1].text and "AC1252" in msgs[-1].text and "11:40" in msgs[-1].text
+    assert len([e for e in rec.state.timeline if e.type == "notification_sent"]) == 2

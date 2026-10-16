@@ -24,6 +24,8 @@ def _needs_human(rec: JourneyRecord, step: str, exc: Exception) -> None:
 
 
 async def book_hotel(rt: CustomerRuntime, rec: JourneyRecord, e: DutyOfCareEntitlements) -> bool:
+    if rec.hotel is not None:
+        return True
     try:
         r = await rt.client.call(
             "concierge", "hotel.book", hotel_id=PARTNER_HOTEL, nights=1, pax=1,
@@ -58,12 +60,25 @@ async def book_transfers(
         ]
     else:  # DOC-06: an origin resident goes home, no hotel
         legs = [("airport_to_home", airport, "HOME", rt.clock.now() + timedelta(hours=1))]
+    arranged = {
+        ev.payload.get("leg") for ev in rec.state.timeline if ev.type == "transfer_arranged"
+    }
+    superseded = [
+        ev.payload["transfer_ref"]
+        for ev in rec.state.timeline
+        if ev.type == "transfer_arranged" and ev.payload.get("leg") == "hotel_to_airport"
+    ][-1:]
     for leg, origin, destination, at in legs:
+        if leg != "hotel_to_airport" and leg in arranged:
+            continue
         try:
             r = await rt.client.call(
                 "concierge", "transfer.book", origin=origin, destination=destination,
                 at=at.isoformat(),
             )  # fmt: skip
+            if leg == "hotel_to_airport":
+                for ref in superseded:
+                    await rt.client.call("concierge", "transfer.cancel", transfer_ref=ref)
         except ToolError as exc:
             _needs_human(rec, f"transfer:{leg}", exc)
             return False
@@ -78,8 +93,13 @@ async def book_transfers(
 async def issue_meal_vouchers(
     rt: CustomerRuntime, rec: JourneyRecord, e: DutyOfCareEntitlements
 ) -> bool:
+    already = {
+        ev.payload.get("meal_type") for ev in rec.state.timeline if ev.type == "voucher_issued"
+    }
     ok = True
     for meal in e.meal_vouchers:
+        if meal in already:
+            continue
         try:
             r = await rt.client.call(
                 "concierge", "voucher.issue", type="meal", amount=MEAL_VOUCHER_USD[meal]

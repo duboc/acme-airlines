@@ -111,3 +111,162 @@ async def test_malformed_seat_code_needs_human_instead_of_raising(rt):
     resp = await specialist.handle(req, lambda t, p=None: emitted.append((t, p or {})))
     assert resp.status == "unavailable"
     assert [t for t, _ in emitted] == ["needs_human"]
+
+
+async def test_secondary_cancellation_reopens_resolved_or_closed_journey_and_ignores_duplicate():
+    from uuid import uuid4
+
+    from acme.domain.journey import InvalidTransition
+    from acme.domain.models import Offer
+
+    full_rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT))
+    (jid,) = await full_rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    rec = full_rt.journeys[jid]
+    assert rec.state.status == S.RESOLVED
+    first_run_id = rec.run_id
+
+    # Duplicate cancellation of the same already-cancelled flight is an idempotent no-op.
+    assert await full_rt.trigger_cancellation("AC1234", "unscheduled maintenance") == []
+    assert rec.run_id == first_run_id
+    assert len(ev(full_rt, jid, "cancellation_detected")) == 1
+
+    # Simulate a declined offer and CLOSED journey on AC1240, plus a live offer to verify
+    # both settled-offer clearing and live-offer invalidation on reopen.
+    declined = rec.state.add_offer(
+        Offer(
+            offer_id=uuid4(),
+            journey_id=jid,
+            flight="AC1240",
+            cabin="premium_business",
+            price="135.00",
+            standard_price="290.00",
+            net_margin="80.00",
+            currency="USD",
+            origin="sales",
+            optional=True,
+        )
+    )
+    declined.status = "declined"
+    rec.state.resolution_acknowledged = True
+    rec.state.transition(S.CLOSED, actor="customer_agent")
+    live = rec.state.add_offer(declined.offer.model_copy(update={"offer_id": uuid4()}))
+    live.status = "sent"
+
+    # Secondary disruption: AC1240 is cancelled -> re-opens journey, rotates run_id, rebooks AC1252.
+    assert await full_rt.trigger_cancellation("AC1240", "weather") == [jid]
+    assert rec.run_id != first_run_id
+    assert rec.state.status == S.RESOLVED
+    assert rec.state.resolution_acknowledged is False
+    assert live.status == "invalidated"
+    assert [o.status for o in rec.state.offers] == ["invalidated"]
+    assert [s.flight_number for s in full_rt.world.pnrs["MSLV42"].segments] == ["AC1252", "AC0800"]
+    assert [e.payload["flight"] for e in ev(full_rt, jid, "cancellation_detected")] == [
+        "AC1234",
+        "AC1240",
+    ]
+    assert [e.payload["flight"] for e in ev(full_rt, jid, "rebooked")] == ["AC1240", "AC1252"]
+    assert (
+        ev(full_rt, jid, "duty_of_care_assessed")[-1]
+        .payload["rule_reasons"]["compensation"]
+        .startswith("CDC Art. 14")
+    )
+    assert len(rec.vouchers) == 2 and len(full_rt.sim.partners.vouchers) == 2
+    assert len(full_rt.sim.partners.hotel_bookings) == 1
+    assert len(full_rt.sim.partners.transfers) == 2
+
+    # reopen_for_disruption from a non-RESOLVED/CLOSED state raises InvalidTransition.
+    rec.state.transition(S.REPLANNING, actor="customer_agent")
+    with pytest.raises(InvalidTransition):
+        rec.state.reopen_for_disruption()
+
+
+@pytest.mark.parametrize("branch", ["accept", "decline", "no_offer"])
+async def test_secondary_cancellation_after_accepted_upgrade_voids_charge_and_verifies(branch):
+    from datetime import timedelta
+    from decimal import Decimal
+    from uuid import uuid4
+
+    from acme.customer.conversion import accept_offer, decline_offer
+    from acme.customer.skills import CustomerSkills
+    from acme.customer.verify import verify_journey
+
+    full_rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT))
+    full_rt.world.flights["AC1240"].open_seats["premium_business"] = ["2A"]
+    full_rt.world.inventory.append(
+        full_rt.world.inventory[0].model_copy(update={"flight_number": "AC1240"})
+    )
+    skills = CustomerSkills(full_rt)
+    (jid,) = await full_rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    rec = full_rt.journeys[jid]
+    full_rt.clock.advance(timedelta(minutes=7))
+    await full_rt.tick()
+    await full_rt.handle_inbound("P-MARIANA", "Perfect, thanks!")
+
+    first_oid = str(uuid4())
+    res1 = await skills.propose_and_deliver(
+        {
+            "offer_id": first_oid,
+            "journey_id": jid,
+            "flight": "AC1240",
+            "cabin": "premium_business",
+            "price": "135.00",
+            "standard_price": "290.00",
+            "net_margin": "80.00",
+            "currency": "USD",
+            "origin": "sales",
+            "optional": True,
+        }
+    )
+    assert res1["status"] == "approved"
+    assert await accept_offer(full_rt, rec) == "accepted"
+    assert rec.state.status == S.CLOSED
+    assert full_rt.sim.partners.net_charged("MSLV42") == Decimal("135.00")
+
+    # Secondary cancellation on AC1240 voids the Disruption 1 upgrade charge and reuses care.
+    assert await full_rt.trigger_cancellation("AC1240", "weather") == [jid]
+    assert full_rt.sim.partners.net_charged("MSLV42") == Decimal("0.00")
+    assert len(rec.vouchers) == 2 and len(full_rt.sim.partners.vouchers) == 2
+    assert len(full_rt.sim.partners.hotel_bookings) == 1
+    assert len(full_rt.sim.partners.transfers) == 2
+    voided = ev(full_rt, jid, "charge_voided")
+    assert len(voided) == 1 and voided[-1].payload["offer_id"] == first_oid
+    decisions = [
+        e.payload
+        for e in ev(full_rt, jid, "guardrail_decision")
+        if e.payload.get("offer_id") == first_oid
+    ]
+    assert decisions[-1]["approved"] is False
+
+    full_rt.clock.advance(timedelta(minutes=7))
+    await full_rt.tick()
+    await full_rt.handle_inbound("P-MARIANA", "Perfect, thanks!")
+
+    if branch in ("accept", "decline"):
+        res2 = await skills.propose_and_deliver(
+            {
+                "offer_id": str(uuid4()),
+                "journey_id": jid,
+                "flight": "AC1252",
+                "cabin": "premium_business",
+                "price": "135.00",
+                "standard_price": "290.00",
+                "net_margin": "80.00",
+                "currency": "USD",
+                "origin": "sales",
+                "optional": True,
+            }
+        )
+        assert res2["status"] == "approved"
+        if branch == "accept":
+            assert await accept_offer(full_rt, rec) == "accepted"
+            assert full_rt.sim.partners.net_charged("MSLV42") == Decimal("135.00")
+        else:
+            assert await decline_offer(full_rt, rec) == "declined"
+            assert full_rt.sim.partners.net_charged("MSLV42") == Decimal("0.00")
+    else:
+        full_rt.clock.advance(full_rt.offer_window + timedelta(minutes=1))
+        await full_rt.tick()
+        assert full_rt.sim.partners.net_charged("MSLV42") == Decimal("0.00")
+
+    assert rec.state.status == S.CLOSED
+    assert (await verify_journey(full_rt, rec)).ok is True

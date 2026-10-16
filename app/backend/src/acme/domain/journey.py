@@ -132,6 +132,20 @@ class JourneyState:
         self.status = target
         self.append_event(actor, "status_changed", {"from": current, "to": target})
 
+    def reopen_for_disruption(self, actor: str = "customer_agent") -> None:
+        """Re-enter RESOLVING for a secondary cancellation on a RESOLVED or CLOSED journey."""
+        current = self.status
+        if current not in (S.RESOLVED, S.CLOSED):
+            raise InvalidTransition(f"{current} -> {S.RESOLVING} is not allowed")
+        for rec in self.offers:
+            if rec.status in LIVE_OFFER_STATUSES:
+                rec.status = "invalidated"
+        self.offers = [rec for rec in self.offers if rec.status == "invalidated"]
+        self.resolution_acknowledged = False
+        self.current_flight = None
+        self.status = S.RESOLVING
+        self.append_event(actor, "status_changed", {"from": current, "to": S.RESOLVING})
+
     def add_offer(self, offer: Offer) -> OfferRecord:
         rec = OfferRecord(offer=offer)
         self.offers.append(rec)

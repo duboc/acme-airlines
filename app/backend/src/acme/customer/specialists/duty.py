@@ -36,7 +36,10 @@ async def run_duty_of_care(rt: CustomerRuntime, rec: JourneyRecord, rebuild: Reb
         state.append_event("customer_agent", "resolution_blocked", {"missing": missing})
         return
 
-    detected = state.timeline[0]
+    detected = next(
+        (e for e in reversed(state.timeline) if e.type == "cancellation_detected"),
+        state.timeline[0],
+    )
     original = await rt.client.call("pss", "flights.get", flight=detected.payload["flight"])
     new = await rt.client.call("pss", "flights.get", flight=rebuild.new_flight)
     new_departure = datetime.fromisoformat(new["scheduled_departure"])
