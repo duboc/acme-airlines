@@ -288,7 +288,12 @@ def create_local_app(clock: Clock | None = None, sales_token: str | None = None)
             raise ApiError(409, "scenario_not_started", "scenario is not started")
         if runner.index >= len(runner.active.steps):
             raise ApiError(409, "scenario_finished", "scenario is finished; start it again")
-        return await runner.step()
+        try:
+            return await runner.step()
+        except NoSentOffer:
+            raise ApiError(
+                409, "no_offer_sent", "no offer has been sent to this passenger"
+            ) from None
 
     @app.get("/journeys", tags=["journeys"])
     async def list_journeys() -> list[JourneySummary]:

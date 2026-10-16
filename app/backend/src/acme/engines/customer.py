@@ -564,6 +564,8 @@ class CustomerEngineApp:
             return await self._run_scenario_step(runner)
 
     async def _run_scenario_step(self, runner: Any) -> dict[str, Any]:
+        from acme.customer.conversion import NoSentOffer
+
         sid = f"scenario-{runner.active.id}"
         if (
             await self._sessions.get_session(
@@ -575,10 +577,20 @@ class CustomerEngineApp:
                 app_name=f"{APP_NAME}-scenario", user_id="demo", session_id=sid
             )
         turn = types.Content(role="user", parts=[types.Part(text="step")])
-        async for _ in self._step_runner.run_async(
-            user_id="demo", session_id=sid, new_message=turn
-        ):
-            pass
+        try:
+            async for _ in self._step_runner.run_async(
+                user_id="demo", session_id=sid, new_message=turn
+            ):
+                pass
+        except NoSentOffer:
+            return {
+                "error": {
+                    "status": 409,
+                    "code": "no_offer_sent",
+                    "detail": "no offer has been sent to this passenger",
+                },
+                "tape": list(self.runtime.llm.entries),
+            }
         return self._with_tape(runner.state())
 
     @shared
