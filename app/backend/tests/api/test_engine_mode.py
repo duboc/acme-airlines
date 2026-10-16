@@ -65,24 +65,32 @@ def engine_app(monkeypatch):
     return create_engine_app(engine_backend())
 
 
+PARITY_FIELDS = (*STRUCTURAL, "seat_reason")
+
+
 async def run(c, sid):
     state = (await c.post(f"/scenarios/{sid}/start")).json()
+    steps = [{k: state[k] for k in PARITY_FIELDS}]
     while not state["done"]:
         r = await c.post(f"/scenarios/{sid}/step")
         assert r.status_code == 200, r.text
         state = r.json()
+        steps.append({k: state[k] for k in PARITY_FIELDS})
     phone = (await c.get("/whatsapp/P-MARIANA/messages")).json()
     shape = [(m["direction"], bool(m["buttons"]), bool(m["attachments"])) for m in phone]
-    return state, (await c.get("/journeys")).json(), shape
+    return state, steps, (await c.get("/journeys")).json(), shape
 
 
 @pytest.mark.parametrize("sid", IDS)
 async def test_presets_through_the_http_api_match_local_mode(sid, engine_app):
     async with client(create_app()) as local, client(engine_app) as remote:
-        want, want_journeys, want_phone = await run(local, sid)
-        got, got_journeys, got_phone = await run(remote, sid)
+        want, want_steps, want_journeys, want_phone = await run(local, sid)
+        got, got_steps, got_journeys, got_phone = await run(remote, sid)
+        assert got_steps == want_steps  # step-by-step 11-field STRUCTURAL + seat_reason parity
+        assert {k: got[k] for k in PARITY_FIELDS} == {k: want[k] for k in PARITY_FIELDS}
+        if sid == "seat-taken":
+            assert got["seat"] == "15A" and got["seat_reason"] and "15A" in got["seat_reason"]
         assert got_phone == want_phone  # the phone panel, structurally
-        assert {k: got[k] for k in STRUCTURAL} == {k: want[k] for k in STRUCTURAL}
         assert got_journeys == want_journeys
         if want_journeys:
             jid = want_journeys[0]["journey_id"]

@@ -14,7 +14,7 @@ from acme.engines.sales import build_sales_engine_app
 from acme.llm.fake import FakeLlm
 from acme.llm.port import Acknowledge, DepartureAfter
 from acme.llm.tape import MAX_ENTRIES, MAX_TEXT, RecordingLlm, TapeLlm, clean_tape
-from tests.api.test_engine_mode import LocalEngine
+from tests.api.test_engine_mode import IDS, PARITY_FIELDS, LocalEngine
 from tests.live.agent_engine_proof import conversation
 
 PID = "P-MARIANA"
@@ -363,3 +363,16 @@ def test_clean_tape_validates_manual_turn_entries():
         [{"m": "manual_action", "pid": "P-MARIANA", "action": "bogus", "step": 0}],
     ):
         assert clean_tape(bad) is None
+
+
+@pytest.mark.parametrize("sid", IDS)
+async def test_all_six_presets_preserve_structural_and_seat_reason_parity_after_tape_rebuild(sid):
+    _, cust, sales = build(Creative())
+    backend = EngineBackend(cust, sales)
+    state = await plain_run(backend, sid)
+    decoy = "happy-path" if sid == "seat-taken" else "seat-taken"
+    rebuilt = await force_rebuild(backend, sid, state["step_index"], backend._tape, decoy=decoy)  # noqa: SLF001
+    assert {k: rebuilt[k] for k in PARITY_FIELDS} == {k: state[k] for k in PARITY_FIELDS}
+    if sid == "seat-taken":
+        assert rebuilt["seat"] == "15A" and rebuilt["seat_reason"]
+        assert "15A" in rebuilt["seat_reason"]
