@@ -116,6 +116,8 @@ async def test_an_engine_call_failure_keeps_only_the_class_and_our_context():
             "other",
             "model",
         ),  # fail closed: Other, same text
+        (RaisesForEverything(), "Perfect, thanks!", "other", "model"),  # fail closed on ACK too
+        (OtherForEverything(), "Perfect, thanks!", "other", "model"),
         (OtherForAfter(), "I would like a refund", "other", "model"),
         (FakeLlm(), "Perfect, thanks!", "ack", "model"),
         (FakeLlm(), "Can I leave after 10am?", "departure_after", "model"),
@@ -131,3 +133,19 @@ async def test_given_a_passenger_text_when_classified_then_the_result_and_the_di
     if kind == "other":
         assert got == Other(text=text)  # the passenger's own words go to a person
     assert app.runtime.last_parse == {"parse_kind": kind, "parse_source": source}
+
+
+@pytest.mark.parametrize("sid", [
+    "happy-path", "declines-upgrade", "unsatisfiable-request", "seat-taken",
+    "hotel-unavailable", "upgrade-race",
+])  # fmt: skip
+@pytest.mark.parametrize("llm", [OtherForAfter(), Broken()])
+async def test_all_six_presets_match_fake_llm_parity_on_after_time_fallback(sid, llm):
+    from tests.api.test_engine_mode import PARITY_FIELDS
+
+    _, ref_cust, ref_sales = build(FakeLlm())
+    want = await plain_run(EngineBackend(ref_cust, ref_sales), sid)
+    _, got_cust, got_sales = build(llm)
+    got = await plain_run(EngineBackend(got_cust, got_sales), sid)
+    assert got["done"] is True
+    assert {k: got[k] for k in PARITY_FIELDS} == {k: want[k] for k in PARITY_FIELDS}

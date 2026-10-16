@@ -102,6 +102,26 @@ async def test_outcome_diverging_from_local_mode_fails():
     assert any("!= local" in f for f in r.failures)
 
 
+async def test_default_presets_and_structural_parity_cover_all_six_presets_and_seat_reason():
+    from tests.live.agent_engine_proof import DEFAULT_PRESETS, STRUCTURAL, structural
+
+    assert DEFAULT_PRESETS == (
+        "happy-path", "declines-upgrade", "unsatisfiable-request", "seat-taken",
+        "hotel-unavailable", "upgrade-race",
+    )  # fmt: skip
+    assert len(STRUCTURAL) == 11
+    sample = {"seat": "15A", "seat_reason": "14A unavailable; assigned 15A"}
+    assert structural(sample)["seat_reason"] == "14A unavailable; assigned 15A"
+    assert set(structural(sample)) == {*STRUCTURAL, "seat_reason"}
+
+    class BadSeatReason(FakeBackend):
+        def state(self):
+            return {**super().state(), "seat_reason": "wrong reason"}
+
+    r = await proof(good(), backend=BadSeatReason())
+    assert any("!= local" in f and "seat_reason" in f for f in r.failures)
+
+
 def test_fixture_pii_has_the_ac1234_passenger_and_pnr():
     pii = fixture_pii()
     assert "Mariana Silva" in pii and "MSLV42" in pii

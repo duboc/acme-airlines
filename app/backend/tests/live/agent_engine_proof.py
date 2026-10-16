@@ -20,7 +20,7 @@ from typing import Any, Protocol
 STRUCTURAL = ("scenario_id", "step_index", "total_steps", "done", "journey_status", "flight",
               "seat", "offers_sent", "offer_status", "charged", "needs_human")  # fmt: skip
 DEFAULT_PRESETS = ("happy-path", "declines-upgrade", "unsatisfiable-request", "seat-taken",
-                   "hotel-unavailable")  # fmt: skip  # presets 1-5
+                   "hotel-unavailable", "upgrade-race")  # fmt: skip  # presets 1-6
 # Span kinds that must show up somewhere in the run (prefix match on the span name).
 REQUIRED_SPANS = ("acme.customer.specialist.", "acme.guardrail.decision", "acme.a2a.",
                   "acme.sales.pitch")  # fmt: skip
@@ -123,7 +123,7 @@ def span_kinds_seen(traces: list[Trace], limit: int = 25) -> list[str]:
 
 
 def structural(state: dict[str, Any]) -> dict[str, Any]:
-    return {k: state.get(k) for k in STRUCTURAL}
+    return {k: state.get(k) for k in (*STRUCTURAL, "seat_reason")}
 
 
 def scrub(text: str, pii: set[str]) -> str:

@@ -7,7 +7,7 @@ import pytest
 
 from acme import metrics, telemetry
 from acme.engines.customer import build_customer_engine_app
-from tests.api.test_engine_mode import STRUCTURAL
+from tests.api.test_engine_mode import IDS, PARITY_FIELDS, STRUCTURAL
 from tests.engines.test_process_identity import Lines
 
 PID = "P-MARIANA"
@@ -29,10 +29,28 @@ async def test_a_container_that_never_saw_the_scenario_rebuilds_instead_of_faili
         await a.scenario_step(preset="happy-path", step=step)
     state_a = a.scenario_state(preset="happy-path", step=3)
     state_b = b.scenario_state(preset="happy-path", step=3)  # b has no scenario at all
-    assert {k: state_b[k] for k in STRUCTURAL} == {k: state_a[k] for k in STRUCTURAL}
+    assert {k: state_b[k] for k in PARITY_FIELDS} == {k: state_a[k] for k in PARITY_FIELDS}
     nxt_a = await a.scenario_step(preset="happy-path", step=3)
     nxt_b = await b.scenario_step(preset="happy-path", step=3)
-    assert {k: nxt_b[k] for k in STRUCTURAL} == {k: nxt_a[k] for k in STRUCTURAL}
+    assert {k: nxt_b[k] for k in PARITY_FIELDS} == {k: nxt_a[k] for k in PARITY_FIELDS}
+
+
+@pytest.mark.parametrize("sid", IDS)
+async def test_all_six_presets_match_step_by_step_across_stateless_container_rebuild(sid):
+    a, b = (build_customer_engine_app() for _ in range(2))
+    a.set_up()
+    b.set_up()
+    start_a = a.scenario_start(sid)
+    start_b = b.scenario_state(preset=sid, step=0)
+    assert {k: start_b[k] for k in PARITY_FIELDS} == {k: start_a[k] for k in PARITY_FIELDS}
+    for step in range(start_a["total_steps"]):
+        await a.scenario_step(preset=sid, step=step)
+        await a.scenarios.radar.tick()
+        step_a = a.scenario_state(preset=sid, step=step + 1)
+        step_b = b.scenario_state(preset=sid, step=step + 1)
+        assert {k: step_b[k] for k in PARITY_FIELDS} == {k: step_a[k] for k in PARITY_FIELDS}
+    if sid == "seat-taken":
+        assert step_b["seat"] == "15A" and step_b["seat_reason"] and "15A" in step_b["seat_reason"]
 
 
 async def test_a_stale_local_step_is_replaced_by_the_callers_step():
