@@ -301,6 +301,11 @@ TELEMETRY_ENV = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"  # SDK flag (reserv
 TRACING_ENV = "ACME_ENABLE_TRACING"  # ours: what the deploy sets (#190)
 
 
+# Only `service.name` is copied from the Resource onto Cloud Trace spans: without a regex the
+# exporter drops every resource attribute and the Observatory's `+service.name:` filter finds
+# nothing (#400). Nothing else (host, process) is exported.
+RESOURCE_REGEX = r"^service\.name$"
+
 SAMPLER_ENV = "ACME_TRACE_SAMPLER"  # "parent" restores ParentBased; anything else = always on
 
 
@@ -354,7 +359,8 @@ def configure_cloud_trace(service_name: str, exporter_factory=None) -> bool:
         # Cloud Trace rejects ("400 Invalid project id in name", #203).
         project_id = os.environ.get("ACME_GENAI_PROJECT") or llm_config.PROJECT
         provider = build_provider(
-            service_name, logged_exporter(exporter_factory(project_id=project_id))
+            service_name,
+            logged_exporter(exporter_factory(project_id=project_id, resource_regex=RESOURCE_REGEX)),
         )
         trace.set_tracer_provider(provider)
     except Exception:  # noqa: BLE001 - tracing must never stop an engine from starting
