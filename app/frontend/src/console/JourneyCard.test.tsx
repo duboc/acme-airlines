@@ -79,4 +79,27 @@ describe('JourneyCard', () => {
       'flight: ✓ · seat: ✓ · hotel: ✓ · baggage: ✓ · upgrade: ✗',
     );
   });
+
+  it('formats seat.cabin without snake_case for premium_business and economy (#442)', () => {
+    const { rerender } = render(
+      <JourneyCard
+        journey={{
+          ...resolved,
+          seat: { flight_number: 'AC1252', seat: '2A', cabin: 'premium_business' },
+        }}
+      />,
+    );
+    expect(screen.getByText('Seat').nextElementSibling).toHaveTextContent('2A (premium business)');
+    expect(screen.getByText('Seat').nextElementSibling?.textContent).not.toContain('_');
+
+    rerender(
+      <JourneyCard
+        journey={{
+          ...resolved,
+          seat: { flight_number: 'AC1240', seat: '14A', cabin: 'economy' },
+        }}
+      />,
+    );
+    expect(screen.getByText('Seat').nextElementSibling).toHaveTextContent('14A (economy)');
+  });
 });

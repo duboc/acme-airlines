@@ -820,7 +820,7 @@ class RebuildReport:
     to_step: int = 0
     wall_ms: float = 0.0  # client side: the forced call, network included
     engine_ms: list[float] = field(default_factory=list)  # the engine's own `rebuild` ms
-    budget_ms: float = REBUILD_BUDGET_MS
+    budget_ms: float | None = REBUILD_BUDGET_MS
     tape_miss: int | None = None
     tape_discarded: int | None = None
     failures: list[str] = field(default_factory=list)
@@ -828,11 +828,11 @@ class RebuildReport:
 
     def markdown(self) -> str:
         engine = ", ".join(f"{ms:.1f} ms" for ms in self.engine_ms) or "no rebuild logged"
+        budget = f" (budget < {self.budget_ms:.0f} ms)" if self.budget_ms is not None else ""
         verdict = "FAIL" if self.failures else "PASS"
         lines = [f"## Forced rebuild: {verdict}", "",
                  f"preset `{self.preset}`, rebuilt to step {self.to_step}", "",
-                 f"- rebuild latency (engine, `ACME_DIAG rebuild`): {engine} "
-                 f"(budget < {self.budget_ms:.0f} ms)",
+                 f"- rebuild latency (engine, `ACME_DIAG rebuild`): {engine}{budget}",
                  f"- forced call, client side: {self.wall_ms:.0f} ms"]  # fmt: skip
         if self.tape_miss is not None or self.tape_discarded is not None:
             lines.append(
@@ -851,7 +851,7 @@ async def run_rebuild_proof(
     preset: str = DEFAULT_REBUILD[0],
     decoy: str = DEFAULT_REBUILD[1],
     *,
-    budget_ms: float = REBUILD_BUDGET_MS,
+    budget_ms: float | None = REBUILD_BUDGET_MS,
     wait: float = REBUILD_WAIT,
     poll: float = REBUILD_POLL,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -914,7 +914,7 @@ async def run_rebuild_proof(
         report.tape_discarded = ev.get("tape_discarded")
         if not isinstance(ms, (int, float)) or isinstance(ms, bool):
             report.failures.append("the rebuild event carries no latency (ms)")
-        elif ms >= budget_ms:
+        elif budget_ms is not None and ms >= budget_ms:
             report.failures.append(f"rebuild latency {ms:.1f} ms >= {budget_ms:.1f} ms budget")
         for key in ("tape_miss", "tape_discarded"):
             val = ev.get(key)
