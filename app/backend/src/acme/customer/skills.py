@@ -283,7 +283,13 @@ class CustomerSkills:
             if not use_llm:
                 raise ValueError("stale facts: template of the current ones")
             text = await rt.llm.compose_passenger_message(context)
-            if not all(f in text for f in (flight, price, "optional", "premium business")):
+            lower = text.lower()
+            if not (
+                flight in text
+                and price in text
+                and "optional" in lower
+                and "premium business" in lower
+            ):
                 raise ValueError("missing offer fact")
         except Exception:  # noqa: BLE001 (any LLM failure falls back to the template)
             text = fallback

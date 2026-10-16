@@ -72,8 +72,17 @@ async def test_notification_event_records_source_llm():
     assert ev.payload["source"] == "llm" and ev.payload["message_id"]
 
 
+def fallback_count(metric_points, surface="resolution"):
+    return sum(
+        v
+        for a, v in metric_points().get("acme.llm.template_fallbacks", [])
+        if a == {"surface": surface}
+    )
+
+
 @pytest.mark.parametrize("llm", [BadLlm(), BoomLlm()])
-async def test_template_fallback_when_llm_misses_facts_or_fails(llm):
+async def test_template_fallback_when_llm_misses_facts_or_fails(llm, metric_points):
+    before = fallback_count(metric_points)
     rt = make(llm)
     rec = await resolved(rt)
     await at_2209(rt)
@@ -82,6 +91,41 @@ async def test_template_fallback_when_llm_misses_facts_or_fails(llm):
         assert fact in msg.text, fact
     (ev,) = [e for e in rec.state.timeline if e.type == "notification_sent"]
     assert ev.payload["source"] == "template"
+    assert fallback_count(metric_points) - before == 1
+
+
+async def test_capitalized_word_facts_pass_and_each_missing_fact_triggers_fallback(metric_points):
+    from acme.customer.outreach import prepare_notification
+
+    class CustomLlm(FakeLlm):
+        def __init__(self, reply: str):
+            super().__init__()
+            self.reply = reply
+
+        async def compose_passenger_message(self, context):
+            return self.reply
+
+    valid_caps = (
+        "Flight AC1234 cancelled; rebooked AC1240 at 08:15, seat 14A, hotel HT8842. "
+        "Transfer and Voucher arranged."
+    )
+    rt = make(CustomLlm(valid_caps))
+    rec = await resolved(rt)
+    before = fallback_count(metric_points)
+    prepared = await prepare_notification(rt, rec)
+    assert prepared is not None and prepared.source == "llm" and prepared.text == valid_caps
+    assert fallback_count(metric_points) - before == 0
+
+    for omitted in FACTS:
+        base = (
+            "Flight AC1234 cancelled; rebooked AC1240 at 08:15, seat 14A, hotel HT8842, "
+            "transfer and voucher arranged."
+        )
+        rt.llm = CustomLlm(base.replace(omitted, "XXX"))
+        b = fallback_count(metric_points)
+        p = await prepare_notification(rt, rec)
+        assert p is not None and p.source == "template", omitted
+        assert fallback_count(metric_points) - b == 1, omitted
 
 
 async def test_no_notification_while_journey_not_resolved():

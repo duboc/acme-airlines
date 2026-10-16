@@ -109,11 +109,15 @@ async def test_state_that_became_ineligible_during_the_call_sends_nothing():
     assert sent(rt) == []  # re-validated under the lock: already notified, no duplicate
 
 
-async def test_facts_that_changed_during_the_call_send_the_template_of_the_new_facts():
+async def test_facts_that_changed_during_the_call_send_the_template_of_the_new_facts(metric_points):
+    from acme.customer.outreach import PreparedNotification, collect_facts, send_notification
+    from tests.customer.test_notification import fallback_count
+
     slow = SlowLlm(compose=True)
     rt = make(slow)
     rec = await resolved(rt)
     await _advance(rt)
+    before = fallback_count(metric_points)
     tick = asyncio.create_task(rt.tick())
     await asyncio.wait_for(slow.entered.wait(), 5)
     rec.state.append_event("customer_agent", "seat_held", {"seat": "9Z"})
@@ -123,6 +127,20 @@ async def test_facts_that_changed_during_the_call_send_the_template_of_the_new_f
     assert "9Z" in msg.text and "14A" not in msg.text
     (ev,) = [e for e in rec.state.timeline if e.type == "notification_sent"]
     assert ev.payload["source"] == "template"
+    assert fallback_count(metric_points) - before == 1
+
+    # Does not double-count if prepared.source was already "template" when facts move
+    rt2 = make()
+    rec2 = await resolved(rt2)
+    await _advance(rt2)
+    stale_facts = collect_facts(rec2)
+    assert stale_facts is not None
+    rec2.state.append_event("customer_agent", "seat_held", {"seat": "8A"})
+    b2 = fallback_count(metric_points)
+    await send_notification(
+        rt2, rec2, PreparedNotification(stale_facts, "Mariana", "old", "template")
+    )
+    assert fallback_count(metric_points) - b2 == 0
 
 
 async def _advance(rt):

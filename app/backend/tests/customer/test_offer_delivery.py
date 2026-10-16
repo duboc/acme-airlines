@@ -201,3 +201,37 @@ async def test_api_exposes_the_sent_offer_and_guardrail_decisions():
         sse = await c.get(f"/journeys/{jid}/events?limit={len(rt.journeys[jid].state.timeline)}")
     assert d["offer"]["status"] == "sent" and d["offer"]["price"] == "135.00"
     assert "guardrail_decision" in sse.text and "offer_sent" in sse.text
+
+
+async def test_offer_compose_accepts_capitalized_word_tokens_and_rejects_any_missing_fact(
+    ctx, metric_points
+):
+    from acme.domain.models import Offer
+    from tests.customer.test_notification import fallback_count
+
+    class ReplyLlm(FakeLlm):
+        def __init__(self, reply: str):
+            super().__init__()
+            self.reply = reply
+
+        async def compose_passenger_message(self, context):
+            return self.reply
+
+    rec = ctx.rt.journeys[ctx.jid]
+    rec.state.current_flight = "AC1252"
+    inv = ctx.rt.sim.cabin_inventory("AC1252", "premium_business")
+    mod_offer = Offer.model_validate(offer(ctx.jid))
+
+    valid_caps = "Optional upgrade to Premium Business on AC1252 for $135.00."
+    ctx.rt.llm = ReplyLlm(valid_caps)
+    before = fallback_count(metric_points, "offer")
+    text, _ = await ctx.skills._compose(rec, mod_offer, inv)  # noqa: SLF001
+    assert text == valid_caps
+    assert fallback_count(metric_points, "offer") - before == 0
+
+    for omitted in ("AC1252", "$135.00", "Optional", "Premium Business"):
+        ctx.rt.llm = ReplyLlm(valid_caps.replace(omitted, "XXX"))
+        b = fallback_count(metric_points, "offer")
+        fallback_text, _ = await ctx.skills._compose(rec, mod_offer, inv)  # noqa: SLF001
+        assert fallback_text != valid_caps.replace(omitted, "XXX")
+        assert fallback_count(metric_points, "offer") - b == 1, omitted
