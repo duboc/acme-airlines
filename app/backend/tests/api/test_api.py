@@ -223,3 +223,76 @@ async def test_journey_detail_shows_the_checks_of_a_failed_verification(client, 
     )  # fmt: skip
     detail = (await client.get(f"/journeys/{jid}")).json()
     assert detail["verification"] == {"flight": True, "hotel": False}  # was null
+
+
+# --- JourneyDetail: bag routing, active transfers, needs_human (#477) ---------------------------
+async def detail(client, jid):
+    r = await client.get(f"/journeys/{jid}")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def test_bag_routing_follows_worldtracer_through_the_replan(client, app):
+    (jid,) = await trigger(client)
+    assert (await detail(client, jid))["bags"] == [
+        {"tag": "BAG0001", "checked": True, "routing": "AC1240"}
+    ]
+    rt = app.state.runtime
+    await rt.handle_inbound(PID, "Can I leave after 10:00 AM instead?")
+    assert (await detail(client, jid))["bags"][0]["routing"] == "AC1252"
+
+
+async def test_transfers_list_only_the_active_pickups_after_a_replan(client, app):
+    (jid,) = await trigger(client)
+    before = (await detail(client, jid))["transfers"]
+    assert [(t["leg"], t["origin"], t["destination"]) for t in before] == [
+        ("airport_to_hotel", "GRU", "HT8842"),
+        ("hotel_to_airport", "HT8842", "GRU"),
+    ]
+    assert all(
+        set(t) == {"transfer_ref", "leg", "origin", "destination", "pickup_at"} for t in before
+    )
+    await app.state.runtime.handle_inbound(PID, "Can I leave after 10:00 AM instead?")
+    after = (await detail(client, jid))["transfers"]
+    assert [t["leg"] for t in after] == ["airport_to_hotel", "hotel_to_airport"]  # 2, not 3
+    assert after[0]["transfer_ref"] == before[0]["transfer_ref"]
+    assert after[1]["transfer_ref"] != before[1]["transfer_ref"]  # the superseded pickup is gone
+    assert after[1]["pickup_at"] > before[1]["pickup_at"]  # rescheduled for the later flight
+
+
+async def test_a_resident_gets_a_single_home_transfer_in_the_detail(app, client):
+    p = app.state.runtime.world.passengers[PID]
+    p.origin_resident = True  # DOC-06: a transfer home, no hotel
+    (jid,) = await trigger(client)
+    d = await detail(client, jid)
+    assert [(t["leg"], t["origin"], t["destination"]) for t in d["transfers"]] == [
+        ("airport_to_home", "GRU", "HOME")
+    ]
+    assert d["hotel"] is None
+
+
+async def test_needs_human_is_false_when_all_is_well_and_true_after_an_escalation(client, app):
+    (jid,) = await trigger(client)
+    assert (await detail(client, jid))["needs_human"] is False
+    await app.state.runtime.handle_inbound(PID, "I would like a refund")  # Other: a person
+    assert (await detail(client, jid))["needs_human"] is True
+
+
+async def test_needs_human_is_true_when_the_hotel_is_unavailable(client, app):
+    app.state.runtime.world.hotels_with_rooms.clear()
+    (jid,) = await trigger(client)
+    d = await detail(client, jid)
+    assert d["needs_human"] is True and d["status"] != "RESOLVED"
+
+
+async def test_needs_human_is_scoped_to_the_current_disruption(client, app):
+    from acme.domain.journey import DisruptionStatus as S
+
+    rt = app.state.runtime
+    (jid,) = await trigger(client)
+    rec = rt.journeys[jid]
+    rec.state.append_event("customer_agent", "needs_human", {"specialist": "closure"})
+    assert (await detail(client, jid))["needs_human"] is True
+    rec.state.append_event("occ", "cancellation_detected", {"flight": "AC1240", "reason": "x"})
+    assert rec.state.status in (S.RESOLVED, S.RESOLVING)
+    assert (await detail(client, jid))["needs_human"] is False  # an earlier disruption's flag

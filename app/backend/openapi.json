@@ -79,6 +79,17 @@
             "title": "Checked",
             "type": "boolean"
           },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing"
+          },
           "tag": {
             "title": "Tag",
             "type": "string"
@@ -858,6 +869,11 @@
             "title": "Journey Id",
             "type": "string"
           },
+          "needs_human": {
+            "default": false,
+            "title": "Needs Human",
+            "type": "boolean"
+          },
           "offer": {
             "anyOf": [
               {
@@ -889,6 +905,13 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "transfers": {
+            "items": {
+              "$ref": "#/components/schemas/TransferView"
+            },
+            "title": "Transfers",
+            "type": "array"
           },
           "verification": {
             "anyOf": [
@@ -2233,6 +2256,40 @@
           "reason"
         ],
         "title": "TransferArrangedPayload",
+        "type": "object"
+      },
+      "TransferView": {
+        "description": "An active ground transfer (a superseded pickup is not listed). No passenger data.",
+        "properties": {
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          },
+          "leg": {
+            "title": "Leg",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "pickup_at": {
+            "title": "Pickup At",
+            "type": "string"
+          },
+          "transfer_ref": {
+            "title": "Transfer Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transfer_ref",
+          "leg",
+          "origin",
+          "destination",
+          "pickup_at"
+        ],
+        "title": "TransferView",
         "type": "object"
       },
       "TriggerCancellation": {

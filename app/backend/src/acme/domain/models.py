@@ -47,6 +47,7 @@ class Segment(BaseModel):
 class Bag(BaseModel):
     tag: str
     checked: bool = True
+    routing: str | None = None  # the flight WorldTracer routes it to (filled in the journey view)
 
 
 class SeatAssignment(BaseModel):

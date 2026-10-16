@@ -56,11 +56,12 @@ async def api_run(sid):
 
 
 def stable(detail):
-    """Booking and voucher ids are random per run; everything else must match."""
+    """Booking, voucher and transfer ids are random per run; everything else must match."""
     hotel = detail["hotel"] and {k: v for k, v in detail["hotel"].items() if k != "booking_id"}
     vouchers = [{k: v for k, v in x.items() if k != "voucher_id"} for x in detail["vouchers"]]
     offer = detail["offer"] and {k: v for k, v in detail["offer"].items() if k != "offer_id"}
-    return {**detail, "hotel": hotel, "vouchers": vouchers, "offer": offer}
+    transfers = [{k: v for k, v in x.items() if k != "transfer_ref"} for x in detail["transfers"]]
+    return {**detail, "hotel": hotel, "vouchers": vouchers, "offer": offer, "transfers": transfers}
 
 
 def assert_guardrails(app):
@@ -289,3 +290,16 @@ async def test_scenario_step_with_no_sent_offer_returns_409_error_as_data(metric
     assert isinstance(out["tape"], list) and len(out["tape"]) >= 2
     assert app.scenarios.index == 4
     assert list(metric_points().get("acme.http.server.errors", [])) == before
+
+
+async def test_journey_detail_op_carries_bag_routing_transfers_and_needs_human():  # #477
+    app = engine()
+    app.scenario_start("happy-path")
+    await app.scenario_step()
+    (jid,) = [j["journey_id"] for j in app.journeys_list()]
+    d = await app.journey_detail(jid)
+    assert d["bags"][0]["routing"] == "AC1240" and d["needs_human"] is False
+    assert [t["leg"] for t in d["transfers"]] == ["airport_to_hotel", "hotel_to_airport"]
+    from acme.api.app import JourneyDetail
+
+    assert JourneyDetail(**d).transfers[0].origin == "GRU"  # what EngineBackend deserialises

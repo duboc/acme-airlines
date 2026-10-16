@@ -28,11 +28,14 @@ from acme.api.sse import event_stream, resume_from
 from acme.customer.adk_agent import CARD_PATH, customer_agent_card
 from acme.customer.conversion import NoSentOffer, accept_offer, decline_offer
 from acme.customer.loop import CustomerLoop
+from acme.customer.outreach import _current_disruption_events
 from acme.customer.skills import CustomerSkills
 from acme.domain.clock import Clock
 from acme.domain.journey import OfferRecord
 from acme.domain.models import PNR, Bag, HotelBooking, SeatAssignment, Segment, Voucher
 from acme.llm.config import load_llm_mode
+from acme.sim.dcs import dcs_state
+from acme.sim.world import SimError
 
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 SSE_POLL_SECONDS = 0.05
@@ -61,6 +64,16 @@ class OfferView(BaseModel):
     status: str
 
 
+class TransferView(BaseModel):
+    """An active ground transfer (a superseded pickup is not listed). No passenger data."""
+
+    transfer_ref: str
+    leg: str
+    origin: str
+    destination: str
+    pickup_at: str
+
+
 class JourneyDetail(JourneySummary):
     resolution_acknowledged: bool
     itinerary: list[Segment]
@@ -70,6 +83,8 @@ class JourneyDetail(JourneySummary):
     vouchers: list[Voucher]
     offer: OfferView | None
     verification: dict[str, bool] | None = None
+    transfers: list[TransferView] = Field(default_factory=list)
+    needs_human: bool = False  # an open request or a needs_human entry in the CURRENT disruption
 
 
 class PassengerReply(BaseModel):
@@ -113,6 +128,30 @@ def journey_summary(rec: JourneyRecord) -> JourneySummary:
     )
 
 
+def _bag_routing(rt: Runtime, tag: str) -> str | None:
+    try:
+        return dcs_state(rt.sim).bag(tag)["routing"]
+    except SimError:  # a tag WorldTracer does not know
+        return None
+
+
+def _active_transfers(rt: Runtime, rec: JourneyRecord) -> list[TransferView]:
+    """The journey's `transfer_arranged` entries that the concierge still holds, in order: a
+    pickup cancelled when the passenger was replanned (#398) is gone from `partners.transfers`."""
+    held = rt.sim.partners.transfers
+    return [
+        TransferView(
+            transfer_ref=ref,
+            leg=e.payload["leg"],
+            origin=held[ref]["origin"],
+            destination=held[ref]["destination"],
+            pickup_at=held[ref]["pickup_at"],
+        )
+        for e in rec.state.timeline
+        if e.type == "transfer_arranged" and (ref := e.payload["transfer_ref"]) in held
+    ]
+
+
 def journey_detail_view(rt: Runtime, rec: JourneyRecord) -> JourneyDetail:
     """The `GET /journeys/{id}` body; shared with the Customer Agent Engine operations (#162)."""
     pnr: PNR = rt.world.pnrs[rec.pnr_locator]
@@ -133,11 +172,14 @@ def journey_detail_view(rt: Runtime, rec: JourneyRecord) -> JourneyDetail:
         resolution_acknowledged=rec.state.resolution_acknowledged,
         itinerary=pnr.segments,
         seat=pnr.seats[0] if pnr.seats else None,
-        bags=pnr.bags,
+        bags=[b.model_copy(update={"routing": _bag_routing(rt, b.tag)}) for b in pnr.bags],
         hotel=rec.hotel,
         vouchers=rec.vouchers,
         offer=_offer_view(offers[-1] if offers else None),
         verification=_verification(rec),
+        transfers=_active_transfers(rt, rec),
+        needs_human=bool(rec.state.open_requests)
+        or any(e.type == "needs_human" for e in _current_disruption_events(rec)),
     )
 
 
