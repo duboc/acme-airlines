@@ -62,7 +62,14 @@ const TABLE: Record<string, Expected[]> = {
     OFFER,
     {
       text: 'Offer declined: keeps 14A on AC1252, nothing charged, no further offer.',
-      check: { flight: 'AC1252', seat: '14A', charged: '0.00', offer: 'declined', offersSent: 1 },
+      check: {
+        status: 'CLOSED',
+        flight: 'AC1252',
+        seat: '14A',
+        charged: '0.00',
+        offer: 'declined',
+        offersSent: 1,
+      },
     },
   ],
   'unsatisfiable-request': [
@@ -86,12 +93,24 @@ const TABLE: Record<string, Expected[]> = {
   'hotel-unavailable': [
     {
       text: 'No hotel room: handed to a human. Never marked resolved, no offer.',
-      check: { notStatus: 'RESOLVED', needsHuman: true, offer: null, offersSent: 0 },
+      check: {
+        status: 'RESOLVING',
+        notStatus: 'RESOLVED',
+        flight: 'AC1240',
+        seat: '14A',
+        needsHuman: true,
+        offer: null,
+        offersSent: 0,
+        charged: '0.00',
+      },
     },
     {
       text: 'Still with a human. No offer, no charge.',
       check: {
+        status: 'RESOLVING',
         notStatus: 'RESOLVED',
+        flight: 'AC1240',
+        seat: '14A',
         needsHuman: true,
         offer: null,
         offersSent: 0,
@@ -106,11 +125,25 @@ const TABLE: Record<string, Expected[]> = {
     OFFER,
     {
       text: 'Replanning invalidates the open offer.',
-      check: { offer: 'invalidated', offersSent: 1 },
+      check: {
+        status: 'RESOLVED',
+        flight: 'AC1252',
+        seat: '14A',
+        offer: 'invalidated',
+        offersSent: 1,
+        charged: '0.00',
+      },
     },
     {
       text: 'Stale Accept: nothing charged, she keeps seat 14A.',
-      check: { offer: 'invalidated', offersSent: 1, charged: '0.00', seat: '14A' },
+      check: {
+        status: 'RESOLVED',
+        flight: 'AC1252',
+        seat: '14A',
+        offer: 'invalidated',
+        offersSent: 1,
+        charged: '0.00',
+      },
     },
   ],
 };
@@ -159,7 +192,10 @@ export function applyExpectedStep(prev: ScenarioState, steps?: readonly string[]
     journey_status: nextStatus,
     flight: c?.flight !== undefined ? c.flight : prev.flight,
     seat: c?.seat !== undefined ? c.seat : prev.seat,
-    seat_reason: c?.seatReason ? prev.seat_reason || 'nearest window seat' : prev.seat_reason,
+    seat_reason: c?.seatReason
+      ? prev.seat_reason ||
+        '14A unavailable on AC1240; assigned nearest window seat 15A as a diamond tier courtesy'
+      : prev.seat_reason,
     offers_sent:
       c?.offersSent !== undefined
         ? c.offersSent
