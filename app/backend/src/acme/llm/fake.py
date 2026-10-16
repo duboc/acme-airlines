@@ -14,17 +14,23 @@ _ACK = re.compile(r"\b(thanks|thank you|perfect|great|ok(ay)?|got it|sounds good
 # Fail closed: any negation, complaint or instruction-like wording is never an acknowledgement.
 _NOT_ACK = re.compile(
     r"\b(no|not|nope|never|nothing|none|neither|nor|but|stuck|still|worse|terrible|awful|"
-    r"bad|ignore|instructions?|prompt|system|output|acknowledge|pretend|override)\b|n't|n\u2019t",
+    r"bad|ignore|instructions?|prompt|system|output|acknowledge|pretend|override|cannot|accept|"
+    r"offer|decline|reject|refuse|cancel|refund|unacceptable|wrong|problem)\b|n't|n\u2019t",
     re.IGNORECASE,
 )
 _MAX_ACK_WORDS = 8
 
 
+def can_be_acknowledgement(text: str) -> bool:
+    """The deterministic veto on ANY acknowledgement, whoever decided it (the offline model, the
+    deployed model or the pattern): never a question, never long, never a negation, complaint,
+    request or instruction-like wording (fail closed, #421)."""
+    return not (len(text.split()) > _MAX_ACK_WORDS or "?" in text or _NOT_ACK.search(text))
+
+
 def is_acknowledgement(text: str) -> bool:
     """True only for a short, clearly positive reply with no negation (fail closed)."""
-    if len(text.split()) > _MAX_ACK_WORDS or _NOT_ACK.search(text):
-        return False
-    return bool(_ACK.search(text))
+    return can_be_acknowledgement(text) and bool(_ACK.search(text))
 
 
 def departure_after(text: str) -> DepartureAfter | None:

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from acme.llm.fake import departure_after
+from acme.llm.fake import can_be_acknowledgement, departure_after
 from acme.llm.port import Acknowledge, DepartureAfter, Other, StructuredRequest
 
 if TYPE_CHECKING:
@@ -24,6 +24,8 @@ async def classify(rt: CustomerRuntime, text: str) -> StructuredRequest:
         result = await rt.llm.parse_passenger_request(text)
     except Exception:  # noqa: BLE001 (fail closed: never an acknowledgement)
         result = Other(text=text)
+    if isinstance(result, Acknowledge) and not can_be_acknowledgement(text):
+        result = Other(text=text)  # a negated, long, question or injected text: never an ack (#421)
     source = "model"
     if isinstance(result, Other) and (after := departure_after(text)) is not None:
         result, source = after, "pattern"
