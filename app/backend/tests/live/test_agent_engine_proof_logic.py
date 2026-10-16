@@ -290,7 +290,8 @@ def snap(**kw):
 
 
 def diag_entry(ts="2026-01-01T00:00:05Z", **kw):
-    data = {"event": "rebuild", "preset": "p", "to_step": 2, "ms": 41.5, **kw}
+    data = {"event": "rebuild", "preset": "p", "to_step": 2, "ms": 41.5,
+            "tape_miss": 0, "tape_discarded": 0, **kw}  # fmt: skip
     return {"ts": ts, "severity": "INFO", "text": "ACME_DIAG " + json.dumps(data)}
 
 
@@ -379,8 +380,10 @@ def test_rebuild_events_filter_by_preset_step_and_time():
 async def test_rebuild_proof_passes_and_reports_latency():
     r = await rebuild(RebuildBackend(), [diag_entry()])
     assert r.failures == [] and r.engine_ms == [41.5] and r.to_step == 2
+    assert r.tape_miss == 0 and r.tape_discarded == 0
     md = r.markdown()
-    assert "PASS" in md and "41.5 ms" in md and "client side" in md
+    assert "PASS" in md and "41.5 ms" in md and "budget < 600 ms" in md and "client side" in md
+    assert "tape_miss=0" in md and "tape_discarded=0" in md
 
 
 @pytest.mark.parametrize(
@@ -392,12 +395,18 @@ async def test_rebuild_proof_passes_and_reports_latency():
         (RebuildBackend(), [], "no ACME_DIAG rebuild event"),
         (RebuildBackend(), [diag_entry(), diag_entry()], "2 rebuilds logged"),
         (RebuildBackend(), [diag_entry(ms=None)], "no latency"),
+        (RebuildBackend(), [diag_entry(ms=600.0)], "600.0 ms >= 600.0 ms budget"),
+        (RebuildBackend(), [diag_entry(ms=728.1)], "728.1 ms >= 600.0 ms budget"),
+        (RebuildBackend(), [diag_entry(tape_miss=1)], "tape_miss=1 (expected 0)"),
+        (RebuildBackend(), [diag_entry(tape_miss=None)], "tape_miss=None (expected 0)"),
+        (RebuildBackend(), [diag_entry(tape_discarded=1)], "tape_discarded=1 (expected 0)"),
+        (RebuildBackend(), [diag_entry(tape_discarded=None)], "tape_discarded=None (expected 0)"),
     ],
 )
 async def test_rebuild_proof_failures(backend, entries, needle):
     r = await rebuild(backend, entries)
     assert any(needle in f for f in r.failures), r.failures
-    assert "FAIL" in r.markdown()
+    assert "## Forced rebuild: FAIL" in r.markdown()
 
 
 async def test_forced_rebuild_against_the_real_engines_offline(monkeypatch):
