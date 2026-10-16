@@ -269,3 +269,23 @@ async def test_ac3_backend_polls_the_timeline_and_the_phone_past_t_plus_6_and_10
     clock.advance(customer.runtime.offer_window + timedelta(minutes=1))
     backend._timelines.clear()  # noqa: SLF001 - skip the poll-interval cache
     assert _types(await backend.timeline(jid)).count("service_closure") == 1
+
+
+@pytest.mark.parametrize("sid", ["happy-path", "declines-upgrade"])
+async def test_scenario_step_with_no_sent_offer_returns_409_error_as_data(metric_points, sid):
+    """#455 AC2: CustomerEngineApp.scenario_step catches NoSentOffer and returns 409 no_offer_sent
+    as data with the replay tape, without raising EngineOperationError or counting http_5xx."""
+    app = engine()
+    before = list(metric_points().get("acme.http.server.errors", []))
+    app.scenario_start(sid)
+    for _ in range(4):  # cancel, notify, after-10am, ack (without a Sales tick -> no offer sent)
+        await app.scenario_step()
+    out = await app.scenario_step()
+    assert out["error"] == {
+        "status": 409,
+        "code": "no_offer_sent",
+        "detail": "no offer has been sent to this passenger",
+    }
+    assert isinstance(out["tape"], list) and len(out["tape"]) >= 2
+    assert app.scenarios.index == 4
+    assert list(metric_points().get("acme.http.server.errors", [])) == before

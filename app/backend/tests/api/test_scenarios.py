@@ -125,3 +125,35 @@ async def test_journey_detail_hides_an_offer_withdrawn_before_it_was_sent(client
     rec.state._timeline[:] = [e for e in rec.state.timeline if e.type != "offer_sent"]  # noqa: SLF001
     detail = (await client.get(f"/journeys/{journey['journey_id']}")).json()
     assert detail["offer"] is None  # it never reached the passenger
+
+
+@pytest.mark.parametrize("sid", ["happy-path", "declines-upgrade"])
+async def test_scripted_accept_or_decline_with_no_sent_offer_returns_409(
+    client, metric_points, sid
+):
+    """#455 AC1: when a manual unhandled WhatsApp question opens needs_human and suppresses the
+    upgrade offer under Rule 2, the scripted accept/decline step returns 409 no_offer_sent without
+    advancing step_index or incrementing acme.http.server.errors."""
+    before = list(metric_points().get("acme.http.server.errors", []))
+    await client.post(f"/scenarios/{sid}/start")
+    for _ in range(2):  # cancel, notify
+        assert (await client.post(f"/scenarios/{sid}/step")).status_code == 200
+    r_msg = await client.post(
+        "/whatsapp/P-MARIANA/messages", json={"text": "Where do I claim my pet crate?"}
+    )
+    assert r_msg.status_code == 201
+    for _ in range(2):  # after-10am, ack (offer suppressed by open needs_human request)
+        s = (await client.post(f"/scenarios/{sid}/step")).json()
+    assert s["step_index"] == 4 and s["offers_sent"] == 0 and s["needs_human"] is True
+
+    r = await client.post(f"/scenarios/{sid}/step")
+    assert r.status_code == 409
+    assert r.json() == {
+        "code": "no_offer_sent",
+        "detail": "no offer has been sent to this passenger",
+    }
+    after = list(metric_points().get("acme.http.server.errors", []))
+    assert after == before
+    # A second attempt still sees step_index == 4 (not scenario_finished).
+    r2 = await client.post(f"/scenarios/{sid}/step")
+    assert r2.status_code == 409 and r2.json()["code"] == "no_offer_sent"

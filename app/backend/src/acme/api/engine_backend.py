@@ -313,6 +313,7 @@ class EngineBackend:
                 )
         state = await self._customer.call("scenario_step", **self._ctx())
         self._keep_tape(state)  # the tape of the step just run, whatever worker answers next
+        ok(state)
         # The step is committed in the engine: the counter follows it, whatever comes next.
         self._step += 1
         self._sales_pending = True

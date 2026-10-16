@@ -283,3 +283,37 @@ async def test_manual_whatsapp_reply_ticks_sales_and_refreshes_state_in_local_an
     assert backend._step == 5 and backend.done  # noqa: SLF001
     assert any(e.get("m") == "parse" for e in (backend._tape or []))  # noqa: SLF001
     assert any(e.get("k") == "offer" for e in (backend._tape or []))  # noqa: SLF001
+
+
+@pytest.mark.parametrize("sid", ["happy-path", "declines-upgrade"])
+async def test_scripted_accept_or_decline_after_blocked_offer_returns_409_in_engine_mode(
+    engine_app, metric_points, sid
+):
+    """#455 AC2: in agent-engine mode, when a manual unhandled WhatsApp question opens needs_human
+    and blocks the offer, step 5 (accept/decline) returns 409 no_offer_sent (not 503), keeps
+    backend._step == 4 and backend._tape intact, and leaks no 'tape' key in HTTP responses."""
+    backend = engine_app.state.engine_backend
+    before = list(metric_points().get("acme.http.server.errors", []))
+    async with client(engine_app) as c:
+        await c.post(f"/scenarios/{sid}/start")
+        for _ in range(2):
+            assert (await c.post(f"/scenarios/{sid}/step")).status_code == 200
+        m = await c.post(
+            "/whatsapp/P-MARIANA/messages", json={"text": "Where do I claim my pet crate?"}
+        )
+        assert m.status_code == 201 and "tape" not in m.json()
+        for _ in range(2):
+            s = await c.post(f"/scenarios/{sid}/step")
+            assert s.status_code == 200 and "tape" not in s.json()
+        assert s.json()["step_index"] == 4 and s.json()["offers_sent"] == 0
+
+        r = await c.post(f"/scenarios/{sid}/step")
+        assert r.status_code == 409
+        assert r.json() == {
+            "code": "no_offer_sent",
+            "detail": "no offer has been sent to this passenger",
+        }
+        assert "tape" not in r.json()
+        assert backend._step == 4 and not backend.done  # noqa: SLF001
+        assert isinstance(backend._tape, list) and len(backend._tape) >= 3  # noqa: SLF001
+        assert list(metric_points().get("acme.http.server.errors", [])) == before
