@@ -37,7 +37,16 @@ export const REASONS: Record<string, string> = {
   ancillary_preserved: 'Paid seat selection preserved',
   equivalent_assigned: 'Equivalent seat assigned',
   unavailable_refund_queued: 'Preferred seat unavailable; refund queued',
+  // Service closure reason codes (acme/api/events.py ServiceClosurePayload)
+  offer_window_elapsed: 'Offer window elapsed',
 };
+
+export const CABIN_LABELS: Record<string, string> = {
+  economy: 'economy',
+  premium_business: 'premium business',
+};
+
+export const cabinLabel = (cabin: string) => CABIN_LABELS[cabin] ?? cabin.replaceAll('_', ' ');
 
 export const reasonLabel = (code: string) => REASONS[code] ?? code;
 
