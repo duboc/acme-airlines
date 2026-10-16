@@ -26,26 +26,43 @@ test('Mariana: cancellation, rebuild, replanning, guardrailed upsell, conversion
   await expect(status(console_)).toHaveText('Resolved');
   await expect(row(console_, 'Flight')).toContainText('AC1240');
   await expect(row(console_, 'Seat')).toContainText('14A');
+  await expect(row(console_, 'Bag routing')).toContainText('BAG0001');
   await expect(row(console_, 'Hotel')).not.toContainText('Not arranged yet');
   await expect(row(console_, 'Vouchers')).toContainText('meal');
-  await expect(timeline(console_)).toContainText('Hotel booked');
-  await expect(timeline(console_)).toContainText('Sales held back');
+  for (const beat of [
+    'Connection constraint',
+    'Connection verified',
+    'Bag rerouted',
+    'Duty of care assessed',
+    'Hotel booked',
+    'Transfer arranged',
+    'Sales held back',
+  ]) {
+    await expect(timeline(console_)).toContainText(beat);
+  }
 
-  // Scenario 3: 6 fixed-clock minutes later (10:09 PM) the one WhatsApp message arrives.
-  await request.post(`${API}/e2e/advance?minutes=6`);
+  // Scenario 3: silent during the 6-minute settle window (22:03 -> 22:08), then delivered at 22:09.
   await chat.goto('/whatsapp');
+  await request.post(`${API}/e2e/advance?minutes=5`);
+  await expect(chat.getByText('No messages yet.')).toBeVisible();
+  await expect(bubbles(chat)).toHaveCount(0);
+
+  await request.post(`${API}/e2e/advance?minutes=1`);
   await expect(bubbles(chat)).toHaveCount(1);
   const first = bubbles(chat).first();
   for (const fact of ['AC1234', 'AC1240', '14A', 'HT8842']) await expect(first).toContainText(fact);
+  await expect(first.locator('.attachment-chip', { hasText: 'Meal voucher' })).toBeVisible();
   await expect(offerBubbles(chat)).toHaveCount(0);
 
-  // The passenger asks for a departure after 10:00 -> AC1252 at 11:40.
+  // The passenger asks for a departure after 10:00 -> AC1252 at 11:40; pickup transfer is rescheduled.
   await chat.getByLabel('Message').fill('Can I leave after 10am?');
   await chat.getByRole('button', { name: 'Send' }).click();
   await expect(chat.locator('.bubble-row.outbound').last()).toContainText('AC1252');
   await expect(status(console_)).toHaveText('Resolved');
   await expect(row(console_, 'Flight')).toContainText('AC1252');
   await expect(row(console_, 'Seat')).toContainText('14A');
+  await expect(timeline(console_)).toContainText('rescheduled for the new departure');
+  await expect(timeline(console_)).toContainText('Request closed');
   await expect(
     console_.getByText('Passenger has not acknowledged the resolution yet.'),
   ).toBeVisible();
@@ -66,6 +83,8 @@ test('Mariana: cancellation, rebuild, replanning, guardrailed upsell, conversion
   await expect(offer).toContainText('optional');
   await expect(offer).toContainText('$135.00');
   await expect(offer).toContainText('no pressure');
+  await expect(offer.locator('.attachment-chip', { hasText: 'Boarding pass' })).toBeVisible();
+  await expect(offer.locator('.attachment-chip', { hasText: 'Hotel voucher' })).toBeVisible();
   await expect(offer.getByRole('button', { name: 'Accept' })).toBeVisible();
   await expect(offer.getByRole('button', { name: 'No thanks' })).toBeVisible();
   expect(await bubbles(chat).count()).toBeGreaterThan(before + 1); // her reply, then the offer
@@ -73,6 +92,7 @@ test('Mariana: cancellation, rebuild, replanning, guardrailed upsell, conversion
   expect(order.findIndex((t) => t.includes('Perfect, thanks!'))).toBeLessThan(
     order.findIndex((t) => t.includes('Optional. You can ignore this.')),
   );
+  await expect(row(console_, 'Upgrade offer')).toContainText('135.00 (standard 290.00)');
   await expect(timeline(console_)).toContainText('Approved');
 
   // Scenario 5: one tap -> seat 2A confirmed, journey closed, verification passed.
@@ -81,5 +101,16 @@ test('Mariana: cancellation, rebuild, replanning, guardrailed upsell, conversion
   await expect(row(console_, 'Seat')).toContainText('2A');
   await expect(row(console_, 'Seat')).toContainText('premium business');
   await expect(status(console_)).toHaveText('Closed');
-  await expect(timeline(console_)).toContainText('Verification passed');
+  for (const check of ['flight: ✓', 'seat: ✓', 'hotel: ✓', 'baggage: ✓', 'upgrade: ✓']) {
+    await expect(row(console_, 'Verification')).toContainText(check);
+  }
+  for (const beat of [
+    'Verification passed',
+    'Crm logged',
+    'Nps scheduled',
+    'Analytics recorded',
+    'Memory committed',
+  ]) {
+    await expect(timeline(console_)).toContainText(beat);
+  }
 });
