@@ -258,3 +258,76 @@ async def test_ac3_an_exported_sent_set_never_holds_the_failed_key(world):
     other = SalesRadar(radar._customer, radar._inventory)  # noqa: SLF001
     other.import_sent(radar.export_sent())  # what a second worker loads from sales_sent
     assert len(await other.tick()) == 1
+
+
+@pytest.mark.parametrize(
+    ("standard", "floor"),
+    [
+        ("290.00", "290.00"),  # cost_floor == standard_upgrade_fare
+        ("290.00", "320.00"),  # cost_floor > standard_upgrade_fare
+        ("2.00", "0.00"),  # ceil_to_5(discounted) clamps to standard_upgrade_fare (zero discount)
+    ],
+)
+async def test_cost_floor_ge_standard_or_zero_discount_suppresses_pitch(world, standard, floor):
+    from decimal import Decimal
+
+    radar, rt, jid = world
+    state = resolve(rt, jid)
+    rt.world.inventory[0].standard_upgrade_fare = Decimal(standard)
+    rt.world.inventory[0].cost_floor = Decimal(floor)
+    assert await radar.tick() == []
+    assert state.offers == []
+    assert radar.export_sent() == []
+
+
+async def test_replan_from_ac1240_to_ac1252_after_initial_proposal_pitches_ac1252_once(world):
+    from datetime import time
+    from decimal import Decimal
+
+    from acme.customer.specialists.change import ReplanningChangeAgent
+    from acme.domain.journey import PassengerRequest
+    from acme.domain.models import CabinInventory
+
+    radar, rt, jid = world
+    rec = rt.journeys[jid]
+    # Start on AC1240 with premium inventory so Sales pitches AC1240 first
+    await rt.sim.rebook("MSLV42", "AC1240")
+    rt.world.flights["AC1240"].open_seats["premium_business"] = ["2A"]
+    rt.world.inventory.append(
+        CabinInventory(
+            flight_number="AC1240",
+            cabin="premium_business",
+            open_seats=1,
+            standard_upgrade_fare=Decimal("290.00"),
+            cost_floor=Decimal("55.00"),
+        )
+    )
+    rec.state.append_event(
+        "irrops_rebooking",
+        "rebooked",
+        {
+            "flight": "AC1240",
+            "departure": rt.world.flights["AC1240"].scheduled_departure.isoformat(),
+            "arrival": rt.world.flights["AC1240"].scheduled_arrival.isoformat(),
+        },
+    )
+    state = resolve(rt, jid)
+    first_sent = await radar.tick()
+    assert len(first_sent) == 1 and first_sent[0].flight == "AC1240"
+    assert state.current_flight == "AC1240"
+
+    # Passenger replans to after 10:00 -> moves PNR to AC1252 and invalidates AC1240 offer
+    state.open_requests.append(PassengerRequest(request_id="req-1", text="after 10:00"))
+    state.transition(S.REPLANNING)
+    assert state.offers[0].status == "invalidated"
+    await ReplanningChangeAgent().handle(rt, rec, "req-1", time(10, 0))
+    assert state.status is S.RESOLVED
+    assert state.current_flight == "AC1252"
+
+    # Passenger acknowledges AC1252 resolution -> SalesRadar pitches AC1252 exactly once
+    state.resolution_acknowledged = True
+    second_sent = await radar.tick()
+    assert len(second_sent) == 1 and second_sent[0].flight == "AC1252"
+    assert await radar.tick() == []
+    assert [r.offer.flight for r in state.offers] == ["AC1240", "AC1252"]
+    assert [r.status for r in state.offers] == ["invalidated", "sent"]

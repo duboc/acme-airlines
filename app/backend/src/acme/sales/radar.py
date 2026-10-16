@@ -85,7 +85,7 @@ class SalesRadar:
             cost_floor=Decimal(fare["cost_floor"]),
         )
         quote = recovery_quote(inventory, COURTESY_TIER)
-        if quote is None:
+        if quote is None or quote.price >= quote.standard_price or quote.net_margin < 0:
             return None
         return Offer(
             offer_id=uuid4(),

@@ -79,7 +79,8 @@ class CustomerSkills:
             last = state.timeline[-1] if state.timeline else None
             if not (last and last.type == "sales_suppressed" and last.payload == payload):
                 state.append_event("customer_agent", "sales_suppressed", payload)
-        flight = state.current_flight or self._current_flight(rec)
+        flight = self._current_flight(rec) or state.current_flight
+        state.current_flight = flight
         return JourneyStatusView(
             status=state.status.value,
             flight=flight,

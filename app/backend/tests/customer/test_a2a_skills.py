@@ -224,3 +224,23 @@ async def test_sales_events_conform_to_the_typed_timeline_union(skills_and_jid):
         adapter.validate_python(e.model_dump(mode="json"))
         types_seen.add(e.type)
     assert {"sales_suppressed", "offer_proposed"} <= types_seen
+
+
+async def test_journey_status_refreshes_stale_current_flight_after_replanning(skills_and_jid):
+    from acme.customer.rebuild import rebuild_journey
+
+    skills, jid, rt = skills_and_jid
+    rec = rt.journeys[jid]
+    rebuilt = await rebuild_journey(rt.client, rec, "AC1234", rt.world.mct_minutes)
+    assert rebuilt.new_flight == "AC1240"
+    assert rec.state.current_flight == "AC1240"
+
+    make_eligible(rt, jid)
+    skills.propose_offer(offer_dict(jid, flight="AC1240"))
+    assert rec.state.current_flight == "AC1240"
+
+    # Replan PNR onto AC1252; journey_status must report live PNR flight AC1252, not stale AC1240
+    await rt.sim.rebook("MSLV42", "AC1252")
+    status = skills.journey_status(jid)
+    assert status.flight == "AC1252"
+    assert rec.state.current_flight == "AC1252"
