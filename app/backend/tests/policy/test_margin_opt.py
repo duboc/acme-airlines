@@ -42,3 +42,16 @@ def test_price_never_below_cost_floor():
 def test_price_never_above_standard():
     q = recovery_quote(inv(standard_upgrade_fare=Decimal("2"), cost_floor=Decimal("0")), "gold")
     assert q.price <= Decimal("2")
+
+
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"open_seats": 0},
+        {"standard_upgrade_fare": Decimal("290.00"), "cost_floor": Decimal("290.00")},
+        {"standard_upgrade_fare": Decimal("290.00"), "cost_floor": Decimal("310.00")},
+    ],
+)
+def test_no_quote_when_no_open_seats_or_cost_floor_meets_or_exceeds_standard(over):
+    assert recovery_quote(inv(**over), "diamond") is None
+    assert recovery_quote(inv(**over), "gold") is None

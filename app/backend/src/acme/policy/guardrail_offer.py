@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from acme import metrics
 from acme.domain.journey import DisruptionStatus, JourneyState
 from acme.domain.models import CabinInventory, Offer
-from acme.policy.margin_opt import recovery_quote
+from acme.policy.margin_opt import RECOVERY_DISCOUNT_PCT, recovery_quote
 from acme.telemetry import set_attributes, span
 
 _BLOCKING_OTHER_STATUSES = frozenset({"approved", "sent", "accepted", "declined"})
@@ -84,7 +84,7 @@ def evaluate(journey: JourneyState, offer: Offer, inventory: CabinInventory) -> 
         quote is not None and offer.price > quote.price
     ):
         f3.append("not_a_genuine_discount")
-    if quote is None:
+    if journey.passenger_tier not in RECOVERY_DISCOUNT_PCT:
         f3.append("tier_not_eligible")
     rule("genuine_discount", f3)
 

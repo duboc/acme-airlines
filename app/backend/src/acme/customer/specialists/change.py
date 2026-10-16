@@ -71,6 +71,7 @@ class ReplanningChangeAgent:
             await self._unsatisfiable(rt, rec, request_id, after, current_flight, options, req)
             return
         if target["number"] == current:
+            state.current_flight = current
             self._close(rec, request_id, "satisfied")
             await rt.send(
                 rec.passenger_id,
@@ -86,6 +87,7 @@ class ReplanningChangeAgent:
         if rebook.status != "rebooked":  # raced with inventory: never silent
             await rt.send(rec.passenger_id, ESCALATION_REPLY)
             return
+        state.current_flight = rebook.flight
         seat_ok = True
         if old_seat:
             seat = await SeatSpecialist(client).handle(

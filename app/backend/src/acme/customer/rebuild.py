@@ -53,6 +53,7 @@ async def rebuild_journey(
         )  # fmt: skip
     if rebook.status != "rebooked":
         return RebuildResult(new_flight=None, seat_done=False, bag_done=False)
+    state.current_flight = rebook.flight
 
     seat_done = old_seat is None  # nothing to carry over
     if old_seat:
