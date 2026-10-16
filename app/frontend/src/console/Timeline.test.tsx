@@ -70,9 +70,9 @@ describe('Timeline', () => {
         events={[
           {
             actor: 'guardrail',
-            type: 'offer_decision',
+            type: 'guardrail_decision',
             timestamp: '2026-10-10T08:00:00Z',
-            payload: { approved: false, reasons: ['brand_new_rule'] },
+            payload: { approved: false, reasons: ['brand_new_rule'], offer_id: null },
           },
         ]}
       />,
@@ -194,11 +194,12 @@ describe('Timeline', () => {
           },
           {
             actor: 'guardrail',
-            type: 'offer_decision',
+            type: 'guardrail_decision',
             timestamp: '2026-10-10T08:02:00Z',
             payload: {
               approved: false,
               reasons: ['resolution_not_acknowledged', 'negative_margin'],
+              offer_id: null,
             },
           },
         ]}
@@ -285,5 +286,85 @@ describe('Timeline', () => {
     expect(screen.getByText('AC1252')).toBeInTheDocument();
     expect(screen.getByText('BAG998877 → AC1252')).toBeInTheDocument();
     expect(screen.getByText('BAG112233')).toBeInTheDocument();
+  });
+
+  it('renders service_closure, upgrade_confirmed, seat_released, change_handoff, request_closed, resolution_blocked, and verification_failed payloads (#442)', () => {
+    render(
+      <Timeline
+        events={[
+          {
+            actor: 'customer_agent',
+            type: 'service_closure',
+            timestamp: '2026-10-10T08:01:00Z',
+            payload: { reason: 'offer_window_elapsed' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'upgrade_confirmed',
+            timestamp: '2026-10-10T08:02:00Z',
+            payload: {
+              flight: 'AC1252',
+              seat: '2A',
+              cabin: 'premium_business',
+              price: '135.00',
+              charge_id: 'CH-1',
+            },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'seat_released',
+            timestamp: '2026-10-10T08:03:00Z',
+            payload: { flight: 'AC1252', seat: '14A', replaced_by: '2A' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'change_handoff',
+            timestamp: '2026-10-10T08:04:00Z',
+            payload: { request_id: 'REQ-1', after: '10:00' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'request_closed',
+            timestamp: '2026-10-10T08:05:00Z',
+            payload: { request_id: 'REQ-1', outcome: 'satisfied' },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'resolution_blocked',
+            timestamp: '2026-10-10T08:06:00Z',
+            payload: { missing: ['seat', 'hotel'] },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'verification_failed',
+            timestamp: '2026-10-10T08:07:00Z',
+            payload: {
+              failed: ['seat', 'hotel'],
+              details: { seat: 'seat hold missing on AC1240', hotel: 'no booking found' },
+              checks: { seat: false, hotel: false },
+            },
+          },
+          {
+            actor: 'customer_agent',
+            type: 'verification_failed',
+            timestamp: '2026-10-10T08:08:00Z',
+            payload: {
+              failed: ['baggage'],
+              details: {},
+              checks: { baggage: false },
+            },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('Offer window elapsed')).toBeInTheDocument();
+    expect(screen.getByText('AC1252 · 2A ($135.00)')).toBeInTheDocument();
+    expect(screen.getByText('14A → 2A')).toBeInTheDocument();
+    expect(screen.getByText('after 10:00')).toBeInTheDocument();
+    expect(screen.getByText('satisfied')).toBeInTheDocument();
+    expect(screen.getByText('missing: seat, hotel')).toBeInTheDocument();
+    expect(screen.getByText('seat: seat hold missing on AC1240')).toBeInTheDocument();
+    expect(screen.getByText('hotel: no booking found')).toBeInTheDocument();
+    expect(screen.getByText('baggage')).toBeInTheDocument();
   });
 });

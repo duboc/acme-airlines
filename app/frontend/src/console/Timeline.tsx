@@ -51,6 +51,53 @@ function reasonsOf(e: JourneyEvent): string[] {
   if (e.type === 'bag_rerouted' && typeof p.tag === 'string' && p.tag) {
     out.push(typeof p.flight === 'string' && p.flight ? `${p.tag} → ${p.flight}` : p.tag);
   }
+  if (
+    e.type === 'upgrade_confirmed' &&
+    typeof p.flight === 'string' &&
+    p.flight &&
+    typeof p.seat === 'string' &&
+    p.seat &&
+    typeof p.price === 'string' &&
+    p.price
+  ) {
+    const price = p.price.startsWith('$') ? p.price : `$${p.price}`;
+    out.push(`${p.flight} · ${p.seat} (${price})`);
+  }
+  if (
+    e.type === 'seat_released' &&
+    typeof p.seat === 'string' &&
+    p.seat &&
+    typeof p.replaced_by === 'string' &&
+    p.replaced_by
+  ) {
+    out.push(`${p.seat} → ${p.replaced_by}`);
+  }
+  if (e.type === 'change_handoff' && typeof p.after === 'string' && p.after) {
+    out.push(`after ${p.after}`);
+  }
+  if (e.type === 'request_closed' && typeof p.outcome === 'string' && p.outcome) {
+    out.push(p.outcome);
+  }
+  if (e.type === 'resolution_blocked' && Array.isArray(p.missing) && p.missing.length > 0) {
+    out.push(`missing: ${p.missing.map(String).join(', ')}`);
+  }
+  if (e.type === 'verification_failed') {
+    const details =
+      p.details && typeof p.details === 'object' && !Array.isArray(p.details)
+        ? Object.entries(p.details as Record<string, unknown>).filter(
+            ([, v]) => typeof v === 'string' && v,
+          )
+        : [];
+    if (details.length > 0) {
+      for (const [k, v] of details) {
+        out.push(`${k}: ${v as string}`);
+      }
+    } else if (Array.isArray(p.failed) && p.failed.length > 0) {
+      for (const f of p.failed) {
+        if (typeof f === 'string' && f) out.push(f);
+      }
+    }
+  }
   return out;
 }
 

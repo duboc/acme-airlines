@@ -79,7 +79,7 @@ test('Mariana: cancellation, rebuild, replanning, guardrailed upsell, conversion
   await offer.getByRole('button', { name: 'Accept' }).click();
   await expect(chat.locator('.bubble-row.outbound').last()).toContainText('2A');
   await expect(row(console_, 'Seat')).toContainText('2A');
-  await expect(row(console_, 'Seat')).toContainText('premium_business');
+  await expect(row(console_, 'Seat')).toContainText('premium business');
   await expect(status(console_)).toHaveText('Closed');
   await expect(timeline(console_)).toContainText('Verification passed');
 });
