@@ -204,3 +204,77 @@ async def test_replan_with_preferred_seat_taken_explains_courtesy_window_seat(se
     last = sent(rt)[-1].text
     assert "nearest window seat 15A (14A was unavailable)" in last
     assert all(k in last for k in ("AC1252", "11:40", "15A", "14A", "window"))
+
+
+# --- the preferred seat survives a courtesy substitution and a voided upgrade (#491) -------------
+async def seat_taken_setup(rt_clock=DISRUPTION_DETECTED_AT):
+    """seat-taken: 14A is gone on AC1240, so Mariana gets the courtesy window seat 15A there."""
+    rt = CustomerRuntime(FixedClock(rt_clock), llm=FakeLlm())
+    rt.world.flights["AC1240"].open_seats["economy"] = ["15A"]
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    rec = rt.journeys[jid]
+    assert [s.seat for s in rt.world.pnrs["MSLV42"].seats] == ["15A"]
+    assert of(rec, "seat_held")[-1].payload["requested"] == "14A"
+    rt.clock.advance(datetime(2026, 10, 9, 22, 9, tzinfo=GRU) - rt.clock.now())
+    await rt.tick()
+    return rt, rec
+
+
+async def test_replan_after_a_courtesy_seat_asks_for_the_original_seat_not_the_substitute():
+    rt, rec = await seat_taken_setup()
+    await rt.handle_inbound(PID, "Can I leave after 10am?")  # 14A is open on AC1252
+    held = of(rec, "seat_held")[-1].payload
+    assert (held["flight"], held["seat"], held["requested"]) == ("AC1252", "14A", "14A")
+    assert held["reason"] == "kept seat 14A on AC1252"
+    last = sent(rt)[-1].text
+    assert (
+        last == "All set: you are now on AC1252, departing at 11:40, seat 14A, your bag is "
+        "re-routed and your Santiago connection is protected. Please confirm that this works "
+        "for you."
+    )
+    assert "15A was unavailable" not in last and "nearest window seat" not in last
+
+
+async def test_secondary_cancellation_after_a_courtesy_seat_asks_for_the_original_seat():
+    rt, rec = await seat_taken_setup()
+    await rt.trigger_cancellation("AC1240", "weather")  # rebooked on AC1252, where 14A is open
+    held = of(rec, "seat_held")[-1].payload
+    assert (held["flight"], held["seat"], held["requested"]) == ("AC1252", "14A", "14A")
+    assert held["reason"] == "kept seat 14A on AC1252"
+    assert [s.seat for s in rt.world.pnrs["MSLV42"].seats] == ["14A"]
+
+
+async def test_secondary_cancellation_after_a_voided_upgrade_asks_for_the_original_seat():
+    from acme.domain.models import SeatAssignment
+
+    rt, rec = await seat_taken_setup()
+    # a paid premium seat stands in the PNR on AC1240 (the upgrade the disruption then voids)
+    rt.world.pnrs["MSLV42"].seats = [
+        SeatAssignment(flight_number="AC1240", seat="2A", cabin="premium_business")
+    ]
+    await rt.trigger_cancellation("AC1240", "weather")
+    held = of(rec, "seat_held")[-1].payload
+    assert (held["flight"], held["seat"], held["requested"]) == ("AC1252", "14A", "14A")
+
+
+async def test_when_the_original_seat_is_gone_too_the_request_is_still_for_the_original():
+    rt, rec = await seat_taken_setup()
+    rt.world.flights["AC1252"].open_seats["economy"] = ["15A"]  # 14A is taken on AC1252 as well
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    held = of(rec, "seat_held")[-1].payload
+    assert (held["seat"], held["requested"]) == ("15A", "14A")
+    assert "nearest window seat 15A (14A was unavailable)" in sent(rt)[-1].text
+
+
+async def test_a_journey_without_history_falls_back_to_the_seat_on_the_flight():
+    from acme.customer.specialists.seat import preferred_seat
+
+    rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT), llm=FakeLlm())
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    rec = rt.journeys[jid]
+    assert preferred_seat(rec, "9C") == "14A"  # the history wins over the PNR seat
+    rec.state._timeline[:] = [  # noqa: SLF001
+        e for e in rec.state.timeline if e.type not in ("profile_loaded", "seat_held")
+    ]
+    assert preferred_seat(rec, "9C") == "9C"  # no history: the seat on the flight
+    assert preferred_seat(rec, None) is None

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from acme.customer.specialists.baggage import BaggageSpecialist, BagRequest
 from acme.customer.specialists.irrops import IrropsRebooking, RebookRequest
-from acme.customer.specialists.seat import SeatRequest, SeatSpecialist
+from acme.customer.specialists.seat import SeatRequest, SeatSpecialist, preferred_seat
 from acme.domain.journey import DisruptionStatus
 from acme.policy.connection_check import check_connection
 from acme.sim.client import ToolError
@@ -81,7 +81,9 @@ class ReplanningChangeAgent:
             state.transition(DisruptionStatus.RESOLVED, actor=ACTOR)
             return
 
-        old_seat = next((s["seat"] for s in pnr["seats"] if s["flight_number"] == current), None)
+        old_seat = preferred_seat(
+            rec, next((s["seat"] for s in pnr["seats"] if s["flight_number"] == current), None)
+        )
         tier = (await client.call("crm", "profile.get", passenger_id=rec.passenger_id))["tier"]
         rebook = await irrops.handle(req, emit)
         if rebook.status != "rebooked":  # raced with inventory: never silent
