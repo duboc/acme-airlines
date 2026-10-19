@@ -94,14 +94,14 @@ jobs:
       # One SARIF run per category (code scanning rejects several runs with the same category).
       - name: Upload Trivy SARIF (backend)
         if: always() && hashFiles('trivy-sarif/acme-backend.sarif') != ''
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: trivy-sarif/acme-backend.sarif
           category: trivy-acme-backend
 
       - name: Upload Trivy SARIF (frontend)
         if: always() && hashFiles('trivy-sarif/acme-frontend.sarif') != ''
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: trivy-sarif/acme-frontend.sarif
           category: trivy-acme-frontend
