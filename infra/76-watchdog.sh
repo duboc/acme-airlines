@@ -132,8 +132,12 @@ upsert_sched() {
     gcloud scheduler jobs create http "${name}" "${common[@]}" --headers="Content-Type=application/json" --quiet
   fi
 }
-upsert_sched "${CHECK_JOB}" "${WATCHDOG_CRON:-*/15 * * * *}" "/check"       '{"mode":"check"}'
-upsert_sched "${REINC_JOB}" "0 4 * * *"                   "/reincarnate" '{"mode":"reincarnate"}'
+upsert_sched "${CHECK_JOB}" "${WATCHDOG_CRON:-0 12 * * *}" "/check"       '{"mode":"check"}'
+upsert_sched "${REINC_JOB}" "0 4 * * *"                    "/reincarnate" '{"mode":"reincarnate"}'
+# Keep Cloud Scheduler jobs paused by default so ONLY the dedicated once-per-day Scion heartbeat agent (Gemini 3.8 Flash) wakes once per day.
+for j in "${CHECK_JOB}" "${REINC_JOB}"; do
+  gcloud scheduler jobs pause "${j}" --location="${REGION}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
+done
 
 echo "==> PO email notification channel + log-based alert policy (${ALERT_DISPLAY})"
 CHAN="$(gcloud alpha monitoring channels list --project="${PROJECT_ID}" \
