@@ -53,15 +53,20 @@ async def book_transfers(
     airport: str,
     new_departure: datetime,
     with_hotel: bool = True,
+    wait_begin: datetime | None = None,
 ) -> bool:
+    # The outbound leg is an hour after the wait began (in the airport's own time, as the caller
+    # passes it): the same instant whatever clock the runtime runs on (#494). Without a
+    # `wait_begin`, an hour from now.
+    outbound = (wait_begin or rt.clock.now()) + timedelta(hours=1)
     if with_hotel:
         hotel_id = rec.hotel.hotel_id if rec.hotel else PARTNER_HOTEL  # the booked one (#490)
         legs = [
-            ("airport_to_hotel", airport, hotel_id, rt.clock.now() + timedelta(hours=1)),
+            ("airport_to_hotel", airport, hotel_id, outbound),
             ("hotel_to_airport", hotel_id, airport, new_departure - TRANSFER_LEAD),
         ]
     else:  # DOC-06: an origin resident goes home, no hotel
-        legs = [("airport_to_home", airport, "HOME", rt.clock.now() + timedelta(hours=1))]
+        legs = [("airport_to_home", airport, "HOME", outbound)]
     arranged = {
         ev.payload.get("leg") for ev in rec.state.timeline if ev.type == "transfer_arranged"
     }

@@ -204,3 +204,45 @@ async def test_a_same_day_wait_without_a_hotel_books_no_transfer(setup):
     await run_duty_of_care(rt, rec, DONE)
     assert rt.sim.partners.transfers == {} and not events(rec, "transfer_arranged")
     assert rec.state.status == S.RESOLVED
+
+
+# --- a manual AC1234 trigger on the live clock keeps the seeded wait (#494) ---------------------
+@pytest.mark.parametrize(
+    "reason, compensable", [("unscheduled maintenance", True), ("severe weather", False)]
+)
+async def test_a_live_clock_trigger_still_gets_dinner_and_breakfast_and_ordered_pickups(
+    reason, compensable
+):
+    from acme.domain.clock import SystemClock
+    from acme.llm import FakeLlm
+
+    rt = CustomerRuntime(llm=FakeLlm())  # the live clock: days after the seeded 2026-10-09
+    assert isinstance(rt.clock, SystemClock)
+    (jid,) = await rt.trigger_cancellation("AC1234", reason)
+    rec = rt.journeys[jid]
+    assessed = events(rec, "duty_of_care_assessed")[-1].payload
+    assert assessed["meal_vouchers"] == ["dinner", "breakfast"]
+    assert assessed["compensation_eligible"] is compensable
+    assert sorted(str(v.amount) for v in rec.vouchers) == ["12.00", "25.00"]
+    assert [(e.payload["leg"]) for e in events(rec, "transfer_arranged")] == [
+        "airport_to_hotel",
+        "hotel_to_airport",
+    ]
+    assert sorted(t["pickup_at"] for t in rt.sim.partners.transfers.values()) == [
+        "2026-10-09T23:03:00-03:00",
+        "2026-10-10T05:15:00-03:00",
+    ]
+    assert isinstance(rt.clock, SystemClock)  # the clock itself is untouched (#321)
+    assert rec.state.timeline[0].timestamp != DISRUPTION_DETECTED_AT
+
+
+async def test_a_live_clock_resident_gets_the_home_transfer_an_hour_into_the_seeded_wait():
+    from acme.llm import FakeLlm
+
+    rt = CustomerRuntime(llm=FakeLlm())
+    rt.world.passengers["P-MARIANA"].origin_resident = True  # DOC-06
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    (home,) = rt.sim.partners.transfers.values()
+    assert (home["origin"], home["destination"]) == ("GRU", "HOME")
+    assert home["pickup_at"] == "2026-10-09T23:03:00-03:00"
+    assert rt.journeys[jid].hotel is None
