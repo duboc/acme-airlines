@@ -248,4 +248,26 @@ describe('evaluate', () => {
       '14A unavailable on AC1240; assigned nearest window seat 15A as a diamond tier courtesy',
     );
   });
+
+  it('advances last_step, next_step, done, and expected fields when stepping through preset steps (#495)', () => {
+    const steps = [
+      'OCC cancels AC1234',
+      'Time passes',
+      "Mariana: 'Can I leave after 10am?'",
+      "Mariana: 'Perfect, thanks!'",
+      'Mariana taps Accept on the upgrade',
+    ];
+    let cur = { ...base, scenario_id: 'happy-path', total_steps: steps.length };
+    for (let i = 0; i < steps.length; i += 1) {
+      cur = applyExpectedStep(cur, steps);
+      expect(cur.step_index).toBe(i + 1);
+      expect(cur.last_step).toBe(steps[i]);
+      expect(cur.next_step).toBe(steps[i + 1] ?? null);
+      expect(cur.done).toBe(i + 1 === steps.length);
+      expect(evaluate(cur)?.mismatches).toEqual([]);
+    }
+    expect(cur.charged).toBe('135.00');
+    expect(cur.journey_status).toBe('CLOSED');
+    expect(cur.seat).toBe('2A');
+  });
 });
