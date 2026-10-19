@@ -3,7 +3,7 @@
 from pydantic import BaseModel
 
 from acme.customer.specialists.common import Emit
-from acme.sim.client import SimClient
+from acme.sim.client import SimClient, ToolError
 
 
 class BagRequest(BaseModel):
@@ -22,7 +22,16 @@ class BaggageSpecialist:
     async def handle(self, req: BagRequest, emit: Emit) -> BagResponse:
         rerouted = {}
         for tag in req.tags:
-            res = await self._client.call("worldtracer", "bag.reroute", tag=tag, flight=req.flight)
+            try:
+                res = await self._client.call(
+                    "worldtracer", "bag.reroute", tag=tag, flight=req.flight
+                )
+            except ToolError as exc:  # partial result: callers compare against the tags
+                emit(
+                    "needs_human",
+                    {"specialist": "baggage", "tag": tag, "reason": str(exc)[:200]},
+                )
+                break
             rerouted[tag] = res["routing"]
             emit("bag_rerouted", {"flight": req.flight, "tag": tag})
         return BagResponse(rerouted=rerouted)
