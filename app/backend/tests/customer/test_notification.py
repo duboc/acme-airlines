@@ -336,3 +336,40 @@ async def test_seat_taken_notification_explains_window_seat_substitution(metric_
         assert p2 is not None and p2.source == "template", omitted
         assert fallback_count(metric_points) - b == 1, omitted
         assert "nearest window seat 15A assigned (14A was unavailable)" in p2.text
+
+
+async def test_notification_due_uses_origin_airport_timezone(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from acme.customer import outreach
+
+    bogota = ZoneInfo("America/Bogota")  # UTC-5: 22:09 in GRU is 20:09 here
+    rt = make()
+    rec = await resolved(rt)
+    flight = rt.world.flights["AC1234"]
+    flight.scheduled_departure = flight.scheduled_departure.astimezone(bogota)
+    seen = []
+    monkeypatch.setattr(outreach, "can_send_proactive", lambda state, now: seen.append(now) or True)
+    await at_2209(rt)
+    assert seen and all(n.hour == 20 and n.tzinfo is bogota for n in seen)
+    assert outreach.passenger_zone(rt, rec) is bogota
+
+
+async def test_notification_zone_falls_back_to_gru_when_origin_unknown():
+    from acme.customer import outreach
+
+    rt = make()
+    rec = await resolved(rt)
+    rt.world.flights.pop("AC1234")  # the original flight is unknown to the world
+    rec.state.current_flight = "NOPE"
+    assert outreach.passenger_zone(rt, rec) is GRU
+
+
+async def test_passenger_initiated_replies_ignore_quiet_hours():
+    from acme.customer.quiet_hours import can_send_proactive
+
+    rt = make()
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    state = rt.journeys[jid].state
+    night = datetime(2026, 10, 9, 23, 0, tzinfo=GRU)
+    assert can_send_proactive(state, night, passenger_initiated=True)
