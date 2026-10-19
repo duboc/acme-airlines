@@ -340,4 +340,99 @@ describe('DemoPanel', () => {
     expect(screen.queryByText(/last message to passenger/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled();
   });
+
+  it('advances state locally when a manual reply matches the next expected scenario step', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url === '/api/scenarios')
+        return json([
+          {
+            id: 'happy-path',
+            title: 'Happy path',
+            description: 'Scenarios 1-5 end to end.',
+            steps: [
+              'OCC cancels AC1234',
+              'Time passes',
+              "Mariana: 'Can I leave after 10am?'",
+              "Mariana: 'Perfect, thanks!'",
+              'Mariana taps Accept on the upgrade',
+            ],
+            expectation: 'Journey CLOSED on AC1252, seat 2A, $135.00 charged once.',
+          },
+        ]);
+      if (url.endsWith('/start'))
+        return json({
+          ...base,
+          total_steps: 5,
+          step_index: 2,
+          last_step: 'Time passes',
+          next_step: "Mariana: 'Can I leave after 10am?'",
+          journey_id: 'J-1',
+          journey_status: 'RESOLVED',
+          flight: 'AC1240',
+          seat: '14A',
+          offers_sent: 0,
+        });
+      if (url.includes('/whatsapp/')) return json({});
+      return json({}, 404);
+    });
+
+    render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+
+    expect(screen.getByText('Step 2 of 5')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Can I leave after 10am?' }));
+    
+    expect(await screen.findByText('Step 3 of 5')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next step' })).toBeEnabled();
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('advances state locally when a manual action matches the next expected scenario step', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url === '/api/scenarios')
+        return json([
+          {
+            id: 'happy-path',
+            title: 'Happy path',
+            description: 'Scenarios 1-5 end to end.',
+            steps: [
+              'OCC cancels AC1234',
+              'Time passes',
+              "Mariana: 'Can I leave after 10am?'",
+              "Mariana: 'Perfect, thanks!'",
+              'Mariana taps Accept on the upgrade',
+            ],
+            expectation: 'Journey CLOSED on AC1252, seat 2A, $135.00 charged once.',
+          },
+        ]);
+      if (url.endsWith('/start'))
+        return json({
+          ...base,
+          total_steps: 5,
+          step_index: 4,
+          last_step: "Mariana: 'Perfect, thanks!'",
+          next_step: 'Mariana taps Accept on the upgrade',
+          journey_id: 'J-1',
+          journey_status: 'RESOLVED',
+          flight: 'AC1252',
+          seat: '14A',
+          offers_sent: 1,
+          offer_status: 'sent',
+          charged: '0.00',
+        });
+      if (url.includes('/whatsapp/')) return json({});
+      return json({}, 404);
+    });
+
+    render(<DemoPanel passengerId="P-MARIANA" onStarted={onStarted} onChanged={onChanged} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Start scenario' }));
+
+    expect(screen.getByText('Step 4 of 5')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    
+    expect(await screen.findByText('Step 5 of 5')).toBeInTheDocument();
+    expect(screen.getByText(/scenario finished/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next step' })).toBeDisabled();
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
 });
