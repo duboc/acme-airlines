@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel
 
 from acme.customer.specialists.common import Emit
-from acme.sim.client import SimClient
+from acme.sim.client import SimClient, ToolError
 
 if TYPE_CHECKING:
     from acme.customer.runtime import JourneyRecord
@@ -80,6 +80,13 @@ class SeatSpecialist:
         self._client = client
 
     async def handle(self, req: SeatRequest, emit: Emit) -> SeatResponse:
+        try:
+            return await self._assign(req, emit)
+        except ToolError as exc:
+            emit("needs_human", {"specialist": "seat", "reason": str(exc)[:200]})
+            return SeatResponse(status="unavailable")
+
+    async def _assign(self, req: SeatRequest, emit: Emit) -> SeatResponse:
         seatmap = await self._client.call("dcs", "seatmap.get", flight=req.flight)
         seat = nearest_window_seat(seatmap["seats"].get("economy", []), req.preferred_seat)
         if seat is None:

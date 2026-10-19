@@ -270,3 +270,25 @@ async def test_secondary_cancellation_after_accepted_upgrade_voids_charge_and_ve
 
     assert rec.state.status == S.CLOSED
     assert (await verify_journey(full_rt, rec)).ok is True
+
+
+@pytest.mark.parametrize(
+    ("tool", "specialist"), [("seat.assign", "seat"), ("bag.reroute", "baggage")]
+)
+async def test_specialist_tool_error_needs_human_instead_of_raising(
+    rt, monkeypatch, tool, specialist
+):
+    from acme.sim.client import SimClient, ToolError
+
+    real = SimClient.call
+
+    async def flaky(self, server, name, **kw):
+        if name == tool:
+            raise ToolError(f"{name} down")
+        return await real(self, server, name, **kw)
+
+    monkeypatch.setattr(SimClient, "call", flaky)
+    jid = await run(rt)
+    (nh,) = ev(rt, jid, "needs_human")
+    assert nh.payload["specialist"] == specialist
+    assert rt.journeys[jid].state.status == S.RESOLVING
