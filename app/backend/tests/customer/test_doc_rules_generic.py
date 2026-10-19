@@ -89,6 +89,16 @@ async def test_ac3_doc06_passes_the_closed_loop_without_a_hotel():
     assert res.checks["hotel"] is True and res.ok, res.details
 
 
+async def test_doc06_resident_and_special_needs_overnight_flow():
+    rt, rec = await case(resident=True, special_needs=True)
+    p = events(rec, "duty_of_care_assessed")[0].payload
+    assert p["hotel_required"] is False and p["ground_transfer_required"] is True
+    assert p["rule_reasons"]["hotel"] == "ANAC 400 Art. 27, § 1º"
+    assert rec.hotel is None and not events(rec, "hotel_booked")
+    assert [e.payload["leg"] for e in events(rec, "transfer_arranged")] == ["airport_to_home"]
+    assert rec.state.status is S.RESOLVED and not events(rec, "needs_human")
+
+
 async def test_doc07_pnae_daytime_wait_gets_hotel_and_transfer():
     rt, rec = await case(special_needs=True, wait_hours=6)
     p = events(rec, "duty_of_care_assessed")[0].payload
