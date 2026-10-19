@@ -56,12 +56,26 @@ def test_pause_factory_suspends_all_agents_via_hub(monkeypatch):
     monkeypatch.setenv("HUB_ENDPOINT", "http://10.128.0.2:8080")
     monkeypatch.setenv("SCION_HUB_TOKEN", "scion_pat_test")
     monkeypatch.setenv("HUB_PROJECT", "duboc-acme-airlines")
+    monkeypatch.delenv("EVAL_PROJECT", raising=False)
     run = FakeRun()
     assert main.pause_factory(run) == "agents suspended"
     args, env = run.calls[0]
     assert args == ["scion", "suspend", "--all", "--project", "duboc-acme-airlines"]
     assert env["SCION_HUB_ENDPOINT"] == "http://10.128.0.2:8080"
     assert env["SCION_HUB_TOKEN"] == "scion_pat_test"
+
+
+def test_pause_factory_suspends_both_projects_when_eval_project_set(monkeypatch):
+    monkeypatch.setenv("HUB_ENDPOINT", "http://10.128.0.2:8080")
+    monkeypatch.setenv("SCION_HUB_TOKEN", "scion_pat_test")
+    monkeypatch.setenv("HUB_PROJECT", "duboc-acme-airlines")
+    monkeypatch.setenv("EVAL_PROJECT", "acme-airlines-eval")
+    run = FakeRun()
+    assert main.pause_factory(run) == "agents suspended"
+    assert [c[0] for c in run.calls] == [
+        ["scion", "suspend", "--all", "--project", "duboc-acme-airlines"],
+        ["scion", "suspend", "--all", "--project", "acme-airlines-eval"],
+    ]
 
 
 def test_pause_factory_failure_raises(monkeypatch):

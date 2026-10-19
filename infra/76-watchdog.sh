@@ -3,9 +3,9 @@
 # reincarnation, and PO alerting. Idempotent.
 #
 #   Service     Cloud Run acme-factory-watchdog (Direct VPC egress -> hub:8080)
-#   UAT         Secret Manager acme-watchdog-hub-token (agent:list,read,message,lifecycle)
-#   Schedules   acme-factory-watchdog (0 * * * * UTC   -> POST /check)
-#               acme-lead-reincarnate (0 4 * * * UTC   -> POST /reincarnate)
+#   UAT         Secret Manager acme-watchdog-hub-token (hub boundary + full AgentRoleFull ceiling for reincarnate)
+#   Schedules   acme-factory-watchdog (*/15 * * * * UTC -> POST /check across BUILD_PROJECT & EVAL_PROJECT)
+#               acme-lead-reincarnate (0 4 * * * UTC    -> POST /reincarnate across BUILD_PROJECT & EVAL_PROJECT)
 #   PO alert    Log-based alert policy acme-factory-watchdog-po-alert -> email ADMIN_EMAIL
 set -euo pipefail
 # shellcheck source=infra/lib.sh
@@ -39,7 +39,7 @@ if [[ -z "$(gcloud secrets versions list "${TOKEN_SECRET}" --project="${PROJECT_
   bash "${INFRA_DIR}/30-hub-admin-access.sh" enable >/dev/null
   trap 'bash "${INFRA_DIR}/30-hub-admin-access.sh" disable >/dev/null || true' EXIT
   hub_cli hub token create --project "${HUB_PROJECT_SLUG}" --name "${SVC}" \
-      --scopes agent:list,agent:read,agent:message,agent:lifecycle --expires 90d \
+      --scopes agent:list,agent:read,agent:message,agent:lifecycle,agent:create --expires 90d \
       --purpose "watchdog: wake on change, self-heal, daily reincarnate" --json 2>/dev/null \
     | jq -er '.token' | tr -d '\n' \
     | gcloud secrets versions add "${TOKEN_SECRET}" --project="${PROJECT_ID}" --data-file=- --format=none
@@ -50,6 +50,41 @@ if [[ -z "$(gcloud secrets versions list "${TOKEN_SECRET}" --project="${PROJECT_
     || { echo "ERROR: admin access still enabled; run: infra/30-hub-admin-access.sh disable" >&2; exit 1; }
   trap - EXIT
 fi
+
+# Ensure the watchdog UAT row in hub.db has hub boundary (covers both BUILD_PROJECT and EVAL_PROJECT)
+# and the full AgentRoleFull ceiling required by Scion's reincarnateAuthorityFor + childRoleWithinCeiling.
+vm_ssh "
+  set -euo pipefail
+  sudo -u scion python3 - '${SVC}' <<'PY'
+import json, sqlite3, sys
+
+svc_name = sys.argv[1]
+con = sqlite3.connect('/home/scion/.scion/hub.db')
+cur = con.cursor()
+full_ceiling = sorted([
+    'agent.attach', 'agent.create', 'agent.delete', 'agent.lifecycle',
+    'agent.list', 'agent.message', 'agent.read', 'agent.set_message_mode',
+    'gcp_service_account.assign', 'harness_config.list', 'harness_config.read',
+    'project.list', 'project.read', 'project.secret_read', 'secret.use',
+    'skill.list', 'skill.read', 'template.create', 'template.list',
+    'template.read', 'template.update',
+])
+full_scopes = sorted([
+    'agent:create', 'agent:lifecycle', 'agent:list', 'agent:message',
+    'agent:read', 'project:list', 'project:read',
+])
+cur.execute(
+    \"\"\"UPDATE user_access_tokens
+       SET boundary_kind = 'hub',
+           project_id = NULL,
+           scopes = ?,
+           ceiling_permission_ids = ?
+       WHERE name = ? AND revoked = 0\"\"\",
+    (json.dumps(full_scopes), json.dumps(full_ceiling), svc_name),
+)
+con.commit()
+PY
+"
 
 for sec in "${TOKEN_SECRET}" "${GH_SECRET}"; do
   gcloud secrets add-iam-policy-binding "${sec}" --project="${PROJECT_ID}" \
@@ -71,7 +106,7 @@ gcloud run deploy "${SVC}" --project="${PROJECT_ID}" --region="${REGION}" \
   --build-service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
   --no-allow-unauthenticated --max-instances=1 --memory=512Mi --timeout=300 \
   --network=default --subnet=default --vpc-egress=private-ranges-only \
-  --set-env-vars="HUB_ENDPOINT=http://${VM_IP}:8080,HUB_PROJECT=${HUB_PROJECT_SLUG},GITHUB_REPO=${GITHUB_REPO},STATE_BUCKET=${STATE_BUCKET}" \
+  --set-env-vars="HUB_ENDPOINT=http://${VM_IP}:8080,HUB_PROJECT=${HUB_PROJECT_SLUG},EVAL_PROJECT=${EVAL_PROJECT},GITHUB_REPO=${GITHUB_REPO},STATE_BUCKET=${STATE_BUCKET}" \
   --set-secrets="SCION_HUB_TOKEN=${TOKEN_SECRET}:latest,GITHUB_TOKEN=${GH_SECRET}:latest" --quiet
 URL="$(gcloud run services describe "${SVC}" --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
 gcloud run services add-iam-policy-binding "${SVC}" --region="${REGION}" --project="${PROJECT_ID}" \
@@ -92,11 +127,12 @@ upsert_sched() {
                 --attempt-deadline=180s)
   if gcloud scheduler jobs describe "${name}" --location="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
     gcloud scheduler jobs update http "${name}" "${common[@]}" --update-headers="Content-Type=application/json" --quiet
+    gcloud scheduler jobs resume "${name}" --location="${REGION}" --project="${PROJECT_ID}" --quiet >/dev/null 2>&1 || true
   else
     gcloud scheduler jobs create http "${name}" "${common[@]}" --headers="Content-Type=application/json" --quiet
   fi
 }
-upsert_sched "${CHECK_JOB}" "${WATCHDOG_CRON:-0 * * * *}" "/check"       '{"mode":"check"}'
+upsert_sched "${CHECK_JOB}" "${WATCHDOG_CRON:-*/15 * * * *}" "/check"       '{"mode":"check"}'
 upsert_sched "${REINC_JOB}" "0 4 * * *"                   "/reincarnate" '{"mode":"reincarnate"}'
 
 echo "==> PO email notification channel + log-based alert policy (${ALERT_DISPLAY})"

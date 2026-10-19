@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Factory control for both Scion projects (${BUILD_PROJECT} and ${EVAL_PROJECT}):
 #
-#   infra/60-factory.sh status          # VM state, heartbeat schedules, agents by project & phase
-#   infra/60-factory.sh tick-install    # create/update the two 15-min heartbeat schedules (idempotent)
+#   infra/60-factory.sh status          # VM state, daily heartbeat schedules, agents by project & phase
+#   infra/60-factory.sh tick-install    # create/update the two once-per-day heartbeat schedules targeting heartbeat & eval-heartbeat (idempotent)
 #   infra/60-factory.sh pause           # pause heartbeats + suspend all agents across both projects
-#   infra/60-factory.sh resume          # resume heartbeats + wake lead and eval-lead
+#   infra/60-factory.sh resume          # resume heartbeats + wake heartbeat and eval-heartbeat
 #
 # Product-owner rule: the VM is never stopped by tooling; cost control = pausing agents.
 set -euo pipefail
@@ -12,11 +12,15 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-BUILD_HB_NAME="${BUILD_PROJECT}-lead-heartbeat"
-EVAL_HB_NAME="${EVAL_PROJECT}-lead-heartbeat"
+BUILD_HB_NAME="${BUILD_PROJECT}-heartbeat"
+EVAL_HB_NAME="${EVAL_PROJECT}-heartbeat"
 HB_TEMPLATE="$(python3 "${INFRA_DIR}/render-templates.py" --file "${INFRA_DIR}/heartbeat-message.txt")"
 BUILD_HB_MSG="${HB_TEMPLATE//<your project slug>/${BUILD_PROJECT}}"
+BUILD_HB_MSG="${BUILD_HB_MSG//<your heartbeat role>/heartbeat}"
+BUILD_HB_MSG="${BUILD_HB_MSG//<your lead role>/lead}"
 EVAL_HB_MSG="${HB_TEMPLATE//<your project slug>/${EVAL_PROJECT}}"
+EVAL_HB_MSG="${EVAL_HB_MSG//<your heartbeat role>/eval-heartbeat}"
+EVAL_HB_MSG="${EVAL_HB_MSG//<your lead role>/eval-lead}"
 
 admin_on()  { bash "${INFRA_DIR}/30-hub-admin-access.sh" enable >/dev/null; trap admin_off EXIT; }
 admin_off() { bash "${INFRA_DIR}/30-hub-admin-access.sh" disable >/dev/null || true; }
@@ -68,10 +72,15 @@ case "${1:-status}" in
     done ;;
   tick-install)
     admin_on
-    old_id="$(sched_id "acme-factory-tick")"
-    [[ -z "${old_id}" ]] || hub_cli --project "${BUILD_PROJECT}" schedule delete "${old_id}" || true
-    ensure_schedule "${BUILD_PROJECT}" "${BUILD_HB_NAME}" "lead" "${BUILD_HB_MSG}"
-    ensure_schedule "${EVAL_PROJECT}"  "${EVAL_HB_NAME}"  "eval-lead" "${EVAL_HB_MSG}" ;;
+    for old_name in "acme-factory-tick" "${BUILD_PROJECT}-lead-heartbeat" "${EVAL_PROJECT}-lead-heartbeat"; do
+      old_id="$(sched_id "${old_name}")"
+      if [[ -n "${old_id}" ]]; then
+        hub_cli --project "${BUILD_PROJECT}" schedule delete "${old_id}" 2>/dev/null \
+          || hub_cli --project "${EVAL_PROJECT}" schedule delete "${old_id}" 2>/dev/null || true
+      fi
+    done
+    ensure_schedule "${BUILD_PROJECT}" "${BUILD_HB_NAME}" "heartbeat" "${BUILD_HB_MSG}"
+    ensure_schedule "${EVAL_PROJECT}"  "${EVAL_HB_NAME}"  "eval-heartbeat" "${EVAL_HB_MSG}" ;;
   pause)
     admin_on
     for pair in "${BUILD_PROJECT}:${BUILD_HB_NAME}" "${EVAL_PROJECT}:${EVAL_HB_NAME}"; do
@@ -85,15 +94,15 @@ case "${1:-status}" in
     echo "paused: heartbeats + watchdog schedules paused, all agents suspended across ${BUILD_PROJECT} and ${EVAL_PROJECT}" ;;
   resume)
     admin_on
-    for pair in "${BUILD_PROJECT}:${BUILD_HB_NAME}:lead:${BUILD_HB_MSG}" "${EVAL_PROJECT}:${EVAL_HB_NAME}:eval-lead:${EVAL_HB_MSG}"; do
-      IFS=':' read -r p n lead_agent msg <<<"${pair}"
+    for pair in "${BUILD_PROJECT}:${BUILD_HB_NAME}:heartbeat:${BUILD_HB_MSG}" "${EVAL_PROJECT}:${EVAL_HB_NAME}:eval-heartbeat:${EVAL_HB_MSG}"; do
+      IFS=':' read -r p n hb_agent msg <<<"${pair}"
       id="$(sched_id "${n}")"; [[ -z "${id}" ]] || hub_cli --project "${p}" schedule resume "${id}" || true
-      hub_cli --project "${p}" resume "${lead_agent}" "${msg}" 2>/dev/null \
-        || hub_cli --project "${p}" message "${lead_agent}" "${msg}"
+      hub_cli --project "${p}" resume "${hb_agent}" "${msg}" 2>/dev/null \
+        || hub_cli --project "${p}" message "${hb_agent}" "${msg}"
     done
     for j in acme-factory-watchdog acme-lead-reincarnate; do
       gcloud scheduler jobs resume "${j}" --location="${REGION}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
     done
-    echo "resumed: heartbeats active, lead and eval-lead woken" ;;
+    echo "resumed: once-per-day heartbeats + watchdog schedules active, heartbeat and eval-heartbeat woken" ;;
   *) sed -n '2,10p' "$0"; exit 2 ;;
 esac

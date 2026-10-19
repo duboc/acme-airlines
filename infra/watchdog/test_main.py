@@ -5,9 +5,11 @@ from pathlib import Path
 import pytest
 from main import (
     build_handoff,
+    compute_eval_fingerprint,
     compute_fingerprint,
     decide_action,
     execute_action,
+    run_once,
 )
 
 
@@ -177,3 +179,120 @@ def test_execute_action_invokes_expected_scion_commands(monkeypatch: pytest.Monk
     execute_action("reincarnate", "daily", handoff_text="# Reincarnation handoff\n", run=fake_run, tmp_dir=tmp_path)
     assert calls[-1][:4] == ["scion", "reincarnate", "acme-lead", "--project"]
     assert "--handoff-file" in calls[-1]
+
+
+def test_decide_idle_reincarnates_when_wakes_or_turns_exceed_threshold():
+    lead = {"slug": "lead", "phase": "running", "activity": "blocked", "current_turns": 0}
+    r1 = decide_action(
+        lead,
+        "fp2",
+        {"fingerprint": "fp1", "last_wake_ts": 0, "wakes_since_reincarnate": 11},
+        now=5000,
+        max_wakes_before_reincarnate=12,
+    )
+    assert r1["action"] == "reincarnate"
+    assert r1["alert_po"] is False
+    assert r1["new_state"]["wakes_since_reincarnate"] == 0
+    assert r1["new_state"]["fingerprint"] == "fp2"
+
+    bloated_lead = {"slug": "lead", "phase": "running", "activity": "blocked", "current_turns": 45}
+    r2 = decide_action(
+        bloated_lead,
+        "fp2",
+        {"fingerprint": "fp2", "last_wake_ts": 100, "wakes_since_reincarnate": 2},
+        now=5000,
+        max_turns_before_reincarnate=40,
+    )
+    assert r2["action"] == "reincarnate"
+    assert r2["alert_po"] is False
+    assert r2["new_state"]["wakes_since_reincarnate"] == 0
+
+
+def test_compute_eval_fingerprint_tracks_in_review_and_eval_issues_and_runs():
+    build_only = [{"number": 10, "title": "Build task", "updated_at": "t1", "labels": [{"name": "duboc-acme-airlines"}, {"name": "status:triage"}]}]
+    runs = [{"name": "CI", "head_sha": "sha1", "status": "completed", "conclusion": "success"}]
+    eval_agents = [
+        {"slug": "eval-lead", "phase": "running", "activity": "blocked"},
+        {"slug": "search-evaluator", "phase": "running", "activity": "blocked"},
+    ]
+    fp0 = compute_eval_fingerprint(build_only, runs, eval_agents)
+    # Changing a build-only triage issue must NOT wake eval-lead
+    build_only_t2 = [{"number": 10, "title": "Build task", "updated_at": "t2", "labels": [{"name": "duboc-acme-airlines"}, {"name": "status:ready"}]}]
+    assert compute_eval_fingerprint(build_only_t2, runs, eval_agents) == fp0
+
+    # An issue entering status:in-review MUST change the eval fingerprint
+    in_review = [{"number": 10, "title": "Build task", "updated_at": "t3", "labels": [{"name": "duboc-acme-airlines"}, {"name": "status:in-review"}]}]
+    assert compute_eval_fingerprint(in_review, runs, eval_agents) != fp0
+
+    # An acme-airlines-eval issue MUST change the eval fingerprint
+    eval_issue = [{"number": 11, "title": "Eval task", "updated_at": "t1", "labels": [{"name": "acme-airlines-eval"}]}]
+    assert compute_eval_fingerprint(eval_issue, runs, eval_agents) != fp0
+
+
+def test_run_once_manages_both_build_and_eval_projects(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    import main as wd
+
+    monkeypatch.setenv("HUB_ENDPOINT", "http://10.0.0.2:8080")
+    monkeypatch.setenv("HUB_PROJECT", "duboc-acme-airlines")
+    monkeypatch.setenv("EVAL_PROJECT", "acme-airlines-eval")
+    monkeypatch.setenv("GITHUB_REPO", "duboc/acme-airlines")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_test")
+    monkeypatch.setenv("SCION_HUB_TOKEN", "scion_pat_test")
+    monkeypatch.setenv("STATE_BUCKET", "")
+
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(wd, "DEFAULT_STATE_PATH", state_file)
+
+    def fake_fetch_agents(run=None, project=None):
+        if project == "acme-airlines-eval":
+            return [
+                {"slug": "eval-lead", "phase": "running", "activity": "blocked", "current_turns": 0},
+                {"slug": "search-evaluator", "phase": "running", "activity": "blocked", "current_turns": 0},
+            ]
+        return [
+            {"slug": "lead", "phase": "running", "activity": "blocked", "current_turns": 0},
+            {"slug": "backend", "phase": "running", "activity": "blocked", "current_turns": 0},
+        ]
+
+    monkeypatch.setattr(wd, "fetch_hub_agents", fake_fetch_agents)
+    monkeypatch.setattr(
+        wd,
+        "fetch_github_state",
+        lambda repo, token: (
+            [{"number": 495, "title": "Fix demo", "updated_at": "t1", "labels": [{"name": "duboc-acme-airlines"}, {"name": "status:in-review"}]}],
+            [],
+            [{"name": "CI", "head_sha": "sha1", "status": "completed", "conclusion": "success"}],
+            "# 🏭 Factory status\n",
+        ),
+    )
+    executed = []
+    monkeypatch.setattr(
+        wd,
+        "execute_action",
+        lambda action, reason, handoff_text="", lead_name="lead", project=None, **kw: executed.append((project, lead_name, action)) or action,
+    )
+
+    code, res = run_once("check")
+    assert code == 200
+    assert ("duboc-acme-airlines", "lead", "wake") in executed
+    assert ("acme-airlines-eval", "eval-lead", "wake") in executed
+    assert res["eval"]["action"] == "wake"
+
+    # Second check with identical state -> both noop (zero LLM tokens!)
+    executed.clear()
+    code2, res2 = run_once("check")
+    assert code2 == 200
+    assert res2["action"] == "noop"
+    assert res2["eval"]["action"] == "noop"
+
+    # Daily reincarnate mode -> reincarnates both lead and eval-lead and resets wakes_since_reincarnate to 0
+    executed.clear()
+    code3, res3 = run_once("reincarnate")
+    assert code3 == 200
+    assert ("duboc-acme-airlines", "lead", "reincarnate") in executed
+    assert ("acme-airlines-eval", "eval-lead", "reincarnate") in executed
+    persisted = json.loads(state_file.read_text())
+    assert persisted["wakes_since_reincarnate"] == 0
+    assert persisted["eval"]["wakes_since_reincarnate"] == 0
+
+

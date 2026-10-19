@@ -72,6 +72,8 @@ cexpect() {
 }
 T=$(mktemp -d); mk() { mkdir -p "$T/$1/$2"; printf '%b' "$3" > "$T/$1/$2/scion-agent.yaml"; }
 mk good lead 'default_harness_config: claude\nmodel: large\n'
+mk good heartbeat 'default_harness_config: antigravity\nmodel: medium\n'
+mk good eval-heartbeat 'default_harness_config: antigravity\nmodel: medium\n'
 mk good researcher 'default_harness_config: antigravity\nmodel: large\n'
 mk good product-manager 'default_harness_config: antigravity\nmodel: large\n'
 mk good backend 'default_harness_config: claude\nmodel: medium\n'
@@ -80,6 +82,8 @@ mexpect 0 "models match mapping" "$T/good"
 cexpect 0 "no caps on standing templates" "$T/good"
 mk badmodel reviewer 'default_harness_config: claude\nmodel: large\n'
 mexpect 1 "reviewer on opus rejected" "$T/badmodel"
+mk badhb heartbeat 'default_harness_config: antigravity\nmodel: large\n'
+mexpect 1 "heartbeat not on gemini 3.8 medium rejected" "$T/badhb"
 mk hascap backend 'default_harness_config: claude\nmodel: medium\nmax_duration: "2h"\n'
 mk hascalls backend 'default_harness_config: claude\nmodel: medium\nmax_model_calls: 1200\n'
 cexpect 1 "max_model_calls cap rejected" "$T/hascalls"
@@ -98,6 +102,17 @@ kexpect 1 "*/10 * * * *"
 kexpect 1 "* * * * *"
 kexpect 1 "0,15,30,45 * * * *"
 kexpect 1 ""
+
+dexpect() {  # dexpect <0|1> <cron>
+  if daily_cron_ok "$2"; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   daily cron '$2'"; else echo "FAIL daily cron '$2' (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+dexpect 0 "0 12 * * *"
+dexpect 0 "30 4 * * *"
+dexpect 1 "0 */6 * * *"
+dexpect 1 "*/15 * * * *"
+dexpect 1 "0 0,12 * * *"
+dexpect 1 ""
 
 eexpect() {  # eexpect <0|1> <name> <json>
   if engines_ok "$3" >/dev/null; then got=0; else got=1; fi
@@ -145,5 +160,14 @@ pexpect 1 "phantom acme.evals.runner rejected" "$P/phantom"
 pexpect 1 "generic search-evaluator rejected" "$P/generic"
 pexpect 0 "repo docs/scion/templates eval prompts specialized" "docs/scion/templates"
 rm -rf "$P"
+
+ccap_expect() {  # ccap_expect <0|1> <name> <lines>
+  if claude_context_cap_ok "$3" >/dev/null; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+ccap_expect 0 "claude context cap <200k and haiku-5-5 enforced" $'CLAUDE_CODE_DISABLE_1M_CONTEXT=1\nCLAUDE_CODE_AUTO_COMPACT_WINDOW=150000\nCLAUDE_CODE_MAX_CONTEXT_TOKENS=160000\nCLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70\nANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5\nANTHROPIC_SMALL_FAST_MODEL=claude-haiku-5-5'
+ccap_expect 1 "missing CLAUDE_CODE_DISABLE_1M_CONTEXT rejected" $'CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000\nCLAUDE_CODE_MAX_CONTEXT_TOKENS=160000\nCLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70\nANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5\nANTHROPIC_SMALL_FAST_MODEL=claude-haiku-5-5'
+ccap_expect 1 ">=200k compact window rejected" $'CLAUDE_CODE_DISABLE_1M_CONTEXT=1\nCLAUDE_CODE_AUTO_COMPACT_WINDOW=200000\nCLAUDE_CODE_MAX_CONTEXT_TOKENS=160000\nCLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70\nANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5\nANTHROPIC_SMALL_FAST_MODEL=claude-haiku-5-5'
+ccap_expect 1 "404 claude-haiku-4-5 rejected" $'CLAUDE_CODE_DISABLE_1M_CONTEXT=1\nCLAUDE_CODE_AUTO_COMPACT_WINDOW=150000\nCLAUDE_CODE_MAX_CONTEXT_TOKENS=160000\nCLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70\nANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5\nANTHROPIC_SMALL_FAST_MODEL=claude-haiku-4-5'
 
 if [[ "${fails}" == 0 ]]; then echo "PASS test_verify"; else echo "FAIL test_verify (${fails})"; exit 1; fi

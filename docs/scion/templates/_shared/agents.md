@@ -17,7 +17,7 @@ these rules; your role prompt adds what is specific to you.
 ## Messaging & Hierarchy (`message_mode: branch`)
 
 - **Strict Hub-and-Spoke Hierarchy (`User -> lead -> subagents`):** `lead` (in `${BUILD_PROJECT}`) and `eval-lead` (in `${EVAL_PROJECT}`) sit at the top of the project hierarchy and are **always the starting point and sole coordinator** between subagents. All agents run in Scion `message_mode: branch`, which enforces parent-child hub-and-spoke messaging at the Hub kernel level:
-  - **Subagents (`researcher`, `product-manager`, `backend`, `frontend`, `reviewer`, `deployer`, `factory-analyst`, `search-evaluator`, `ui-craftsman`, `eval-deployer`)** only ever receive briefs from and report back to their lead (`scion message lead "<you> -> lead: <text>"` or `scion message eval-lead "<you> -> eval-lead: <text>"`). **Never message another subagent directly** — sibling-to-sibling messages are denied by the Hub (`mode_branch_no_edge`). Every handoff flows through the lead.
+  - **Subagents (`heartbeat`, `researcher`, `product-manager`, `backend`, `frontend`, `reviewer`, `deployer`, `eval-heartbeat`, `factory-analyst`, `search-evaluator`, `ui-craftsman`, `eval-deployer`)** only ever receive briefs from and report back to their lead (`scion message lead "<you> -> lead: <text>"` or `scion message eval-lead "<you> -> eval-lead: <text>"`). **Never message another subagent directly** — sibling-to-sibling messages are denied by the Hub (`mode_branch_no_edge`). Every handoff flows through the lead.
 - The only way to reach another agent is `scion message <agent> "<you> -> <agent>: <text>"`. Text you write in your
   own output reaches nobody: a verdict you only print is lost, and everyone waiting for it stalls.
 - Check that every `scion message <agent>` prints `Message delivered` (meaning the Hub accepted and buffered the message). When messaging a human, `scion message user:${PO_EMAIL}` prints `Message sent to user:${PO_EMAIL}.`. If delivery fails, retry once; if it still fails, comment on the issue and tell your lead.
@@ -41,9 +41,7 @@ crashed one.
 
 ## Heartbeats
 
-Leads receive a `HEARTBEAT` message every 15 minutes. It asks you to re-check state; it is not new work. Follow its
-steps, act only where something changed or is overdue, and end with `sciontool status blocked`. If nothing needs
-action, only set the status.
+Only the dedicated `heartbeat` (in `${BUILD_PROJECT}`) and `eval-heartbeat` (in `${EVAL_PROJECT}`) agents (`antigravity`, `Gemini 3.8 Flash (Medium)`) receive a scheduled `DAILY HEARTBEAT` once per day (`0 12 * * *` UTC). They list the open GitHub issues and PRs, filter for actionable work, and pass ONLY what is needed to `lead` / `eval-lead` via `scion message`. Neither `lead` nor `eval-lead` is woken on a timer directly. Never run `scion suspend` on yourself or other standing agents; always end turns with `sciontool status blocked`.
 
 ## Git in the shared workspace
 

@@ -47,9 +47,10 @@ topology_ok() {
   echo "${lead_name} + ${n} active workers under ${lead_name}"
 }
 
-# 12-template model mapping: role -> "harness model".
+# 14-template model mapping: role -> "harness model".
 declare -A ACME_MODEL=(
   [lead]="claude large"
+  [heartbeat]="antigravity medium"
   [researcher]="antigravity large"
   [product-manager]="antigravity large"
   [backend]="claude medium"
@@ -57,6 +58,7 @@ declare -A ACME_MODEL=(
   [reviewer]="antigravity large"
   [deployer]="claude medium"
   [eval-lead]="antigravity large"
+  [eval-heartbeat]="antigravity medium"
   [factory-analyst]="antigravity large"
   [search-evaluator]="antigravity large"
   [ui-craftsman]="antigravity large"
@@ -125,6 +127,30 @@ eval_prompts_ok() {
   done
   [[ -z "${bad}" ]] || { echo "generic/incomplete eval prompts:${bad}"; return 1; }
   echo "eval prompts specialized for ACME IRROPS app & Gemini model"
+}
+
+# claude_context_cap_ok <key=val lines>: verifies Hub-scoped Claude Code context-cap & Haiku-5-5 env vars
+# that prevent >200k token long-context pricing tier bloat and 404 Haiku-4-5 fallback to Opus 5.5 on Vertex AI.
+claude_context_cap_ok() {
+  local lines="$1" missing=""
+  grep -qx "CLAUDE_CODE_DISABLE_1M_CONTEXT=1" <<<"${lines}" || missing+=" CLAUDE_CODE_DISABLE_1M_CONTEXT=1"
+  grep -qxE "CLAUDE_CODE_AUTO_COMPACT_WINDOW=(1[0-9]{5}|[1-9][0-9]{4})" <<<"${lines}" || missing+=" CLAUDE_CODE_AUTO_COMPACT_WINDOW<=199999"
+  grep -qxE "CLAUDE_CODE_MAX_CONTEXT_TOKENS=(1[0-9]{5}|[1-9][0-9]{4})" <<<"${lines}" || missing+=" CLAUDE_CODE_MAX_CONTEXT_TOKENS<=199999"
+  grep -qxE "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=[1-8][0-9]" <<<"${lines}" || missing+=" CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"
+  grep -qx "ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5" <<<"${lines}" || missing+=" ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5"
+  grep -qx "ANTHROPIC_SMALL_FAST_MODEL=claude-haiku-5-5" <<<"${lines}" || missing+=" ANTHROPIC_SMALL_FAST_MODEL=claude-haiku-5-5"
+  [[ -z "${missing}" ]] || { echo "missing Claude context-cap/haiku env vars:${missing}"; return 1; }
+  echo "Claude context-cap (<200k tier) & haiku-5-5 env vars enforced"
+}
+
+# daily_cron_ok <cron>: true only when the cron expression fires at most once per day
+# (single minute 0-59 and single hour 0-23, e.g. "0 12 * * *").
+daily_cron_ok() {
+  local cron="$1" m h dom mon dow
+  read -r m h dom mon dow <<<"${cron}"
+  [[ "${m:-}" =~ ^[0-9]+$ ]] && (( m >= 0 && m <= 59 )) || return 1
+  [[ "${h:-}" =~ ^[0-9]+$ ]] && (( h >= 0 && h <= 23 )) || return 1
+  [[ "${dom:-}" == "*" && "${mon:-}" == "*" && "${dow:-}" == "*" ]]
 }
 
 # cron_interval_ok <cron> <min-minutes>: the minute field fires at most every
@@ -282,45 +308,51 @@ check_smoke() {
   pass smoke
 }
 check_team() {
-  # Read-only: all 12 templates registered on the hub.
+  # Read-only: all 14 templates registered on the hub.
   local out t
   out="$(vm_ssh "sudo sqlite3 -readonly /home/scion/.scion/hub.db \"SELECT slug FROM templates;\"" 2>/dev/null)"
-  for t in lead researcher product-manager backend frontend reviewer deployer eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer; do
+  for t in lead heartbeat researcher product-manager backend frontend reviewer deployer eval-lead eval-heartbeat factory-analyst search-evaluator ui-craftsman eval-deployer; do
     grep -qx "${t}" <<<"${out}" || { fail team "template ${t} not registered on hub"; return 1; }
   done
-  pass "team (12 templates across ${BUILD_PROJECT} and ${EVAL_PROJECT})"
+  pass "team (14 templates across ${BUILD_PROJECT} and ${EVAL_PROJECT})"
 }
 check_topology() {
-  # 2-project, 12-agent hierarchical topology:
-  # - BUILD_PROJECT: lead at top -> 6 child workers (researcher, product-manager, backend, frontend, reviewer, deployer), message_mode=branch
-  # - EVAL_PROJECT:  eval-lead at top -> 4 child workers (factory-analyst, search-evaluator, ui-craftsman, eval-deployer), message_mode=branch
+  # 2-project, 14-agent hierarchical topology:
+  # - BUILD_PROJECT: lead at top -> 7 child agents (heartbeat, researcher, product-manager, backend, frontend, reviewer, deployer), message_mode=branch
+  # - EVAL_PROJECT:  eval-lead at top -> 5 child agents (eval-heartbeat, factory-analyst, search-evaluator, ui-craftsman, eval-deployer), message_mode=branch
   local rows r missing="" build_rows eval_rows b_msg e_msg bad_mode=""
   rows="$(printf '%s\n' ".separator '|'" \
     "SELECT p.slug, a.name, a.id, a.ancestry, a.message_mode FROM agents a JOIN projects p ON a.project_id = p.id WHERE a.deleted_at IS NULL;" | \
     gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
       --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
-  for r in lead researcher product-manager backend frontend reviewer deployer; do
+  for r in lead heartbeat researcher product-manager backend frontend reviewer deployer; do
     grep -q "^${BUILD_PROJECT}|${r}|" <<<"${rows}" || missing+=" ${BUILD_PROJECT}/${r}"
   done
-  for r in eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer; do
+  for r in eval-lead eval-heartbeat factory-analyst search-evaluator ui-craftsman eval-deployer; do
     grep -q "^${EVAL_PROJECT}|${r}|" <<<"${rows}" || missing+=" ${EVAL_PROJECT}/${r}"
   done
   [[ -z "${missing}" ]] || { fail topology "missing agents:${missing}"; return 1; }
   build_rows="$(awk -F'|' -v p="${BUILD_PROJECT}" '$1==p{print $2"|"$3"|"$4}' <<<"${rows}")"
   eval_rows="$(awk -F'|' -v p="${EVAL_PROJECT}" '$1==p{print $2"|"$3"|"$4}' <<<"${rows}")"
-  b_msg="$(topology_ok "${build_rows}" 6 "lead")" || { fail topology "${BUILD_PROJECT}: ${b_msg}"; return 1; }
-  e_msg="$(topology_ok "${eval_rows}" 4 "eval-lead")" || { fail topology "${EVAL_PROJECT}: ${e_msg}"; return 1; }
+  b_msg="$(topology_ok "${build_rows}" 7 "lead")" || { fail topology "${BUILD_PROJECT}: ${b_msg}"; return 1; }
+  e_msg="$(topology_ok "${eval_rows}" 5 "eval-lead")" || { fail topology "${EVAL_PROJECT}: ${e_msg}"; return 1; }
   bad_mode="$(awk -F'|' '$5 != "branch" && $2 !~ /^smoke-/ {print $1"/"$2"("$5")"}' <<<"${rows}" | tr '\n' ' ')"
   [[ -z "${bad_mode// /}" ]] || { fail topology "agents not in hierarchical branch message_mode: ${bad_mode}"; return 1; }
   pass "topology (${b_msg} in ${BUILD_PROJECT}; ${e_msg} in ${EVAL_PROJECT}; message_mode=branch)"
 }
 check_cost() {
-  # Committed templates follow the model mapping, carry no artificial caps, and have app/model-specific eval prompts.
-  local m c e
+  # Committed templates follow the model mapping, carry no artificial caps, have app/model-specific eval prompts,
+  # and Hub-scoped Claude context-cap env vars keep sessions under the 200k-token pricing cliff.
+  local m c e env_rows k
   m="$(models_ok "${REPO_ROOT}/docs/scion/templates")" || { fail cost "${m}"; return 1; }
   c="$(caps_ok "${REPO_ROOT}/docs/scion/templates")" || { fail cost "${c}"; return 1; }
   e="$(eval_prompts_ok "${REPO_ROOT}/docs/scion/templates")" || { fail cost "${e}"; return 1; }
-  pass "cost (${m}; ${c}; ${e})"
+  env_rows="$(printf '%s\n' ".separator '='" \
+    "SELECT key, value FROM env_vars WHERE scope='hub' AND injection_mode='always';" | \
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
+      --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
+  k="$(claude_context_cap_ok "${env_rows}")" || { fail cost "${k}"; return 1; }
+  pass "cost (${m}; ${c}; ${e}; ${k})"
 }
 check_skills() {
   # The hub-stored frontend and ui-craftsman templates carry a template-mounted impeccable skill.
@@ -331,9 +363,13 @@ check_skills() {
   if grep -q 'SKILL.md' <<<"${out}"; then pass skills; else fail skills "impeccable SKILL.md not mounted in hub-stored frontend/ui-craftsman templates"; fi
 }
 check_loop() {
-  # Both 15-minute heartbeat schedules exist, are active, and target lead and eval-lead.
-  local s row cron status payload
-  for s in "${BUILD_PROJECT}-lead-heartbeat:lead" "${EVAL_PROJECT}-lead-heartbeat:eval-lead"; do
+  # Dedicated once-per-day heartbeat schedules target heartbeat & eval-heartbeat (never lead/eval-lead directly).
+  local s row cron status payload legacy
+  legacy="$(printf '%s\n' "SELECT name FROM schedules WHERE name IN ('${BUILD_PROJECT}-lead-heartbeat','${EVAL_PROJECT}-lead-heartbeat','acme-factory-tick');" | \
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
+      --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
+  [[ -z "${legacy}" ]] || { fail loop "legacy lead heartbeat schedule still present: ${legacy}"; return 1; }
+  for s in "${BUILD_PROJECT}-heartbeat:heartbeat" "${EVAL_PROJECT}-heartbeat:eval-heartbeat"; do
     local sname="${s%%:*}" target="${s#*:}"
     row="$(printf '%s\n' ".separator '|'" "SELECT cron_expr, status, payload FROM schedules WHERE name='${sname}';" | \
       gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" --tunnel-through-iap --quiet \
@@ -341,10 +377,11 @@ check_loop() {
     [[ -n "${row}" ]] || { fail loop "schedule ${sname} not found"; return 1; }
     IFS='|' read -r cron status payload <<<"${row}"
     [[ "${status}" == "active" ]] || { fail loop "schedule ${sname} status=${status}"; return 1; }
-    [[ "${payload}" == *"${target}"* ]] || { fail loop "schedule ${sname} does not target ${target}"; return 1; }
-    cron_interval_ok "${cron}" 15 || { fail loop "cron '${cron}' fires more often than every 15 min"; return 1; }
+    [[ "${payload}" == *"\"${target}\""* ]] || { fail loop "schedule ${sname} does not target ${target}"; return 1; }
+    [[ "${cron}" == "${HEARTBEAT_CRON}" ]] || { fail loop "schedule ${sname} cron='${cron}' (want '${HEARTBEAT_CRON}')"; return 1; }
+    daily_cron_ok "${cron}" || { fail loop "cron '${cron}' fires more than once per day"; return 1; }
   done
-  pass "loop (${BUILD_PROJECT}-lead-heartbeat & ${EVAL_PROJECT}-lead-heartbeat, ${HEARTBEAT_CRON}, active)"
+  pass "loop (${BUILD_PROJECT}-heartbeat -> heartbeat & ${EVAL_PROJECT}-heartbeat -> eval-heartbeat, ${HEARTBEAT_CRON} once/day, active)"
 }
 check_budget() {
   # Budget exists with a 100% threshold wired to the guard topic, and the guard service is deployed.
@@ -539,11 +576,15 @@ check_backups() {
 }
 check_watchdog() {
   # Wake-on-change watchdog + daily lead reincarnation + PO log-based alert policy (infra/76-watchdog.sh).
-  local p="${PROJECT_ID}" r="${REGION}" svc="acme-factory-watchdog" missing=""
+  local p="${PROJECT_ID}" r="${REGION}" svc="acme-factory-watchdog" missing="" svc_json uat_row
   gcloud iam service-accounts describe "${svc}@${p}.iam.gserviceaccount.com" --project="${p}" >/dev/null 2>&1 || missing+=" sa:${svc}"
   gcloud secrets versions list acme-watchdog-hub-token --project="${p}" --filter=state=ENABLED --format='value(name)' 2>/dev/null | grep -q . \
     || missing+=" secret:acme-watchdog-hub-token"
-  gcloud run services describe "${svc}" --region="${r}" --project="${p}" >/dev/null 2>&1 || missing+=" run:${svc}"
+  svc_json="$(gcloud run services describe "${svc}" --region="${r}" --project="${p}" --format=json 2>/dev/null)" || missing+=" run:${svc}"
+  if [[ -n "${svc_json}" ]]; then
+    jq -e --arg ep "${EVAL_PROJECT}" '[.spec.template.spec.containers[0].env[]? | select(.name=="EVAL_PROJECT" and .value==$ep)] | length == 1' <<<"${svc_json}" >/dev/null \
+      || missing+=" env:EVAL_PROJECT=${EVAL_PROJECT}"
+  fi
   for j in acme-factory-watchdog acme-lead-reincarnate; do
     local st
     st="$(gcloud scheduler jobs describe "${j}" --location="${r}" --project="${p}" --format='value(state)' 2>/dev/null || true)"
@@ -551,7 +592,12 @@ check_watchdog() {
   done
   local wd_sched
   wd_sched="$(gcloud scheduler jobs describe acme-factory-watchdog --location="${r}" --project="${p}" --format='value(schedule)' 2>/dev/null || true)"
-  [[ "${wd_sched}" == "${WATCHDOG_CRON:-0 * * * *}" ]] || missing+=" watchdog-cron:${wd_sched:-unset}(want:${WATCHDOG_CRON:-0 * * * *})"
+  [[ "${wd_sched}" == "${WATCHDOG_CRON:-*/15 * * * *}" ]] || missing+=" watchdog-cron:${wd_sched:-unset}(want:${WATCHDOG_CRON:-*/15 * * * *})"
+  uat_row="$(printf '%s\n' ".separator '|'" \
+    "SELECT boundary_kind, ceiling_permission_ids FROM user_access_tokens WHERE name='${svc}' AND revoked=0 LIMIT 1;" | \
+    gcloud compute ssh "${VM_NAME}" --project="${PROJECT_ID}" --zone="$(resolve_zone)" \
+      --tunnel-through-iap --quiet --command="sudo sqlite3 -readonly /home/scion/.scion/hub.db" 2>/dev/null)"
+  [[ "${uat_row}" == "hub|"* && "${uat_row}" == *"agent.create"* ]] || missing+=" uat-hub-reincarnate-ceiling"
   gcloud alpha monitoring policies list --project="${p}" --filter='displayName="acme-factory-watchdog-po-alert" AND enabled=true' \
     --format='value(name)' 2>/dev/null | grep -q . || missing+=" alert:acme-factory-watchdog-po-alert"
   [[ -z "${missing}" ]] || { fail watchdog "missing:${missing}"; return 1; }
@@ -559,7 +605,7 @@ check_watchdog() {
        | jq -e '[.bindings[]?.members[]?] | any(. == "allUsers" or . == "allAuthenticatedUsers")' >/dev/null; then
     fail watchdog "${svc} is publicly invokable"; return 1
   fi
-  pass "watchdog (hourly wake-on-change, 04:00Z daily reincarnate, PO alert policy)"
+  pass "watchdog (${WATCHDOG_CRON:-*/15 * * * *} zero-token wake-on-change across ${BUILD_PROJECT}+${EVAL_PROJECT}, 04:00Z reincarnate, PO alert)"
 }
 check_identity() {
   # Dedicated low-privilege agent SA (assign mode), hub default block, least-privilege IAM (infra/25-agent-identity.sh).

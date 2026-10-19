@@ -43,15 +43,20 @@ def should_pause(notification: dict) -> bool:
 
 
 def pause_factory(run=subprocess.run) -> str:
-    """Suspend every agent in the hub project. Raises RuntimeError on failure (Pub/Sub retries)."""
+    """Suspend every agent in the hub project (and eval project if configured). Raises RuntimeError on failure."""
     env = dict(os.environ)
     env["SCION_HUB_ENDPOINT"] = os.environ["HUB_ENDPOINT"]
     env["SCION_HUB_TOKEN"] = os.environ["SCION_HUB_TOKEN"]
-    args = ["scion", "suspend", "--all", "--project", os.environ["HUB_PROJECT"]]
-    r = run(args, env=env, capture_output=True, text=True, timeout=120)
-    if r.returncode != 0:
-        raise RuntimeError(f"scion suspend failed rc={r.returncode}: {(r.stderr or '')[:300]}")
-    log.info("suspend output: %s", (r.stdout or "")[:500])
+    projects = [os.environ["HUB_PROJECT"]]
+    eval_proj = os.environ.get("EVAL_PROJECT", "").strip()
+    if eval_proj and eval_proj not in projects:
+        projects.append(eval_proj)
+    for proj in projects:
+        args = ["scion", "suspend", "--all", "--project", proj]
+        r = run(args, env=env, capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            raise RuntimeError(f"scion suspend ({proj}) failed rc={r.returncode}: {(r.stderr or '')[:300]}")
+        log.info("suspend (%s) output: %s", proj, (r.stdout or "")[:500])
     return "agents suspended"
 
 

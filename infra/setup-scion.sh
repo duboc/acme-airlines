@@ -16,8 +16,8 @@ export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 AGY_VERSION="1.3.4"
 AGENT_SA_EMAIL="${AGENT_SA}"
 DEPLOYER_SA_EMAIL="${DEPLOYER_SA}"
-BUILD_ROLES=(lead researcher product-manager backend frontend reviewer deployer)
-EVAL_ROLES=(eval-lead factory-analyst search-evaluator ui-craftsman eval-deployer)
+BUILD_ROLES=(lead heartbeat researcher product-manager backend frontend reviewer deployer)
+EVAL_ROLES=(eval-lead eval-heartbeat factory-analyst search-evaluator ui-craftsman eval-deployer)
 ALL_ROLES=("${BUILD_ROLES[@]}" "${EVAL_ROLES[@]}")
 
 echo "==> 1. Ensuring Vertex AI & deployer SA impersonation IAM + harness images (Claude Code + Antigravity ${AGY_VERSION})"
@@ -101,11 +101,10 @@ for hc_name, aliases in aliases_map.items():
     for root in roots:
         cfg = root / "config.yaml"
         if cfg.exists():
-            text = cfg.read_text()
+            text = cfg.read_text().replace("claude-haiku-4-5", "claude-haiku-5-5")
             block = "model_aliases:" + nl + "".join(f"  {k}: {json.dumps(v)}" + nl for k, v in aliases.items())
             new_text, n = re.subn(r"(?m)^model_aliases:\r?\n(?:  [a-z-]+:.*\r?\n)+", lambda _: block, text, count=1)
-            if n:
-                cfg.write_text(new_text)
+            cfg.write_text(new_text if n else text)
 
 con = sqlite3.connect("/home/scion/.scion/hub.db")
 cur = con.cursor()
@@ -114,6 +113,11 @@ for hc_name, aliases in aliases_map.items():
     for hid, cfg_raw in cur.fetchall():
         cfg = json.loads(cfg_raw or "{}")
         cfg["modelAliases"] = aliases
+        if hc_name == "claude":
+            env_map = cfg.get("env") or {}
+            env_map["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "claude-haiku-5-5"
+            env_map["ANTHROPIC_SMALL_FAST_MODEL"] = "claude-haiku-5-5"
+            cfg["env"] = env_map
         cur.execute("UPDATE harness_configs SET config = ? WHERE id = ?", (json.dumps(cfg), hid))
 con.commit()
 PY
@@ -127,7 +131,7 @@ if [[ "${SKIP_SYNC:-0}" != "1" ]]; then
   for hc in claude antigravity gemini-cli; do
     hub_cli --global harness-config sync "${hc}"
   done
-  # Re-apply modelAliases in hub.db and workspace-storage after harness-config sync
+  # Re-apply modelAliases and claude-haiku-5-5 pin in hub.db, harness-configs, and workspace-storage after harness-config sync
   vm_ssh '
     set -euo pipefail
     sudo python3 - <<\PY
@@ -139,12 +143,17 @@ aliases_map = {
     "gemini-cli": {"small": "gemini-3.5-flash-lite", "medium": "gemini-3.8-flash", "large": "gemini-4-argon", "extra-large": "gemini-4-argon"},
 }
 for hc_name, aliases in aliases_map.items():
-    for cfg in pathlib.Path("/home/scion/.scion/workspace-storage").glob(f"hubs/*/harness-configs/global/{hc_name}/config.yaml"):
-        text = cfg.read_text()
-        block = "model_aliases:" + nl + "".join(f"  {k}: {json.dumps(v)}" + nl for k, v in aliases.items())
-        new_text, n = re.subn(r"(?m)^model_aliases:\r?\n(?:  [a-z-]+:.*\r?\n)+", lambda _: block, text, count=1)
-        if n:
-            cfg.write_text(new_text)
+    roots = [
+        pathlib.Path("/home/scion/.scion/harness-configs") / hc_name,
+        pathlib.Path("/opt/scion-source/harnesses") / hc_name,
+    ] + list(pathlib.Path("/home/scion/.scion/workspace-storage").glob(f"hubs/*/harness-configs/global/{hc_name}"))
+    for root in roots:
+        cfg = root / "config.yaml"
+        if cfg.exists():
+            text = cfg.read_text().replace("claude-haiku-4-5", "claude-haiku-5-5")
+            block = "model_aliases:" + nl + "".join(f"  {k}: {json.dumps(v)}" + nl for k, v in aliases.items())
+            new_text, n = re.subn(r"(?m)^model_aliases:\r?\n(?:  [a-z-]+:.*\r?\n)+", lambda _: block, text, count=1)
+            cfg.write_text(new_text if n else text)
 con = sqlite3.connect("/home/scion/.scion/hub.db")
 cur = con.cursor()
 for hc_name, aliases in aliases_map.items():
@@ -152,13 +161,18 @@ for hc_name, aliases in aliases_map.items():
     for hid, cfg_raw in cur.fetchall():
         cfg = json.loads(cfg_raw or "{}")
         cfg["modelAliases"] = aliases
+        if hc_name == "claude":
+            env_map = cfg.get("env") or {}
+            env_map["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "claude-haiku-5-5"
+            env_map["ANTHROPIC_SMALL_FAST_MODEL"] = "claude-haiku-5-5"
+            cfg["env"] = env_map
         cur.execute("UPDATE harness_configs SET config = ? WHERE id = ?", (json.dumps(cfg), hid))
 con.commit()
 PY
-    sudo chown -R scion:scion /home/scion/.scion/workspace-storage 2>/dev/null || true
+    sudo chown -R scion:scion /home/scion/.scion/harness-configs /home/scion/.scion/workspace-storage 2>/dev/null || true
   '
 
-  echo "==> 4. Rendering, importing, and syncing the 12 templates from docs/scion/templates/ via 'scion templates import' + 'sync'"
+  echo "==> 4. Rendering, importing, and syncing the 14 templates from docs/scion/templates/ via 'scion templates import' + 'sync'"
   LOCAL_RENDER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/scion-rendered.XXXXXX")"
   python3 "${INFRA_DIR}/render-templates.py" --out "${LOCAL_RENDER_DIR}"
   vm_ssh "rm -rf /tmp/scion-templates ~/.scion/templates && mkdir -p /tmp/scion-templates ~/.scion/templates"
@@ -176,6 +190,7 @@ import json, pathlib, shutil, sqlite3
 
 model_by_role = {
     "lead": "claude-opus-5-5",
+    "heartbeat": "Gemini 3.8 Flash (Medium)",
     "researcher": "Gemini 4 Argon (High)",
     "product-manager": "Gemini 4 Argon (High)",
     "backend": "claude-sonnet-5-5",
@@ -183,6 +198,7 @@ model_by_role = {
     "frontend": "Gemini 4 Argon (High)",
     "reviewer": "Gemini 4 Argon (High)",
     "eval-lead": "Gemini 4 Argon (High)",
+    "eval-heartbeat": "Gemini 3.8 Flash (Medium)",
     "factory-analyst": "Gemini 4 Argon (High)",
     "search-evaluator": "Gemini 4 Argon (High)",
     "ui-craftsman": "Gemini 4 Argon (High)",
@@ -265,6 +281,14 @@ fi
 echo "==> 5. Configuring both Hub projects (${BUILD_PROJECT} & ${EVAL_PROJECT}), shared workspaces, secrets, and service accounts"
 hub_cli hub env set --scope=hub --always "GOOGLE_CLOUD_PROJECT=${PROJECT_ID}"
 hub_cli hub env set --scope=hub --always "GOOGLE_CLOUD_LOCATION=${VERTEX_LOCATION:-global}"
+# Cap Claude Code 2.1.x context window below the 200k-token Vertex AI pricing cliff, enforce auto-compaction at ~105k-150k tokens,
+# and pin Haiku calls to claude-haiku-5-5 (preventing 404 Not Found on claude-haiku-4-5 and fallback to Opus 5.5).
+hub_cli hub env set --scope=hub --always "CLAUDE_CODE_DISABLE_1M_CONTEXT=1"
+hub_cli hub env set --scope=hub --always "CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000"
+hub_cli hub env set --scope=hub --always "CLAUDE_CODE_MAX_CONTEXT_TOKENS=160000"
+hub_cli hub env set --scope=hub --always "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70"
+hub_cli hub env set --scope=hub --always "ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5"
+hub_cli hub env set --scope=hub --always "ANTHROPIC_SMALL_FAST_MODEL=claude-haiku-5-5"
 
 VM_SA_EMAIL="${VM_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 for sa_email in "${AGENT_SA_EMAIL}" "${DEPLOYER_SA_EMAIL}"; do
@@ -423,7 +447,7 @@ vm_ssh "
   '
 "
 
-echo "==> 6. Starting the 12 standing agents across ${BUILD_PROJECT} and ${EVAL_PROJECT} via 'scion start'"
+echo "==> 6. Starting the 14 standing agents across ${BUILD_PROJECT} and ${EVAL_PROJECT} via 'scion start'"
 gcloud auth print-identity-token 2>/dev/null | vm_ssh "
   set -euo pipefail
   IFS= read -r SCION_HUB_TOKEN; export SCION_HUB_TOKEN
@@ -455,6 +479,7 @@ gcloud auth print-identity-token 2>/dev/null | vm_ssh "
   }
 
   ensure_agent '${BUILD_PROJECT}' 'lead'            'full' '${BUILD_AGENT_SA_ID}'    'wait'   'Read your instructions, then run your wake-up steps.'
+  ensure_agent '${BUILD_PROJECT}' 'heartbeat'       'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for your daily 12:00 UTC heartbeat. End your turn immediately with sciontool status blocked \"waiting: next daily heartbeat\".'
   ensure_agent '${BUILD_PROJECT}' 'researcher'      'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for research briefs from lead. End your turn with sciontool status blocked \"waiting: research request from lead\".'
   ensure_agent '${BUILD_PROJECT}' 'product-manager' 'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for user-story requests from lead. End your turn with sciontool status blocked \"waiting: user-story request from lead\".'
   ensure_agent '${BUILD_PROJECT}' 'backend'         'base' '${BUILD_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from lead. End your turn with sciontool status blocked \"waiting: brief from lead\".'
@@ -463,6 +488,7 @@ gcloud auth print-identity-token 2>/dev/null | vm_ssh "
   ensure_agent '${BUILD_PROJECT}' 'deployer'        'base' '${BUILD_DEPLOYER_SA_ID}' 'nowait' 'Stand by for deploy requests from lead. End your turn with sciontool status blocked \"waiting: deploy request from lead\".'
 
   ensure_agent '${EVAL_PROJECT}'  'eval-lead'        'full' '${EVAL_AGENT_SA_ID}'    'wait'   'Read your instructions, then run your wake-up steps.'
+  ensure_agent '${EVAL_PROJECT}'  'eval-heartbeat'   'base' '${EVAL_AGENT_SA_ID}'    'nowait' 'Stand by for your daily 12:00 UTC heartbeat. End your turn immediately with sciontool status blocked \"waiting: next daily heartbeat\".'
   ensure_agent '${EVAL_PROJECT}'  'factory-analyst'  'base' '${EVAL_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from eval-lead. End your turn with sciontool status blocked \"waiting: brief from eval-lead\".'
   ensure_agent '${EVAL_PROJECT}'  'search-evaluator' 'base' '${EVAL_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from eval-lead. End your turn with sciontool status blocked \"waiting: brief from eval-lead\".'
   ensure_agent '${EVAL_PROJECT}'  'ui-craftsman'     'base' '${EVAL_AGENT_SA_ID}'    'nowait' 'Stand by for briefs from eval-lead. End your turn with sciontool status blocked \"waiting: brief from eval-lead\".'
@@ -485,8 +511,8 @@ if not urow:
 user_id = urow[0]
 
 for slug, lead_name, workers in [
-    (build_slug, 'lead', ['researcher', 'product-manager', 'backend', 'frontend', 'reviewer', 'deployer']),
-    (eval_slug, 'eval-lead', ['factory-analyst', 'search-evaluator', 'ui-craftsman', 'eval-deployer']),
+    (build_slug, 'lead', ['heartbeat', 'researcher', 'product-manager', 'backend', 'frontend', 'reviewer', 'deployer']),
+    (eval_slug, 'eval-lead', ['eval-heartbeat', 'factory-analyst', 'search-evaluator', 'ui-craftsman', 'eval-deployer']),
 ]:
     cur.execute('SELECT id FROM projects WHERE slug = ?', (slug,))
     proj_id = cur.fetchone()[0]
@@ -547,6 +573,6 @@ PY
 "
 
 
-echo "==> 7. Installing the two 15-minute heartbeat schedules (${BUILD_PROJECT}-lead-heartbeat & ${EVAL_PROJECT}-lead-heartbeat)"
+echo "==> 7. Installing the once-per-day heartbeat schedules (${BUILD_PROJECT}-heartbeat -> heartbeat & ${EVAL_PROJECT}-heartbeat -> eval-heartbeat)"
 bash "${INFRA_DIR}/60-factory.sh" tick-install
-echo "==> Done: 2 projects (${BUILD_PROJECT}, ${EVAL_PROJECT}), 12 templates, 12 agents, and 2 15-min heartbeats active."
+echo "==> Done: 2 projects (${BUILD_PROJECT}, ${EVAL_PROJECT}), 14 templates, 14 agents, and once-per-day (${HEARTBEAT_CRON}) dedicated heartbeat schedules active."

@@ -1,0 +1,8 @@
+schema_version: "1"
+description: "Dedicated daily heartbeat & issue-digest agent of the ${BUILD_PROJECT} factory (Antigravity Gemini 3.8 Flash Medium). Lists open issues once per day and passes what is needed to lead."
+default_harness_config: antigravity
+model: medium
+agent_instructions: agents.md
+system_prompt: system-prompt.md
+env:
+  FACTORY_ROLE: heartbeat
