@@ -296,3 +296,26 @@ async def test_needs_human_is_scoped_to_the_current_disruption(client, app):
     rec.state.append_event("occ", "cancellation_detected", {"flight": "AC1240", "reason": "x"})
     assert rec.state.status in (S.RESOLVED, S.RESOLVING)
     assert (await detail(client, jid))["needs_human"] is False  # an earlier disruption's flag
+
+
+async def test_detail_lists_the_rescheduled_pickup_after_a_same_day_secondary(client):  # #490
+    from datetime import timedelta
+
+    from acme.domain.clock import FixedClock
+    from acme.domain.fixtures import DISRUPTION_DETECTED_AT
+
+    app = create_app(FixedClock(DISRUPTION_DETECTED_AT))
+    rt = app.state.runtime
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        (jid,) = await trigger(c)
+        rt.clock.advance(timedelta(hours=8, minutes=57))  # the morning of AC1240
+        assert (
+            await c.post(
+                "/scenario/trigger-cancellation", json={"flight": "AC1240", "reason": "weather"}
+            )
+        ).json() == {"journey_ids": [jid]}
+        d = await detail(c, jid)
+    assert [(t["leg"], t["pickup_at"]) for t in d["transfers"]] == [
+        ("airport_to_hotel", "2026-10-09T23:03:00-03:00"),
+        ("hotel_to_airport", "2026-10-10T08:40:00-03:00"),
+    ]

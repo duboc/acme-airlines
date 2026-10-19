@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import httpx
 import pytest
 
@@ -129,3 +131,76 @@ async def test_api_reflects_bookings_and_resolved_status():
     assert d["status"] == "RESOLVED"
     assert d["hotel"]["hotel_id"] == "HT8842" and len(d["vouchers"]) == 2
     assert "hotel_booked" in sse.text and "voucher_issued" in sse.text
+
+
+# --- a same-day secondary cancellation reschedules the booked hotel pickup (#490) ----------------
+PICKUP_0 = "2026-10-10T05:15:00-03:00"  # AC1240 08:15 minus 3 h
+PICKUP_1 = "2026-10-10T08:40:00-03:00"  # AC1252 11:40 minus 3 h
+TO_HOTEL = "2026-10-09T23:03:00-03:00"  # one hour after the cancellation
+
+
+async def with_hotel_then_secondary():
+    from acme.llm import FakeLlm
+
+    rt = CustomerRuntime(FixedClock(DISRUPTION_DETECTED_AT), llm=FakeLlm())
+    (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
+    rec = rt.journeys[jid]
+    assert rec.hotel is not None and rec.state.status == S.RESOLVED
+    active = lambda: sorted(  # noqa: E731
+        (t["origin"], t["destination"], t["pickup_at"]) for t in rt.sim.partners.transfers.values()
+    )
+    assert active() == [("GRU", "HT8842", TO_HOTEL), ("HT8842", "GRU", PICKUP_0)]
+    return rt, rec, active
+
+
+async def test_a_same_day_secondary_rebook_moves_the_pickup_and_keeps_the_hotel_leg():
+    rt, rec, active = await with_hotel_then_secondary()
+    rt.clock.advance(timedelta(hours=8, minutes=57))  # 07:00 on the 10th: the morning of AC1240
+    await rt.trigger_cancellation("AC1240", "weather")  # AC1252 11:40: a same-day wait, DOC-08
+    assessed = events(rec, "duty_of_care_assessed")[-1].payload
+    assert not assessed["hotel_required"] and not assessed["ground_transfer_required"]
+    assert active() == [("GRU", "HT8842", TO_HOTEL), ("HT8842", "GRU", PICKUP_1)]  # moved, once
+    legs = [(e.payload["leg"], e.payload["reason"]) for e in events(rec, "transfer_arranged")]
+    assert [leg for leg, _ in legs] == ["airport_to_hotel", "hotel_to_airport", "hotel_to_airport"]
+    assert legs[-1][1] == "rescheduled for the new departure"
+    assert len(rt.sim.partners.hotel_bookings) == 1  # the hotel is not booked again
+    assert rec.state.status == S.RESOLVED and not events(rec, "needs_human")
+
+
+async def test_an_overnight_secondary_rebook_also_ends_with_one_moved_pickup():
+    rt, rec, active = await with_hotel_then_secondary()
+    await rt.trigger_cancellation("AC1240", "weather")  # still the night of the 9th: DOC-05 again
+    assert events(rec, "duty_of_care_assessed")[-1].payload["ground_transfer_required"]
+    assert active() == [("GRU", "HT8842", TO_HOTEL), ("HT8842", "GRU", PICKUP_1)]
+
+
+async def test_a_failed_pickup_booking_keeps_the_old_pickup_and_asks_for_a_person():
+    from acme.sim.client import ToolError
+
+    rt, rec, active = await with_hotel_then_secondary()
+    rt.clock.advance(timedelta(hours=8, minutes=57))
+    real = rt.client.call
+
+    async def call(server, tool, **kw):
+        if tool == "transfer.book":
+            raise ToolError("concierge/transfer.book: down")
+        return await real(server, tool, **kw)
+
+    rt.client.call = call
+    await rt.trigger_cancellation("AC1240", "weather")
+    assert active() == [("GRU", "HT8842", TO_HOTEL), ("HT8842", "GRU", PICKUP_0)]  # not cancelled
+    (nh,) = [e for e in events(rec, "needs_human") if e.payload["step"].startswith("transfer")]
+    assert nh.payload["step"] == "transfer:hotel_to_airport"
+    assert rec.state.status != S.RESOLVED
+
+
+async def test_a_same_day_wait_without_a_hotel_books_no_transfer(setup):
+    rt, rec = setup
+    flights = rt.world.flights
+    original = flights["AC1234"].scheduled_departure.replace(hour=10, minute=0)
+    flights["AC1234"].scheduled_departure = original
+    flights["AC1240"].scheduled_departure = original + timedelta(hours=2)  # DOC-08
+    assert rec.hotel is None
+    await run_duty_of_care(rt, rec, DONE)
+    assert rt.sim.partners.transfers == {} and not events(rec, "transfer_arranged")
+    assert rec.state.status == S.RESOLVED
