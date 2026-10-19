@@ -67,6 +67,8 @@ async def run_duty_of_care(rt: CustomerRuntime, rec: JourneyRecord, rebuild: Reb
             ok &= await concierge.book_transfers(
                 rt, rec, e, original["origin"], new_departure, with_hotel=e.hotel_required
             )
+        elif hotel_ok and rec.hotel is not None:  # DOC-08 again, with the hotel already booked
+            ok &= await concierge.reschedule_pickup(rt, rec, original["origin"], new_departure)
         if e.meal_vouchers:
             ok &= await concierge.issue_meal_vouchers(rt, rec, e)
     if not ok:

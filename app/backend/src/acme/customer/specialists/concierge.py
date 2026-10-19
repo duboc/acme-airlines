@@ -17,6 +17,7 @@ from acme.sim.client import ToolError
 PARTNER_HOTEL = "HT8842"
 MEAL_VOUCHER_USD = {"breakfast": "12.00", "lunch": "20.00", "dinner": "25.00"}
 ACTOR = "concierge_agent"
+TRANSFER_LEAD = timedelta(hours=3)  # the hotel pickup is this long before the departure
 
 
 def _needs_human(rec: JourneyRecord, step: str, exc: Exception) -> None:
@@ -54,9 +55,10 @@ async def book_transfers(
     with_hotel: bool = True,
 ) -> bool:
     if with_hotel:
+        hotel_id = rec.hotel.hotel_id if rec.hotel else PARTNER_HOTEL  # the booked one (#490)
         legs = [
-            ("airport_to_hotel", airport, PARTNER_HOTEL, rt.clock.now() + timedelta(hours=1)),
-            ("hotel_to_airport", PARTNER_HOTEL, airport, new_departure - timedelta(hours=3)),
+            ("airport_to_hotel", airport, hotel_id, rt.clock.now() + timedelta(hours=1)),
+            ("hotel_to_airport", hotel_id, airport, new_departure - TRANSFER_LEAD),
         ]
     else:  # DOC-06: an origin resident goes home, no hotel
         legs = [("airport_to_home", airport, "HOME", rt.clock.now() + timedelta(hours=1))]
@@ -87,6 +89,38 @@ async def book_transfers(
             {"transfer_ref": r["transfer_ref"], "leg": leg, "entitlement": "ground_transfer",
              "reason": e.rule_reasons["ground_transfer"]},
         )  # fmt: skip
+    return True
+
+
+async def reschedule_pickup(
+    rt: CustomerRuntime, rec: JourneyRecord, airport: str, new_departure: datetime
+) -> bool:
+    """The passenger already has a hotel and a pickup, and a new disruption moved the departure
+    without a new transfer entitlement (a same-day wait, DOC-08): book the pickup for the new
+    departure and, once that worked, cancel the superseded one. Nothing else is booked (#490)."""
+    if rec.hotel is None:
+        return True
+    superseded = [
+        ev.payload["transfer_ref"]
+        for ev in rec.state.timeline
+        if ev.type == "transfer_arranged" and ev.payload.get("leg") == "hotel_to_airport"
+    ][-1:]
+    at = new_departure - TRANSFER_LEAD
+    try:
+        r = await rt.client.call(
+            "concierge", "transfer.book", origin=rec.hotel.hotel_id, destination=airport,
+            at=at.isoformat(),
+        )  # fmt: skip
+        for ref in superseded:
+            await rt.client.call("concierge", "transfer.cancel", transfer_ref=ref)
+    except ToolError as exc:
+        _needs_human(rec, "transfer:hotel_to_airport", exc)
+        return False
+    rec.state.append_event(
+        ACTOR, "transfer_arranged",
+        {"transfer_ref": r["transfer_ref"], "leg": "hotel_to_airport",
+         "entitlement": "ground_transfer", "reason": "rescheduled for the new departure"},
+    )  # fmt: skip
     return True
 
 
