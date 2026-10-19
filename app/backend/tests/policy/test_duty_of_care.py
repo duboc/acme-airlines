@@ -77,6 +77,13 @@ def test_resident_gets_transfer_but_no_hotel():
     assert e.rule_reasons["ground_transfer"] == "ANAC 400 Art. 27, § 1º"
 
 
+def test_doc06_resident_and_special_needs_overnight_gets_transfer_but_no_hotel():
+    e = ev(passenger_is_origin_resident=True, passenger_has_special_needs=True, wait_hours=10.2)
+    assert e.hotel_required is False and e.ground_transfer_required is True
+    assert e.rule_reasons["hotel"] == "ANAC 400 Art. 27, § 1º"
+    assert e.rule_reasons["ground_transfer"] == "ANAC 400 Art. 27, § 1º"
+
+
 def test_special_needs_daytime_four_hours_gets_hotel():
     e = ev(requires_overnight=False, wait_hours=5, passenger_has_special_needs=True,
            wait_start=time(10), disruption_type="delay")  # fmt: skip
