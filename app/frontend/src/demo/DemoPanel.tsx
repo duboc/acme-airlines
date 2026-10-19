@@ -215,8 +215,7 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
                 if (
                   active &&
                   !state.done &&
-                  ((t.action === 'accept_offer' && state.next_step?.includes('Accept')) ||
-                    (t.action === 'decline_offer' && state.next_step?.includes('No thanks')))
+                  state.next_step?.includes(t.action === 'accept_offer' ? 'Accept' : 'No thanks')
                 ) {
                   setState((prev) => (prev ? applyExpectedStep(prev, preset?.steps) : prev));
                 }

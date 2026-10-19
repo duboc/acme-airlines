@@ -187,7 +187,7 @@ export function applyExpectedStep(prev: ScenarioState, steps?: readonly string[]
     ...prev,
     step_index: nextIndex,
     done: nextIndex >= prev.total_steps,
-    last_step: steps?.[prev.step_index] ?? prev.last_step,
+    last_step: steps?.[prev.step_index] ?? prev.next_step ?? prev.last_step,
     next_step: steps?.[nextIndex] ?? null,
     journey_status: nextStatus,
     flight: c?.flight !== undefined ? c.flight : prev.flight,
