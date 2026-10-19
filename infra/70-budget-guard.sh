@@ -73,7 +73,7 @@ gcloud run deploy "${SVC}" --project="${PROJECT_ID}" --region="${REGION}" \
   --build-service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
   --no-allow-unauthenticated --max-instances=1 --memory=512Mi \
   --network=default --subnet=default --vpc-egress=private-ranges-only \
-  --set-env-vars="HUB_ENDPOINT=http://${VM_IP}:8080,HUB_PROJECT=${HUB_PROJECT_SLUG}" \
+  --set-env-vars="HUB_ENDPOINT=http://${VM_IP}:8080,HUB_PROJECT=${HUB_PROJECT_SLUG},EVAL_PROJECT=${EVAL_PROJECT},PAUSE_ON_BUDGET=${PAUSE_ON_BUDGET:-0}" \
   --set-secrets="SCION_HUB_TOKEN=${TOKEN_SECRET}:latest" --quiet
 URL="$(gcloud run services describe "${SVC}" --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
 gcloud run services add-iam-policy-binding "${SVC}" --region="${REGION}" --project="${PROJECT_ID}" \
