@@ -195,6 +195,9 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
             onClick={() =>
               run(async () => {
                 await sendReply(passengerId, q.text);
+                if (active && !state.done && state.next_step?.includes(`'${q.text}'`)) {
+                  setState((prev) => (prev ? applyExpectedStep(prev, preset?.steps) : prev));
+                }
                 onChanged();
               }, 'Could not send the reply.')
             }
@@ -209,6 +212,14 @@ export function DemoPanel({ passengerId, onStarted, onChanged, resetToken }: Pro
             onClick={() =>
               run(async () => {
                 await postAction(passengerId, t.action);
+                if (
+                  active &&
+                  !state.done &&
+                  ((t.action === 'accept_offer' && state.next_step?.includes('Accept')) ||
+                    (t.action === 'decline_offer' && state.next_step?.includes('No thanks')))
+                ) {
+                  setState((prev) => (prev ? applyExpectedStep(prev, preset?.steps) : prev));
+                }
                 onChanged();
               }, 'Could not send that tap. There may be no open offer.')
             }
