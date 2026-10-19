@@ -319,3 +319,19 @@ async def test_detail_lists_the_rescheduled_pickup_after_a_same_day_secondary(cl
         ("airport_to_hotel", "2026-10-09T23:03:00-03:00"),
         ("hotel_to_airport", "2026-10-10T08:40:00-03:00"),
     ]
+
+
+@pytest.mark.parametrize("reason", ["unscheduled maintenance", "severe weather"])
+async def test_a_manual_primary_trigger_on_the_live_clock_keeps_the_seeded_duty_of_care(
+    client, reason
+):  # #494
+    r = await client.post(
+        "/scenario/trigger-cancellation", json={"flight": "AC1234", "reason": reason}
+    )
+    (jid,) = r.json()["journey_ids"]
+    d = await detail(client, jid)
+    assert sorted(v["amount"] for v in d["vouchers"]) == ["12.00", "25.00"]
+    assert [(t["leg"], t["pickup_at"]) for t in d["transfers"]] == [
+        ("airport_to_hotel", "2026-10-09T23:03:00-03:00"),
+        ("hotel_to_airport", "2026-10-10T05:15:00-03:00"),
+    ]
