@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from acme.customer.specialists.baggage import BaggageSpecialist, BagRequest
 from acme.customer.specialists.common import RebuildResult
 from acme.customer.specialists.irrops import IrropsRebooking, RebookRequest
-from acme.customer.specialists.seat import SeatRequest, SeatSpecialist
+from acme.customer.specialists.seat import SeatRequest, SeatSpecialist, preferred_seat
 from acme.policy.connection_check import check_connection
 from acme.sim.client import SimClient
 from acme.telemetry import specialist_span
@@ -29,8 +29,8 @@ async def rebuild_journey(
 
     pnr = await client.call("pss", "pnr.get", pnr=rec.pnr_locator)
     cancelled = await client.call("pss", "flights.get", flight=cancelled_flight)
-    old_seat = next(
-        (s["seat"] for s in pnr["seats"] if s["flight_number"] == cancelled_flight), None
+    old_seat = preferred_seat(
+        rec, next((s["seat"] for s in pnr["seats"] if s["flight_number"] == cancelled_flight), None)
     )
     tier = (await client.call("crm", "profile.get", passenger_id=rec.passenger_id))["tier"]
     flights = [s["flight_number"] for s in pnr["segments"]]

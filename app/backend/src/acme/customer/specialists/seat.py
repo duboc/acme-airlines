@@ -1,12 +1,17 @@
 """Seat specialist: keep the passenger's seat attributes (window) on the new flight."""
 
+from __future__ import annotations
+
 import re
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel
 
 from acme.customer.specialists.common import Emit
 from acme.sim.client import SimClient
+
+if TYPE_CHECKING:
+    from acme.customer.runtime import JourneyRecord
 
 WINDOW_LETTERS = frozenset("AFK")  # window seats in 3-3 and 3-4-3 layouts (demo simplification)
 _SEAT = re.compile(r"^(\d{1,2})([A-K])$")
@@ -30,6 +35,31 @@ def nearest_window_seat(open_seats: list[str], wanted: str) -> str | None:
         return abs(int(r) - int(row)), letr != letter, int(r)
 
     return min(candidates, key=key)
+
+
+def preferred_seat(rec: JourneyRecord, on_flight: str | None) -> str | None:
+    """The seat the passenger WANTS kept: the one they held before the first disruption (the
+    first `profile_loaded` seat, else the first `seat_held` request), not whatever stands in
+    the PNR now, which may be a courtesy substitute or a voided upgrade (#491). `on_flight` is
+    the seat on the flight being replaced: the last resort, for a journey with no history."""
+    timeline = rec.state.timeline
+    first = next(
+        (
+            e.payload["seat"]
+            for e in timeline
+            if e.type == "profile_loaded" and e.payload.get("seat")
+        ),
+        None,
+    )
+    first = first or next(
+        (
+            e.payload["requested"]
+            for e in timeline
+            if e.type == "seat_held" and e.payload.get("requested")
+        ),
+        None,
+    )
+    return first or on_flight
 
 
 class SeatRequest(BaseModel):
