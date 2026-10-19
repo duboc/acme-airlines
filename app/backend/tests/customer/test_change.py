@@ -278,3 +278,25 @@ async def test_a_journey_without_history_falls_back_to_the_seat_on_the_flight():
     ]
     assert preferred_seat(rec, "9C") == "9C"  # no history: the seat on the flight
     assert preferred_seat(rec, None) is None
+
+
+@pytest.mark.parametrize(
+    ("tool", "specialist"), [("seat.assign", "seat"), ("bag.reroute", "baggage")]
+)
+async def test_specialist_tool_error_escalates_to_human(setup, monkeypatch, tool, specialist):
+    from acme.sim.client import SimClient, ToolError
+
+    real = SimClient.call
+
+    async def flaky(self, server, name, **kw):
+        if name == tool:
+            raise ToolError(f"{name} down")
+        return await real(self, server, name, **kw)
+
+    monkeypatch.setattr(SimClient, "call", flaky)
+    rt, rec = setup
+    before = len(sent(rt))
+    await rt.handle_inbound(PID, "Can I leave after 10am?")
+    assert [e.payload["specialist"] for e in of(rec, "needs_human")] == [specialist]
+    assert rec.state.status == S.REPLANNING and len(rec.state.open_requests) == 1
+    assert [m.text for m in sent(rt)[before:]] == [ESCALATION]
