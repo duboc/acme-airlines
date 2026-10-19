@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import time
+from datetime import time, tzinfo
 from typing import TYPE_CHECKING, Any
 
 from acme import metrics
@@ -196,6 +196,18 @@ async def send_notification(
     )
 
 
+def passenger_zone(rt: CustomerRuntime, rec: JourneyRecord) -> tzinfo:
+    """The passenger-local zone: that of the origin airport's departure (the original flight,
+    else the current one). GRU only when no known flight carries a zone (policy-rules.md)."""
+    detected = next((e for e in rec.state.timeline if e.type == "cancellation_detected"), None)
+    numbers = [detected.payload.get("flight") if detected else None, rec.state.current_flight]
+    for number in numbers:
+        flight = rt.world.flights.get(number) if number else None
+        if flight is not None and flight.scheduled_departure.tzinfo is not None:
+            return flight.scheduled_departure.tzinfo
+    return GRU
+
+
 def notification_due(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
     state, now = rec.state, rt.clock.now()
     if state.status is not DisruptionStatus.RESOLVED:
@@ -208,7 +220,9 @@ def notification_due(rt: CustomerRuntime, rec: JourneyRecord) -> bool:
         for e in current_events
         if e.type == "status_changed" and e.payload.get("to") == DisruptionStatus.RESOLVED
     )
-    return now >= resolved_at + rt.notify_delay and can_send_proactive(state, now.astimezone(GRU))
+    return now >= resolved_at + rt.notify_delay and can_send_proactive(
+        state, now.astimezone(passenger_zone(rt, rec))
+    )
 
 
 async def handle_inbound(
