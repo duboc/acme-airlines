@@ -22,3 +22,7 @@ Dated release verification entries appended by `deployer` (`duboc-acme-airlines`
 ## 2026-10-16 live agent-engine proof and #466: engines d67f606, Cloud Run 00299 (d67f606)
 - Cloud Run `acme-irrops-demo-00299-8jx`, image `irrops-demo:d67f60600a7435f3b9d66eebb22bff8131b06e4c`; engines `19782688084852736` and `1985603925432074240` from Agent Engine Deploy d67f606.
 - `tests/live/test_agent_engine_traces.py -m live`: forced rebuild PASS (happy-path, engine 378.6 ms < 600 ms budget, client 527 ms, tape_miss 0, tape_discarded 0; an earlier run on the previous engines gave 426.6 ms); trace run PASS (1 passed, 580 s, 23 turns over 6 presets with trace ids). #466: reset + start + step 1 back to back fires the cancellation for 4 presets (4/4).
+
+## 2026-10-19 #500 quiet hours use origin airport local zone: Cloud Run 00343 (8173fd2)
+- Cloud Run `acme-irrops-demo-00343-r7f` (previous `00340-ljt`), image `irrops-demo:8173fd22d93dc8f66708784af6477648507f2789`, URL https://acme-irrops-demo-vdhcml5ceq-uc.a.run.app. Deployed by the push workflows IRROPS Demo Deploy (run 39306069637, success) and Agent Engine Deploy (run 39306069690, success); PR #505.
+- Checks via IAP: `/api/healthz` 200 `{"status":"ok","engine":"agent-engine"}`; `/console` 200; `/whatsapp` 200. Quiet-hours behaviour on the live service: not measured. Offline pytest from a clean export: not run.
