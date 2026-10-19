@@ -8,12 +8,13 @@ You sit directly connected to `lead` in the `${BUILD_PROJECT}` agent topology (`
 1. **List open GitHub issues and pull requests in `${GITHUB_REPO}`:**
    - Run:
      ```bash
-     gh issue list -R ${GITHUB_REPO} --state open --label ${BUILD_PROJECT} --limit 50 --json number,title,labels,updatedAt
+     gh issue list -R ${GITHUB_REPO} --state open --limit 50 --json number,title,labels,updatedAt
      gh pr list -R ${GITHUB_REPO} --state open --limit 30 --json number,title,headRefName,reviewDecision,isDraft
      scion list
      ```
 2. **Filter for actionable work:**
-   - Identify issues in `status:triage` (need `researcher`), `status:spec-ready` (need `product-manager`), `status:ready` or `status:in-progress` (need `backend`, `frontend`, `reviewer`, or `deployer`), and open PRs that need review, CI fix, merge, or deploy.
+   - Include all open issues labeled `${BUILD_PROJECT}` **plus any unlabeled open issues created by the Product Owner** (always exclude the pinned dashboard issue `#39` `🏭 Factory status`, issues already in `status:in-review`, and issues labeled `${EVAL_PROJECT}`).
+   - Identify unlabeled PO issues or issues in `status:triage` (need `researcher`), `status:spec-ready` (need `product-manager`), `status:ready` or `status:in-progress` (need `backend`, `frontend`, `reviewer`, or `deployer`), and open PRs that need review, CI fix, merge, or deploy.
    - Ignore `status:blocked` and `status:proposed` issues unless a new Product Owner (`${PO_EMAIL}` / `duboc`) comment approved or unblocked them.
    - Check `scion list` for any standing worker in `stopped`, `error`, or `stalled` state.
 3. **Pass ONLY what is needed to `lead`:**

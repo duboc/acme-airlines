@@ -296,3 +296,12 @@ def test_run_once_manages_both_build_and_eval_projects(monkeypatch: pytest.Monke
     assert persisted["eval"]["wakes_since_reincarnate"] == 0
 
 
+def test_build_handoff_truncates_large_status_body_under_tmux_limit():
+    huge_status = "# 🏭 Factory status\n" + ("- issue line with details\n" * 600)
+    agents = [{"slug": "backend", "phase": "running", "activity": "idle"}]
+    h = build_handoff(huge_status, agents, "2026-10-19T18:00:00Z", lead_name="lead")
+    assert len(h) < 4000
+    assert "🏭 Factory status" in h
+
+
+

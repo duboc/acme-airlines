@@ -96,13 +96,13 @@ case "${1:-status}" in
     admin_on
     for pair in "${BUILD_PROJECT}:${BUILD_HB_NAME}:heartbeat:${BUILD_HB_MSG}" "${EVAL_PROJECT}:${EVAL_HB_NAME}:eval-heartbeat:${EVAL_HB_MSG}"; do
       IFS=':' read -r p n hb_agent msg <<<"${pair}"
-      id="$(sched_id "${n}")"; [[ -z "${id}" ]] || hub_cli --project "${p}" schedule resume "${id}" || true
+      id="$(sched_id "${n}")"; [[ -z "${id}" ]] || hub_cli --project "${p}" schedule resume "${id}" 2>/dev/null || true
       hub_cli --project "${p}" resume "${hb_agent}" "${msg}" 2>/dev/null \
         || hub_cli --project "${p}" message "${hb_agent}" "${msg}"
     done
     for j in acme-factory-watchdog acme-lead-reincarnate; do
-      gcloud scheduler jobs resume "${j}" --location="${REGION}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
+      gcloud scheduler jobs pause "${j}" --location="${REGION}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
     done
-    echo "resumed: once-per-day heartbeats + watchdog schedules active, heartbeat and eval-heartbeat woken" ;;
+    echo "resumed: once-per-day heartbeats active (Cloud Scheduler watchdog kept paused), heartbeat and eval-heartbeat woken" ;;
   *) sed -n '2,10p' "$0"; exit 2 ;;
 esac
