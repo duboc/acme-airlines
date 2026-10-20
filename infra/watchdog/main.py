@@ -248,7 +248,7 @@ Prepared at {now_iso} by `acme-factory-watchdog` from the durable GitHub state.
 ## Role charter
 
 You are `eval-lead`, the evaluation & quality orchestrator of the `acme-airlines-eval` project (`duboc/acme-airlines`).
-You coordinate your standing evaluation roster (`search-evaluator`, `factory-analyst`, `ui-craftsman`, `eval-deployer`), audit deployed `status:in-review` issues against real application & GenAI evaluation criteria, close approved issues or bounce regressions back with evidence, and keep the evaluation observatory dashboard updated.
+You coordinate your standing evaluation roster (`eval-heartbeat`, `search-evaluator`, `factory-analyst`, `ui-craftsman`, `eval-deployer`), audit deployed `status:in-review` issues against real application & GenAI evaluation criteria, close approved issues or bounce regressions back with evidence, and keep the evaluation observatory dashboard updated.
 
 ## Immediate active work (status, next action)
 
@@ -261,9 +261,14 @@ Run one evaluation loop pass now (`scion list`, `gh issue list --label status:in
 
 ## Pending waits and scheduled events
 
-- `acme-factory-watchdog` checks GitHub and agent state every 15 minutes (`*/15 * * * *`) with zero idle LLM cost and wakes you only when `status:in-review` / `area:eval` issues, runs, or worker states change.
-- `acme-airlines-eval-lead-heartbeat` runs every 6 hours (`0 */6 * * *`) as a safety-net fallback.
+- `eval-heartbeat` runs once per day (`0 12 * * *` UTC) on `Gemini 3.8 Flash (Medium)` and messages you only when `status:in-review` or `acme-airlines-eval` work is actionable.
+- `acme-factory-watchdog` runs once per day (`0 12 * * *` UTC) with zero idle LLM cost and wakes you only when `status:in-review` / `area:eval` issues, runs, or worker states change.
 """
+    raw_status = status_issue_body.strip()
+    if len(raw_status) > 800:
+        status_snippet = raw_status[:800] + "\n...(truncated to fit tmux command buffer; check `🏭 Factory status` issue on GitHub for full body)"
+    else:
+        status_snippet = raw_status or "(status issue body was empty — check `gh issue list --search 'Factory status'`)"
     return f"""# Reincarnation handoff
 
 Prepared at {now_iso} by `acme-factory-watchdog` from the durable GitHub status issue.
@@ -271,7 +276,7 @@ Prepared at {now_iso} by `acme-factory-watchdog` from the durable GitHub status 
 ## Role charter
 
 You are `lead`, the tech-lead orchestrator of the `duboc/acme-airlines` software factory.
-You plan, triage, delegate in parallel across your standing roster (`researcher`, `product-manager`, `backend`, `frontend`, `reviewer`, `deployer`), verify reviews and CI, merge PRs, and hand off deployed issues as `status:in-review` for `eval-lead` to approve and close.
+You plan, triage, delegate in parallel across your standing roster (`heartbeat`, `researcher`, `product-manager`, `backend`, `frontend`, `reviewer`, `deployer`), verify reviews and CI, merge PRs, and hand off deployed issues as `status:in-review` for `eval-lead` to approve and close.
 You do not write feature code.
 
 ## Immediate active work (status, next action)
@@ -282,7 +287,7 @@ latest status snapshot below, then wait with
 
 Latest `🏭 Factory status` snapshot:
 
-{status_issue_body.strip() or "(status issue body was empty — check `gh issue list --search 'Factory status'`)"}
+{status_snippet}
 
 ## Canonical files and artifacts
 
@@ -306,8 +311,8 @@ All task state lives on GitHub Issues and PRs; check open `status:in-progress` a
 
 ## Pending waits and scheduled events
 
-- `acme-factory-watchdog` checks GitHub and agent state every 15 minutes (`*/15 * * * *`) with zero idle LLM cost and wakes you only when GitHub or worker states change.
-- `duboc-acme-airlines-lead-heartbeat` runs every 6 hours (`0 */6 * * *`) as a safety-net fallback.
+- `heartbeat` runs once per day (`0 12 * * *` UTC) on `Gemini 3.8 Flash (Medium)` and messages you only when open issues or PRs are actionable.
+- `acme-factory-watchdog` runs once per day (`0 12 * * *` UTC) with zero idle LLM cost and wakes you only when GitHub or worker states change.
 
 ## Open questions to humans (already asked and not yet asked)
 

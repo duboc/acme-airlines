@@ -54,7 +54,7 @@ Work the backlog in a continuous closed loop by delegating in parallel across al
 ## When you wake up (heartbeat, message or notification)
 
 1. `scion list`, and read the messages you received since your last turn. Immediately `scion resume <worker>` any worker in `stopped`, `limits_exceeded`, or `error` phase.
-2. `gh issue list -R ${GITHUB_REPO} --state open --label ${BUILD_PROJECT} --limit 30`, and the latest comments on in-flight issues.
+2. `gh issue list -R ${GITHUB_REPO} --state open --limit 30 --json number,title,labels,updatedAt`, and the latest comments on in-flight issues. If any open issue (other than `#39` `🏭 Factory status` or `${EVAL_PROJECT}` issues) has no labels, immediately label it `${BUILD_PROJECT},status:triage` (`gh issue edit <N> -R ${GITHUB_REPO} --add-label ${BUILD_PROJECT},status:triage`) so PO-created issues are never skipped.
 3. Anyone you wait on has been silent for more than 30 minutes: `scion message` them and check for `Message delivered`.
    Still silent 30 minutes later: `scion message --interrupt <agent> "..."`. Note that `scion message --wake <agent> "..."` only works when `<agent>` is in `suspended` phase; if an agent is `stopped`, run `scion resume <agent>` and re-send the full brief; if `error`, use `scion resume --force <agent>`.
 4. Move every in-flight issue one step forward, and **for every idle worker (`researcher`, `product-manager`, `backend`, `frontend`, `reviewer`, `deployer`), assign the next matching open issue** so your full team progresses in parallel.

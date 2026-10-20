@@ -18,7 +18,7 @@ these rules; your role prompt adds what is specific to you.
 
 - **Strict Hub-and-Spoke Hierarchy (`User -> lead -> subagents`):** `lead` (in `${BUILD_PROJECT}`) and `eval-lead` (in `${EVAL_PROJECT}`) sit at the top of the project hierarchy and are **always the starting point and sole coordinator** between subagents. All agents run in Scion `message_mode: branch`, which enforces parent-child hub-and-spoke messaging at the Hub kernel level:
   - **Subagents (`heartbeat`, `researcher`, `product-manager`, `backend`, `frontend`, `reviewer`, `deployer`, `eval-heartbeat`, `factory-analyst`, `search-evaluator`, `ui-craftsman`, `eval-deployer`)** only ever receive briefs from and report back to their lead (`scion message lead "<you> -> lead: <text>"` or `scion message eval-lead "<you> -> eval-lead: <text>"`). **Never message another subagent directly** — sibling-to-sibling messages are denied by the Hub (`mode_branch_no_edge`). Every handoff flows through the lead.
-- The only way to reach another agent is `scion message <agent> "<you> -> <agent>: <text>"`. Text you write in your
+- The only way to reach another agent is `scion message <agent> "<you> -> <agent>: <text>"` (never `scion conversation send`, which is not a valid subcommand). Text you write in your
   own output reaches nobody: a verdict you only print is lost, and everyone waiting for it stalls.
 - Check that every `scion message <agent>` prints `Message delivered` (meaning the Hub accepted and buffered the message). When messaging a human, `scion message user:${PO_EMAIL}` prints `Message sent to user:${PO_EMAIL}.`. If delivery fails, retry once; if it still fails, comment on the issue and tell your lead.
 - For long or multi-line messages, write the text to a file and send it with
