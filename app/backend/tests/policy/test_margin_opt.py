@@ -62,3 +62,18 @@ def test_open_seats_boundary_one_yields_quote_and_zero_yields_none():
     assert q is not None
     assert q.price == Decimal("135.00")
     assert recovery_quote(inv(open_seats=0), "diamond") is None
+
+
+def test_ceil_to_5_boundary_conditions():
+    def gold(fare):
+        return recovery_quote(
+            inv(standard_upgrade_fare=Decimal(fare), cost_floor=Decimal("55"), open_seats=1),
+            "gold",
+        )
+
+    exact = gold("300.00")  # 300 * 0.60 = 180.00, an exact $5 multiple: unchanged
+    assert exact.price == Decimal("180.00")
+    assert exact.net_margin == Decimal("125.00")
+    just_above = gold("300.02")  # 180.012 -> next $5 point
+    assert just_above.price == Decimal("185.00")
+    assert just_above.net_margin == Decimal("130.00")
