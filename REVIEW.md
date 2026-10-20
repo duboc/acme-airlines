@@ -26,3 +26,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-20T04:54Z | #501 (PR #515) | `7ccd6b0` (`docs/product/architecture.md`) | `bash /tmp/verify.sh` | REQUEST_CHANGES (AC2 missing/merged distinct sections for Telemetry, Outreach, Policy, Demo; inaccurate e2e and containers workflow descriptions) |
 | 2026-10-20T04:59Z | #501 (PR #515) | `fa5551a` (`docs/product/architecture.md`) | `bash /tmp/verify.sh` | REQUEST_CHANGES (Telemetry env var mismatch; CI diagram AR arrow nit) |
 | 2026-10-20T05:03Z | #501 (PR #515) | `7df8378` (`docs/product/architecture.md`) | `bash /tmp/verify.sh` | APPROVE |
+| 2026-10-20T05:29Z | #518 (PR #519) | `332f705` (`test_verify.sh`, `verify.sh`) | `bash verify_issue.sh && bash infra/tests/test_verify.sh` | APPROVE |
