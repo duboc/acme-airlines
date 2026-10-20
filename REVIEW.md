@@ -35,3 +35,5 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-20T12:18Z | #523 (PR #525) | `1d59ed0` (`policy-rules.md`) | `awk` checks for open_seats and cost_floor | APPROVE |
 | 2026-10-20T12:57Z | #527 (PR #529) | `3af0d30` (`AGENTS.md`) | `bash /tmp/verify527.sh` | APPROVE |
 | 2026-10-20T13:00Z | #528 (PR #530) | `bf9a7eb` (`AGENTS.md`) | `bash /tmp/verify528.sh` | APPROVE |
+| 2026-10-20T13:03Z | #526 (PR #531) | `80bae45` (`test-strategy.md`) | `bash /tmp/verify526.sh` | REQUEST_CHANGES (Missing factory VM context; Layer N references outdated) |
+| 2026-10-20T13:13Z | #526 (PR #531) | `525608b` (`test-strategy.md`) | `bash /tmp/verify526.sh` | APPROVE |
