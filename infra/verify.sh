@@ -185,12 +185,19 @@ gh_var() {
 }
 
 # engines_ok <reasoningEngines-list-json>: exactly one acme-customer-agent and one
-# acme-sales-agent, both running as acme-agent-engine, with no reserved GOOGLE_CLOUD_* env.
+# acme-sales-agent, both running as acme-agent-engine with spec.deploymentSpec.maxInstances == 1
+# (state is container-local, #200; missing/unreadable/non-numeric fails), with no reserved
+# GOOGLE_CLOUD_* env.
 engines_ok() {
   local j="$1" sa="acme-agent-engine@${PROJECT_ID:-acme-airlines-factory}.iam.gserviceaccount.com" n bad
   for n in acme-customer-agent acme-sales-agent; do
     [[ "$(jq --arg n "${n}" '[.reasoningEngines[]? | select(.displayName==$n)] | length' <<<"${j}")" == 1 ]] \
       || { echo "expected exactly one engine '${n}'"; return 1; }
+  done
+  for n in acme-customer-agent acme-sales-agent; do
+    jq -e --arg n "${n}" '[.reasoningEngines[]? | select(.displayName==$n)
+          | .spec.deploymentSpec.maxInstances | (type=="number" and . == 1)] | all' <<<"${j}" >/dev/null 2>&1 \
+      || { echo "engine '${n}' maxInstances must be 1 (state is container-local, #200)"; return 1; }
   done
   bad="$(jq -r --arg sa "${sa}" '[.reasoningEngines[]? | select(.displayName|startswith("acme-"))
           | select((.spec.serviceAccount // "") != $sa) | .displayName] | join(",")' <<<"${j}")"
