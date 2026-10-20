@@ -572,6 +572,36 @@ PY
   scion --project '${EVAL_PROJECT}'  set-message-mode eval-lead branch --cascade >/dev/null 2>&1 || true
 "
 
+  vm_ssh '
+    set -euo pipefail
+    cat <<\EOF > /tmp/install-scion-shim.sh
+#!/usr/bin/env bash
+set -euo pipefail
+if [ ! -f /usr/local/bin/scion.real ]; then
+  cp -a /usr/local/bin/scion /usr/local/bin/scion.real
+fi
+cat <<\SHIM > /usr/local/bin/scion
+#!/usr/bin/env bash
+if [ "${1:-}" = "conversation" ] && { [ "${2:-}" = "send" ] || [ "${2:-}" = "reply" ] || [ "${2:-}" = "message" ]; }; then
+  shift 2
+  raw_target="${1:-}"
+  shift || true
+  cid="${raw_target#conv:}"
+  resolved="$(/usr/local/bin/scion.real conversation list --json 2>/dev/null | jq -r --arg id "$cid" '\''.conversations[]? | select(.id == $id or (.id | startswith($id))) | if .dmPeer.kind == "user" then "user:" + .dmPeer.name else .dmPeer.name end'\'' | head -n 1)"
+  target="${resolved:-$raw_target}"
+  exec /usr/local/bin/scion.real message "$target" "$@"
+fi
+exec /usr/local/bin/scion.real "$@"
+SHIM
+chmod +x /usr/local/bin/scion
+EOF
+    chmod +x /tmp/install-scion-shim.sh
+    for c in $(sudo docker ps --format "{{.Names}}" | grep -E "--"); do
+      sudo docker cp /tmp/install-scion-shim.sh "$c:/tmp/install-scion-shim.sh"
+      sudo docker exec -u root "$c" /tmp/install-scion-shim.sh
+    done
+  '
+
 
 echo "==> 7. Installing the once-per-day heartbeat schedules (${BUILD_PROJECT}-heartbeat -> heartbeat & ${EVAL_PROJECT}-heartbeat -> eval-heartbeat)"
 bash "${INFRA_DIR}/60-factory.sh" tick-install
