@@ -27,6 +27,8 @@ uv run python -W ignore scripts/engine_smoke.py /tmp/staged
 # Frontend (React, TypeScript, Vite, Vitest)
 cd app/frontend
 npm ci && npm run lint && npm test && npm run build
+npx playwright install --with-deps chromium
+npm run e2e
 ```
 
 ## 2. Project Architecture & Domain Rules ("Two Goals, One Guardrail")
