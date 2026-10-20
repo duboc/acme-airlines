@@ -7,12 +7,13 @@ Owner: `acme-qa`. Companion to the MVP plan and the product brief
 
 | Layer | What it proves | Where | In CI |
 |-------|----------------|-------|-------|
-| 1. Unit / policy | Pure logic: domain, `connection_check`, `duty_of_care`, `margin_opt`, `guardrail_offer` | `tests/domain`, `tests/policy`, `tests/unit` | yes |
-| 2. MCP contract | Each simulated system's tools, schemas and per-caller allowlist | `tests/sim` | yes |
-| 3. Scenario | Brief scenarios 1–5 end to end through `ScenarioDriver` | `tests/scenario` | yes |
-| 4. Governance | Sales never reaches the passenger; no offer before resolution (architecture, structured offers, TOCTOU races) | `tests/governance` (#22 part 1, #29 part 2) | yes |
-| 5. UI E2E | Playwright narrative against the running stack (#23) | `app/frontend` | yes (`.github/workflows/e2e.yml`) |
-| 6. Live smoke | Real Gemini on Vertex AI `global` | `-m live` | **opt-in**, factory VM only |
+| 1. Unit / policy / state | Pure logic: domain, policy, memory stores, shared state, API routes, demo logic | `tests/api`, `tests/demo`, `tests/domain`, `tests/memory`, `tests/policy`, `tests/state`, `tests/unit` | yes |
+| 2. Agents / engines | Agent loops (Customer, Sales), Vertex AI engine wrappers, deterministic replay | `tests/customer`, `tests/engines`, `tests/sales` | yes |
+| 3. MCP contract | Each simulated system's tools, schemas and per-caller allowlist | `tests/sim` | yes |
+| 4. Scenario | Brief scenarios 1–5 end to end through `ScenarioDriver` | `tests/scenario` | yes |
+| 5. Governance | Sales never reaches the passenger; no offer before resolution (architecture, structured offers, TOCTOU races) | `tests/governance` (#22 part 1, #29 part 2) | yes |
+| 6. UI E2E | Playwright narrative against the running stack (#23) | `app/frontend` | yes (`.github/workflows/e2e.yml`) |
+| 7. Live smoke | Real Gemini on Vertex AI `global` | `tests/live` | no (`-m "not live"`) |
 
 Test at the lowest layer that captures the behaviour. CI runs `pytest -m "not live"`; the
 `live` marker is deselected by default (`addopts`).
