@@ -154,7 +154,7 @@ Located in `.github/workflows/`, these handle automation:
 - `.github/workflows/observatory-deploy.yml`: Deploys the observatory components.
 
 ### Telemetry
-OpenTelemetry is used to collect metrics and distributed traces, sending them to Google Cloud (when ACME_ENABLE_TRACING or ACME_ENABLE_TELEMETRY is set).
+OpenTelemetry is used to collect metrics and distributed traces, sending them to Google Cloud (when ACME_ENABLE_TRACING or GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY is set).
 - **Tracing (`app/backend/src/acme/telemetry.py`):** Instruments spans and exports them to Cloud Trace via CloudTraceSpanExporter. Spans strip PII.
 - **Metrics (`app/backend/src/acme/metrics.py`):** Defines business metrics (e.g. acme.guardrail.decisions, acme.offers, acme.scenario.rebuild.duration) and exports them to Cloud Monitoring via CloudMonitoringMetricsExporter (polled periodically).
 
@@ -196,7 +196,7 @@ sequenceDiagram
     
     Dev->>GH: Push commit / PR
     GH->>GH: Run ci.yml, e2e.yml, mutation.yml
-    GH->>AR: containers.yml builds/tests images
+    GH->>GH: containers.yml builds/tests images
     GH->>AR: irrops-deploy.yml pushes images to AR
     GH->>CR: irrops-deploy.yml deploys API
     GH->>Vertex: agent-engine-deploy.yml uploads engines
