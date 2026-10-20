@@ -346,7 +346,7 @@ advances the #229 no-offer closure, all driven by the runtime's `Clock`. Scenari
 happen with no API client connected. The loop shares the per-journey and runtime locks with every other
 path. A failing iteration is logged (exception type only) and retried with exponential backoff and
 jitter (1 s doubling to 30 s, reset by a success); it never ends the loop, and shutdown cancels it
-cleanly. **GET endpoints are read-only**: `/whatsapp/{id}/messages` and `/journeys/{id}` no longer tick.
+cleanly. **GET endpoints are read-only**: `/whatsapp/{id}/messages`, `/journeys/{id}`, and `GET /journeys` no longer tick. `GET /journeys` lists journeys and returns a `list[JourneySummary]` containing `journey_id`, `passenger_id`, and `status` (`app/backend/src/acme/api/app.py` at line 339, `app/backend/src/acme/api/engine_backend.py:519`).
 Presets still drive time explicitly (the `notify` step calls `tick()`), and the scenario driver's
 `advance_clock` does too.
 
