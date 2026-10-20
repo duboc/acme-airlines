@@ -227,3 +227,16 @@ def test_a_connection_that_is_already_missed_rounds_down_to_a_negative_minute():
 
     r = check_connection("SCL", T0, T0 - timedelta(seconds=30), mct_minutes=0)
     assert (r.connection_minutes, r.feasible) == (-1, False)  # floor, not truncation toward zero
+
+
+@pytest.mark.parametrize(
+    ("reason", "hours", "eligible"),
+    [
+        ("technical_maintenance", 3.99, False),
+        ("technical_maintenance", 4.0, True),
+        ("force_majeure", 4.0, False),
+    ],
+)
+def test_doc10_compensation_boundary(reason, hours, eligible):
+    e = ev(disruption_reason=reason, wait_hours=hours)
+    assert e.compensation_eligible is eligible
