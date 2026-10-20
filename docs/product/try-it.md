@@ -286,4 +286,4 @@ To monitor the operational health, cost, and agent activity of the software fact
 
 - **Observatory URL:** [https://acme-observatory-vdhcml5ceq-uc.a.run.app](https://acme-observatory-vdhcml5ceq-uc.a.run.app) (IAP-protected)
 - **Features:** Real-time factory spend, Gemini model token consumption, agent run traces, and budget guard status.
-- **Details:** See the deployment docs.
+- **Details:** See [`observatory/README.md`](../../observatory/README.md).
