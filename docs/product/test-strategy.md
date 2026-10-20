@@ -13,7 +13,7 @@ Owner: `acme-qa`. Companion to the MVP plan and the product brief
 | 4. Scenario | Brief scenarios 1–5 end to end through `ScenarioDriver` | `tests/scenario` | yes |
 | 5. Governance | Sales never reaches the passenger; no offer before resolution (architecture, structured offers, TOCTOU races) | `tests/governance` (#22 part 1, #29 part 2) | yes |
 | 6. UI E2E | Playwright narrative against the running stack (#23) | `app/frontend` | yes (`.github/workflows/e2e.yml`) |
-| 7. Live smoke | Real Gemini on Vertex AI `global` | `tests/live` | no (`-m "not live"`) |
+| 7. Live smoke | Real Gemini on Vertex AI `global` | `tests/live` | **opt-in**, factory VM only (excluded from CI by `-m "not live"`) |
 
 Test at the lowest layer that captures the behaviour. CI runs `pytest -m "not live"`; the
 `live` marker is deselected by default (`addopts`).
