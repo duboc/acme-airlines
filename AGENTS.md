@@ -15,6 +15,10 @@ uv sync --frozen
 uv run ruff check
 uv run ruff format --check
 uv run pytest -m "not live"
+uv run pytest -m budget --no-cov -q -s
+cd ../..
+python3 .github/scripts/check_action_pins.py
+python3 -m unittest discover -s .github/scripts -v
 
 # Clean-venv Agent Engine packaging smoke
 uv run python -W ignore -m acme.engines.stage /tmp/staged
@@ -23,6 +27,8 @@ uv run python -W ignore scripts/engine_smoke.py /tmp/staged
 # Frontend (React, TypeScript, Vite, Vitest)
 cd app/frontend
 npm ci && npm run lint && npm test && npm run build
+npx playwright install --with-deps chromium
+npm run e2e
 ```
 
 ## 2. Project Architecture & Domain Rules ("Two Goals, One Guardrail")
