@@ -79,6 +79,8 @@ Formula (all amounts USD, `Decimal`):
     price      = clamp(price, cost_floor, standard_fare)
     net_margin = price - cost_floor
 
+Note: No quote is produced if `open_seats <= 0` or if `cost_floor >= standard_upgrade_fare`. This is verified in `app/backend/src/acme/policy/margin_opt.py` and `app/backend/tests/policy/test_margin_opt.py`.
+
 Tier discount table (`RECOVERY_DISCOUNT_PCT`):
 - `diamond`: 55% off (Mariana: $290 standard → $130.50 → $135 price, cost floor $55, net margin +$80)
 - `gold`: 40% off
