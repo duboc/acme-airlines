@@ -50,7 +50,7 @@ flowchart TD
 
 ## Layers
 
-### Frontend (Console / WhatsApp)
+### Frontend
 The frontend is a React + Vite application found in `app/frontend/`.
 - **Operator Console:** Located in `app/frontend/src/console/`.
 - **WhatsApp Emulator:** Located in `app/frontend/src/whatsapp/`.
@@ -73,7 +73,7 @@ The main backend is built with FastAPI. It handles incoming requests, orchestrat
 - `app/backend/src/acme/api/scenarios.py`: Scenario runner and evaluation logic.
 - `app/backend/src/acme/api/openapi.py`: Custom OpenAPI schema generation.
 
-### ADK Agents & A2A Communication
+### ADK Agents/Specialists + A2A
 Agents are built with the Google Agent Development Kit (ADK) and interact via Agent-to-Agent (A2A) protocols. A2A carries capabilities, inputs, and payloads between the Customer and Sales agents.
 
 - **Customer Agent:** The main conversational/orchestration agent (`app/backend/src/acme/customer/adk_agent.py`), backed by skills (`app/backend/src/acme/customer/skills.py`).
@@ -95,9 +95,11 @@ The core IRROPS customer journey state machine lives in `app/backend/src/acme/cu
 - **Intent (`app/backend/src/acme/customer/intent.py`):** Determines passenger needs.
 - **Change & Rebuild (`app/backend/src/acme/customer/change.py`, `app/backend/src/acme/customer/rebuild.py`):** Evaluates rebooking options using the specialists.
 - **Verify (`app/backend/src/acme/customer/verify.py`):** Validates the rebooking against policy.
-- **Outreach & Quiet Hours (`app/backend/src/acme/customer/outreach.py`, `app/backend/src/acme/customer/quiet_hours.py`):** Contacts the passenger while respecting local time constraints.
 - **Closure (`app/backend/src/acme/customer/closure.py`, `app/backend/src/acme/customer/service_closure.py`, `app/backend/src/acme/customer/conversion.py`):** Finalises the journey state.
 - **Human Escalation:** If the system cannot resolve the state automatically, it flags needs_human=True for operator intervention.
+
+### Customer Outreach
+- **Outreach & Quiet Hours:** Handles direct communication with passengers (`app/backend/src/acme/customer/outreach.py`, `app/backend/src/acme/customer/quiet_hours.py`). Quiet hours use the origin airport's local zone.
 
 ### Agent Engine
 The system can run locally or via Vertex AI Agent Engine, controlled by ENGINE_MODE.
@@ -123,9 +125,12 @@ The system can run locally or via Vertex AI Agent Engine, controlled by ENGINE_M
 | `app/backend/src/acme/diagnostics.py` | Diagnostic tools and system probes. |
 | `app/backend/src/acme/logging_setup.py` | Centralised logging configuration. |
 
-### Policy & Simulators
+### Policy Engine
 - **Policy Engine:** Business rules and guards (`app/backend/src/acme/policy/`).
+
+### Demo / Simulators
 - **Simulators:** Mocks for external APIs like DCS and loyalty systems (`app/backend/src/acme/sim/`).
+- **Demo Scenarios:** Guided tours (`app/frontend/src/demo/`, `app/backend/src/acme/demo/front.py`, `app/backend/src/acme/demo/supervisor.py`, `app/backend/src/acme/runtime/scenario.py`).
 
 ### Cloud Run + IAP Infrastructure
 Infrastructure scripts configure Google Cloud resources.
@@ -138,15 +143,20 @@ Infrastructure scripts configure Google Cloud resources.
 ### CI Workflows
 Located in `.github/workflows/`, these handle automation:
 - `.github/workflows/ci.yml`: Runs tests, linting, and type checks on PRs/push to main.
-- `.github/workflows/e2e.yml`: Runs end-to-end Cypress/Playwright tests on PRs.
-- `.github/workflows/containers.yml`: Builds and pushes Docker images.
+- `.github/workflows/e2e.yml`: Runs end-to-end Playwright tests on PRs.
+- `.github/workflows/containers.yml`: Builds and tests Docker images.
 - `.github/workflows/mutation.yml`: Runs mutation testing on backend code.
 - `.github/workflows/pr-size.yml`: Enforces pull request size limits.
-- `.github/workflows/irrops-deploy.yml`: Deploys the IRROPS backend to Cloud Run.
+- `.github/workflows/irrops-deploy.yml`: Pushes the images to Artifact Registry and deploys the IRROPS backend to Cloud Run.
 - `.github/workflows/agent-engine-deploy.yml`: Pushes updated Agent Engine reasoning engines to Vertex AI.
 - `.github/workflows/agent-engine-live-proof.yml`: Runs live verification (smoke tests) against deployed Agent Engines.
 - `.github/workflows/observatory-ci.yml`: CI checks for the observatory components.
 - `.github/workflows/observatory-deploy.yml`: Deploys the observatory components.
+
+### Telemetry
+OpenTelemetry is used to collect metrics and distributed traces, sending them to Google Cloud (when ACME_ENABLE_TRACING or ACME_ENABLE_TELEMETRY is set).
+- **Tracing (`app/backend/src/acme/telemetry.py`):** Instruments spans and exports them to Cloud Trace via CloudTraceSpanExporter. Spans strip PII.
+- **Metrics (`app/backend/src/acme/metrics.py`):** Defines business metrics (e.g. acme.guardrail.decisions, acme.offers, acme.scenario.rebuild.duration) and exports them to Cloud Monitoring via CloudMonitoringMetricsExporter (polled periodically).
 
 ## Sequence Diagram: Disruption Request to Replan Flow
 
@@ -186,7 +196,8 @@ sequenceDiagram
     
     Dev->>GH: Push commit / PR
     GH->>GH: Run ci.yml, e2e.yml, mutation.yml
-    GH->>AR: containers.yml builds/pushes images
+    GH->>AR: containers.yml builds/tests images
+    GH->>AR: irrops-deploy.yml pushes images to AR
     GH->>CR: irrops-deploy.yml deploys API
     GH->>Vertex: agent-engine-deploy.yml uploads engines
     GH->>Vertex: agent-engine-live-proof.yml runs smoke tests
