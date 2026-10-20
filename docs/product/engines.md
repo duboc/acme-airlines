@@ -115,8 +115,7 @@ The governance suites (`tests/governance`) run over **both** transports. Tests u
 `acme.api.engine_backend.EngineBackend` has the scenario and journey interface the API routes use.
 Both `scenario_step` and manual `whatsapp_reply` (`#322`) run a Sales engine `stream_query` turn
 (`EngineBackend._tick_sales`, its own trace) and refresh the Customer scenario state/tape when a
-preset is active. Env: `AGENT_ENGINE_CUSTOMER`, `AGENT_ENGINE_SALES` (full resource names; startup
-fails without them). CI routes the calls to the local engine apps, and the six presets are
+preset is active. Env: `AGENT_ENGINE_CUSTOMER`, `AGENT_ENGINE_SALES` (full resource names; lazy-load behaviour: a 503 on the first engine call, checked in `app/backend/src/acme/api/engine_backend.py` and `docs/product/deploy.md`). CI routes the calls to the local engine apps, and the six presets are
 structurally equal to local mode. Bodies are never logged. See `docs/product/deploy.md`.
 
 ### Security boundary
