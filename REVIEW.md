@@ -30,3 +30,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-20T05:42Z | #517 (PR #521) | `21b93fc` (`engines.md`) | `bash /tmp/verify517.sh` | APPROVE |
 | 2026-10-20T05:40Z | #516 (PR #520) | `ed07596` (`test-strategy.md`, `try-it.md`) | `bash /tmp/verify516_2.sh` | REQUEST_CHANGES (observatory deployment link missing) |
 | 2026-10-20T05:49Z | #516 (PR #520) | `bb94cee` (`test-strategy.md`, `try-it.md`) | `bash /tmp/verify516.sh` (custom cut-based verifier) | APPROVE |
+| 2026-10-20T12:09Z | #523 (PR #525) | `29da59b` (`policy-rules.md`) | `awk` checks for open_seats and cost_floor | REQUEST_CHANGES (Note misses the pct is None / ineligible tier condition) |
