@@ -34,3 +34,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-20T12:09Z | #523 (PR #525) | `29da59b` (`policy-rules.md`) | `awk` checks for open_seats and cost_floor | REQUEST_CHANGES (Note misses the pct is None / ineligible tier condition) |
 | 2026-10-20T12:18Z | #523 (PR #525) | `1d59ed0` (`policy-rules.md`) | `awk` checks for open_seats and cost_floor | APPROVE |
 | 2026-10-20T13:03Z | #526 (PR #531) | `80bae45` (`test-strategy.md`) | `bash /tmp/verify526.sh` | REQUEST_CHANGES (Missing factory VM context; Layer N references outdated) |
+| 2026-10-20T13:13Z | #526 (PR #531) | `525608b` (`test-strategy.md`) | `bash /tmp/verify526.sh` | APPROVE |
