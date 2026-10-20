@@ -28,3 +28,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-20T05:03Z | #501 (PR #515) | `7df8378` (`docs/product/architecture.md`) | `bash /tmp/verify.sh` | APPROVE |
 | 2026-10-20T05:29Z | #518 (PR #519) | `332f705` (`test_verify.sh`, `verify.sh`) | `bash verify_issue.sh && bash infra/tests/test_verify.sh` | APPROVE |
 | 2026-10-20T05:40Z | #516 (PR #520) | `ed07596` (`test-strategy.md`, `try-it.md`) | `bash /tmp/verify516_2.sh` | REQUEST_CHANGES (observatory deployment link missing) |
+| 2026-10-20T05:49Z | #516 (PR #520) | `bb94cee` (`test-strategy.md`, `try-it.md`) | `bash /tmp/verify516.sh` (custom cut-based verifier) | APPROVE |
