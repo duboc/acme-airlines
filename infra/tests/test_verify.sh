@@ -119,11 +119,22 @@ eexpect() {  # eexpect <0|1> <name> <json>
   if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
 }
 SA_OK="acme-agent-engine@acme-airlines-factory.iam.gserviceaccount.com"
-mkeng() { printf '{"displayName":"%s","name":"projects/p/locations/us-central1/reasoningEngines/%s","spec":{"serviceAccount":"%s","deploymentSpec":{"env":[%s]}}}' "$1" "$2" "$3" "$4"; }
+# mkeng <name> <id> <sa> <env-json-items> [maxInstances-json; default 1; "-" omits the field]
+mkeng() {
+  local mx="${5:-1}" field=""
+  [[ "${mx}" == "-" ]] || field="\"maxInstances\":${mx},"
+  printf '{"displayName":"%s","name":"projects/p/locations/us-central1/reasoningEngines/%s","spec":{"serviceAccount":"%s","deploymentSpec":{%s"env":[%s]}}}' "$1" "$2" "$3" "${field}" "$4"
+}
 C="$(mkeng acme-customer-agent 1 "$SA_OK" '{"name":"LLM_MODE","value":"vertex"},{"name":"ACME_GENAI_LOCATION","value":"global"}')"
 S="$(mkeng acme-sales-agent 2 "$SA_OK" '{"name":"LLM_MODE","value":"vertex"}')"
 eexpect 0 "both engines, right SA, clean env" "{\"reasoningEngines\":[$C,$S]}"
 eexpect 1 "no engines" '{}'
+eexpect 1 "customer maxInstances=2" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '' 2),$S]}"
+eexpect 1 "sales maxInstances=2" "{\"reasoningEngines\":[$C,$(mkeng acme-sales-agent 2 "$SA_OK" '' 2)]}"
+eexpect 1 "customer maxInstances missing" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '' -),$S]}"
+eexpect 1 "sales maxInstances missing" "{\"reasoningEngines\":[$C,$(mkeng acme-sales-agent 2 "$SA_OK" '' -)]}"
+eexpect 1 "maxInstances non-numeric" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '' '"1"'),$S]}"
+eexpect 1 "maxInstances null" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 "$SA_OK" '' null),$S]}"
 eexpect 1 "sales missing" "{\"reasoningEngines\":[$C]}"
 eexpect 1 "duplicate customer" "{\"reasoningEngines\":[$C,$C,$S]}"
 eexpect 1 "wrong SA" "{\"reasoningEngines\":[$(mkeng acme-customer-agent 1 other@x '' ),$S]}"
