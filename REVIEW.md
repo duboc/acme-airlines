@@ -37,3 +37,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-20T13:00Z | #528 (PR #530) | `bf9a7eb` (`AGENTS.md`) | `bash /tmp/verify528.sh` | APPROVE |
 | 2026-10-20T13:03Z | #526 (PR #531) | `80bae45` (`test-strategy.md`) | `bash /tmp/verify526.sh` | REQUEST_CHANGES (Missing factory VM context; Layer N references outdated) |
 | 2026-10-20T13:13Z | #526 (PR #531) | `525608b` (`test-strategy.md`) | `bash /tmp/verify526.sh` | APPROVE |
+| 2026-10-20T13:49Z | #532 (PR #542) | `2a359ea` (`engines.md`) | `bash /tmp/verify532.sh` | APPROVE |
