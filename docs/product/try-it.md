@@ -271,7 +271,7 @@ Tests time-of-check / time-of-use (TOCTOU) race condition protection (verifying 
 ### Two-Mode Architecture (`ENGINE_MODE=agent-engine` vs `ENGINE_MODE=local`)
 - **Hosted Agent Engine mode (`ENGINE_MODE=agent-engine`, `.github/workflows/irrops-deploy.yml:25`):** When `AGENT_ENGINE_CUSTOMER` and `AGENT_ENGINE_SALES` are configured, `acme-irrops-demo` runs `create_engine_app()` and proxies `/scenarios*`, `/journeys*`, and `/whatsapp*` to `acme-customer-agent` and `acme-sales-agent` on Vertex AI Agent Engine. `acme-customer-agent` runs with `LLM_MODE=vertex` (`app/backend/src/acme/engines/deploy.py:73`, `docs/product/engines.md:27`) on the Vertex AI `global` endpoint via Application Default Credentials (`gemini-2.5-flash`), so all 6 `/scenarios*` presets and `/whatsapp*` turns execute against the live Vertex model with deterministic replay tapes across container rebuilds (`docs/product/adr-0103-stateless-engine-scenarios.md`).
 - **Local fallback (`ENGINE_MODE=local`, `LLM_MODE=fake`):** The Cloud Run `acme-irrops-demo` container sets `LLM_MODE=fake` (`app/demo/Dockerfile:27`, `infra/90-irrops-demo-platform.sh:60`) as a `$0` deterministic fallback when Agent Engine resource names are absent. In `ENGINE_MODE=local`, the preset scenarios API (`GET /scenarios`, `POST /scenarios/{id}/start`, `POST /scenarios/{id}/step`) is only mounted when `LLM_MODE=fake` (returning `404 Not Found` if `LLM_MODE=vertex` is set directly on the local in-process app).
-- For deployment and architecture details, see [`docs/product/engines.md`](engines.md), [`docs/product/demo-script.md`](demo-script.md), and [`docs/product/deploy.md`](deploy.md).
+- For deployment and architecture details, see [`docs/product/engines.md`](engines.md), [`docs/product/architecture.md`](architecture.md), and [`docs/product/deploy.md`](deploy.md).
 
 ### Known Limitations in MVP
 1. **Single Narrative Fixture:** The simulator world is seeded with Mariana Silva's flight AC1234. Multi-passenger scaling is post-MVP.
@@ -286,4 +286,4 @@ To monitor the operational health, cost, and agent activity of the software fact
 
 - **Observatory URL:** [https://acme-observatory-vdhcml5ceq-uc.a.run.app](https://acme-observatory-vdhcml5ceq-uc.a.run.app) (IAP-protected)
 - **Features:** Real-time factory spend, Gemini model token consumption, agent run traces, and budget guard status.
-- **Details:** See [`docs/observatory/platform-contract.md`](../observatory/platform-contract.md).
+- **Details:** See the deployment docs.

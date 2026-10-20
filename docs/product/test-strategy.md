@@ -1,6 +1,6 @@
 # Test strategy
 
-Owner: `acme-qa`. Companion to the MVP plan ([mvp-plan](mvp-plan.md)) and the product brief
+Owner: `acme-qa`. Companion to the MVP plan and the product brief
 ([irrops-use-case](irrops-use-case.md)). Run everything from `app/backend` with `uv run pytest`.
 
 ## Test pyramid
