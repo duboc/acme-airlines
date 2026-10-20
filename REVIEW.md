@@ -33,4 +33,5 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-20T12:08Z | #522 (PR #524) | `f5e8512` (`policy-rules.md`) | `awk` check for zero_pressure cancelled flight | APPROVE |
 | 2026-10-20T12:09Z | #523 (PR #525) | `29da59b` (`policy-rules.md`) | `awk` checks for open_seats and cost_floor | REQUEST_CHANGES (Note misses the pct is None / ineligible tier condition) |
 | 2026-10-20T12:18Z | #523 (PR #525) | `1d59ed0` (`policy-rules.md`) | `awk` checks for open_seats and cost_floor | APPROVE |
+| 2026-10-20T12:57Z | #527 (PR #529) | `3af0d30` (`AGENTS.md`) | `bash /tmp/verify527.sh` | APPROVE |
 | 2026-10-20T13:00Z | #528 (PR #530) | `bf9a7eb` (`AGENTS.md`) | `bash /tmp/verify528.sh` | APPROVE |
