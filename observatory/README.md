@@ -87,7 +87,7 @@ Tests and lint (from `observatory/collector`):
 uv sync --frozen
 OBSERVATORY_DATA=fake uv run pytest
 uv run ruff check && uv run ruff format --check
-docker build observatory/collector
+docker build .
 ```
 
 ## Collector health
