@@ -42,3 +42,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-20T13:56Z | #541 (PR #544) | `d7a5cb9` (`test_policy_boundaries.py`) | `cd app/backend && uv run pytest tests/policy/test_policy_boundaries.py::test_doc10_compensation_boundary --no-cov -q` | APPROVE |
 | 2026-10-20T14:15Z | #547 (PR #548) | `86cdc3b` (`try-it.md`) | `bash /tmp/wt-547-verify.sh` | APPROVE |
 | 2026-10-21T12:09Z | #550 (PR #553) | `f0d0c35` (`verify.sh`) | `bash verify_issue.sh` | REQUEST_CHANGES (e2e list mismatch) |
+| 2026-10-21T12:12Z | #550 (PR #553 v2) | `e26a3b2` (`verify.sh`, `03-verification-and-eval.md`) | `bash /tmp/verify550.sh`; verified probe counts | APPROVE |
