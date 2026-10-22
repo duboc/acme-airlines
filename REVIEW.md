@@ -47,3 +47,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-21T12:12Z | #550 (PR #553 v2) | `e26a3b2` (`verify.sh`, `03-verification-and-eval.md`) | `bash /tmp/verify550.sh`; verified probe counts | APPROVE |
 | 2026-10-22T12:15Z | #557 (PR #558) | `4e81597` (`test_duty_of_care.py`, `test_policy_boundaries.py`) | `bash /tmp/verify557.sh`; tested DOC-09 mutation (`>= 4.0` -> `> 4.0`) | APPROVE |
 | 2026-10-22T12:24Z | #556 (PR #559) | `405f0b0` (`NotFoundPage.test.tsx`, `WhatsAppPage.test.tsx`) | `npm test`; `npm run lint`; mutated passenger ID to verify test | APPROVE |
+| 2026-10-22T12:47Z | #562 (PR #566) | `976dafa` (`ConsolePage.test.tsx`) | `npm test`; `npm run lint`; `disabled={false}` mutation test | APPROVE |
