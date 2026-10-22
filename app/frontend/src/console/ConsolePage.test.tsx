@@ -300,6 +300,34 @@ describe('ConsolePage', () => {
       expect(capturedBody).toEqual({ flight: 'AC1234', reason: 'severe weather' });
     });
 
+    it('test_buttons_disabled_while_busy', async () => {
+      let resolveTrigger: (value: unknown) => void;
+      const triggerPromise = new Promise((resolve) => {
+        resolveTrigger = resolve;
+      });
+      fetchMock.mockImplementation((url: string) => {
+        if (url === '/api/scenario/trigger-cancellation') return triggerPromise;
+        if (url === '/api/scenarios') return json([]);
+        if (url.startsWith('/api/whatsapp/')) return json([]);
+        if (url === '/api/journeys') return json([]);
+        if (url === '/api/journeys/J-1') return json(resolved);
+        return json({}, 404);
+      });
+
+      render(<ConsolePage />);
+
+      const triggerBtn = screen.getByRole('button', { name: 'Trigger AC1234 cancellation' });
+      const resetBtn = screen.getByRole('button', { name: 'Reset' });
+
+      await userEvent.click(triggerBtn);
+
+      expect(triggerBtn).toBeDisabled();
+      expect(resetBtn).toBeDisabled();
+
+      resolveTrigger!({ ok: true, json: async () => ({ journey_ids: ['J-1'] }) });
+      await waitFor(() => expect(resetBtn).toBeEnabled());
+    });
+
     it('renders and triggers a secondary flight cancellation button when open on a replacement flight (#478)', async () => {
       existing = [summary];
       detail = resolved;
