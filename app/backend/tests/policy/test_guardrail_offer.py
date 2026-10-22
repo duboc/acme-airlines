@@ -137,6 +137,14 @@ def test_rule4_zero_margin_ok():
     assert evaluate(make_journey(), make_offer(net_margin="0"), inv).approved
 
 
+def test_rule4_margin_minus_one_rejected():
+    inv = INVENTORY.model_copy(update={"cost_floor": Decimal("55")})
+    d = evaluate(make_journey(), make_offer(price="54", net_margin="-1"), inv)
+    assert not d.approved
+    assert "negative_margin" in d.reasons
+    assert "price_claim_mismatch" not in d.reasons
+
+
 def test_rule5_not_optional_cannot_be_constructed_but_is_checked():
     offer = make_offer().model_copy(update={"optional": False})
     assert run(offer=offer).reasons == ["not_optional"]
