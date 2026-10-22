@@ -108,6 +108,46 @@ def test_hotel_threshold_is_four_hours_and_a_long_day_wait_needs_no_hotel_or_tra
     assert e.rule_reasons["hotel"] == e.rule_reasons["ground_transfer"] == hotel_reason
 
 
+NOT_MET_III = "ANAC 400 Art. 27, III (threshold not met)"
+
+
+@pytest.mark.parametrize(
+    ("hours", "hotel", "transfer", "reason"),
+    [(3.99, False, False, NOT_MET_III), (4.0, True, True, "ANAC 400 Art. 27, III")],
+)
+def test_doc05_overnight_non_resident_hotel_and_transfer_start_at_four_hours(
+    hours, hotel, transfer, reason
+):
+    """DOC-05: wait >= 4h, overnight, not origin resident -> hotel + round-trip transfer."""
+    e = ev(wait_hours=hours, requires_overnight=True, passenger_is_origin_resident=False)
+    assert (e.hotel_required, e.ground_transfer_required) == (hotel, transfer)
+    assert e.rule_reasons["hotel"] == e.rule_reasons["ground_transfer"] == reason
+
+
+@pytest.mark.parametrize(
+    ("hours", "transfer", "reason"),
+    [(3.99, False, NOT_MET_III), (4.0, True, "ANAC 400 Art. 27, § 1º")],
+)
+def test_doc06_overnight_resident_transfer_home_starts_at_four_hours(hours, transfer, reason):
+    """DOC-06: wait >= 4h, overnight, origin resident -> transfer home only, no hotel."""
+    e = ev(wait_hours=hours, requires_overnight=True, passenger_is_origin_resident=True)
+    assert e.hotel_required is False and e.ground_transfer_required is transfer
+    assert e.rule_reasons["hotel"] == e.rule_reasons["ground_transfer"] == reason
+
+
+@pytest.mark.parametrize(
+    ("hours", "hotel", "transfer", "reason"),
+    [(3.99, False, False, NOT_MET_III), (4.0, True, True, "ANAC 400 Art. 27, § 2º")],
+)
+def test_doc07_special_needs_without_overnight_hotel_starts_at_four_hours(
+    hours, hotel, transfer, reason
+):
+    """DOC-07: wait >= 4h, no overnight, special needs (PNAE) -> hotel + transfer."""
+    e = ev(wait_hours=hours, requires_overnight=False, passenger_has_special_needs=True)
+    assert (e.hotel_required, e.ground_transfer_required) == (hotel, transfer)
+    assert e.rule_reasons["hotel"] == e.rule_reasons["ground_transfer"] == reason
+
+
 def test_force_majeure_cites_the_liability_exclusion_and_still_gives_care():
     e = ev(disruption_reason="force_majeure")
     assert (
