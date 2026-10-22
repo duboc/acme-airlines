@@ -251,7 +251,7 @@ def test_rule5_declined_offer_on_subsequently_cancelled_flight_allows_new_disrup
     assert evaluate(j, make_offer(flight="AC1252"), INVENTORY).reasons == ["offer_already_made"]
 
 
-async def test_decline_followed_by_secondary_cancellation_allows_one_new_pitch():
+async def test_decline_followed_by_secondary_cancellation_allows_one_new_pitch(monkeypatch):
     from datetime import timedelta
 
     import httpx
@@ -263,6 +263,7 @@ async def test_decline_followed_by_secondary_cancellation_allows_one_new_pitch()
     from acme.sales.radar import SalesRadar
     from acme.sim.client import SimClient, inprocess_connector
 
+    monkeypatch.setenv("ACME_SALES_TOKEN", "t-sales")  # /a2a fails closed without a token (#575)
     app = create_app(FixedClock(DISRUPTION_DETECTED_AT))
     rt = app.state.runtime
     # Seed premium inventory on AC1240 as well so Disruption 1 can pitch and decline on AC1240.
@@ -275,7 +276,11 @@ async def test_decline_followed_by_secondary_cancellation_allows_one_new_pitch()
             cost_floor=Decimal("55.00"),
         )
     )
-    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://customer")
+    http = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://customer",
+        headers={"Authorization": "Bearer t-sales"},
+    )
     radar = SalesRadar(A2ACustomerClient(http), SimClient(inprocess_connector(rt.sim, "sales")))
     try:
         (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
