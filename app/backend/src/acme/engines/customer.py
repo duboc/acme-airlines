@@ -63,7 +63,7 @@ ENGINE_REQUIREMENTS = [
     "fastapi==0.141.1",
     "a2a-sdk==0.3.26",
     "anyio==4.15.1",
-    "certifi==2026.7.22",
+    "certifi==2026.10.19",
     "cloudpickle==3.1.2",
     "cryptography==50.0.2",
     "grpcio==1.84.0",
