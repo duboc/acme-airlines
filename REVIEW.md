@@ -50,3 +50,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-22T12:38Z | #560 (PR #563) | `76cf871` (`test_guardrail_offer.py`) | `bash /tmp/verify560.sh`; mutated `net < 0` to `net < -1` | APPROVE |
 | 2026-10-22T12:47Z | #562 (PR #566) | `976dafa` (`ConsolePage.test.tsx`) | `npm test`; `npm run lint`; `disabled={false}` mutation test | APPROVE |
 | 2026-10-22T13:02Z | #567 (PR #570) | `6920b27` (`test_policy_boundaries.py`) | `bash /tmp/verify567.sh`; mutated `wait_hours >= 4.0` to `> 4.0` | APPROVE |
+| 2026-10-22T13:56Z | #577 (PR #579) | `52dbe07` (`verify.sh`, `test_verify.sh`) | `bash /tmp/verify579.sh`; mutated fake to vertex | APPROVE |
