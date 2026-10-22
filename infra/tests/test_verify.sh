@@ -181,4 +181,15 @@ ccap_expect 1 "missing CLAUDE_CODE_DISABLE_1M_CONTEXT rejected" $'CLAUDE_CODE_AU
 ccap_expect 1 ">=200k compact window rejected" $'CLAUDE_CODE_DISABLE_1M_CONTEXT=1\nCLAUDE_CODE_AUTO_COMPACT_WINDOW=200000\nCLAUDE_CODE_MAX_CONTEXT_TOKENS=160000\nCLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70\nANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5\nANTHROPIC_SMALL_FAST_MODEL=claude-haiku-5-5'
 ccap_expect 1 "404 claude-haiku-4-5 rejected" $'CLAUDE_CODE_DISABLE_1M_CONTEXT=1\nCLAUDE_CODE_AUTO_COMPACT_WINDOW=150000\nCLAUDE_CODE_MAX_CONTEXT_TOKENS=160000\nCLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70\nANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5\nANTHROPIC_SMALL_FAST_MODEL=claude-haiku-4-5'
 
+# irrops_demo_env_ok <describe-json> (#577)
+iexpect() {  # iexpect <0|1> <name> <json>
+  if irrops_demo_env_ok "$3" >/dev/null; then got=0; else got=1; fi
+  if [[ "${got}" == "$1" ]]; then echo "ok   $2"; else echo "FAIL $2 (want $1, got ${got})"; fails=$((fails+1)); fi
+}
+iexpect 0 "irrops LLM_MODE=fake passes" '{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"ENGINE_MODE","value":"local"},{"name":"LLM_MODE","value":"fake"}]}]}}}}'
+iexpect 1 "irrops LLM_MODE=vertex fails" '{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"LLM_MODE","value":"vertex"}]}]}}}}'
+iexpect 1 "irrops LLM_MODE missing fails" '{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"ENGINE_MODE","value":"local"}]}]}}}}'
+iexpect 1 "irrops no env at all fails" '{"spec":{"template":{"spec":{"containers":[{}]}}}}'
+iexpect 1 "irrops non-JSON fails" 'not json'
+
 if [[ "${fails}" == 0 ]]; then echo "PASS test_verify"; else echo "FAIL test_verify (${fails})"; exit 1; fi

@@ -210,6 +210,17 @@ engines_ok() {
   echo "engines: $(jq -r '[.reasoningEngines[]? | .displayName] | join(", ")' <<<"${j}")"
 }
 
+# irrops_demo_env_ok <cloud-run-service-describe-json>: the single-container demo must run with
+# LLM_MODE exactly "fake" in .spec.template.spec.containers[0].env (no live LLM calls, #577).
+# Missing, any other value, or non-JSON input fails.
+irrops_demo_env_ok() {
+  local v
+  v="$(jq -r '[.spec.template.spec.containers[0].env[]? | select(.name=="LLM_MODE") | .value] | if length==1 then .[0] else "<unset>" end' <<<"$1" 2>/dev/null)" \
+    || { echo "irrops-demo describe output is not valid JSON"; return 1; }
+  [[ "${v}" == "fake" ]] || { echo "LLM_MODE is '${v}', want 'fake'"; return 1; }
+  echo "LLM_MODE=fake"
+}
+
 # agent_traces_ok <cloudtrace-v1-list-json>: at least one trace containing an ADK or ACME
 # engine span (invoke_agent / call_llm / execute_tool / agent_run / acme.*), as opposed to
 # plain Cloud Run request spans.
@@ -453,6 +464,8 @@ check_irrops_demo() {
   scaling="$(jq -r '.spec.template.metadata.annotations["autoscaling.knative.dev/maxScale"] // ""' <<<"${d}")"
   [[ "${ann}" == "true" ]] || { fail irrops-demo "IAP is not enabled on ${svc}"; return 1; }
   [[ "${scaling}" == "1" ]] || { fail irrops-demo "max instances is '${scaling}', want 1 (in-memory demo state)"; return 1; }
+  local envmsg
+  envmsg="$(irrops_demo_env_ok "${d}")" || { fail irrops-demo "${envmsg}"; return 1; }
   # Never public: allUsers/allAuthenticatedUsers must not hold run.invoker.
   if gcloud run services get-iam-policy "${svc}" --region="${r}" --project="${p}" --format=json 2>/dev/null \
        | jq -e '[.bindings[]?.members[]?] | any(. == "allUsers" or . == "allAuthenticatedUsers")' >/dev/null; then
