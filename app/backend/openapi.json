@@ -2305,6 +2305,7 @@
             "examples": [
               "unscheduled maintenance"
             ],
+            "maxLength": 1000,
             "minLength": 1,
             "title": "Reason",
             "type": "string"

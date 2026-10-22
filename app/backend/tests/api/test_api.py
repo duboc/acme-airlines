@@ -54,6 +54,17 @@ async def test_trigger_unknown_flight_404_and_bad_body_422(client):
     assert r.status_code == 422
 
 
+async def test_trigger_cancellation_reason_length_limits(client):
+    """#574: reason is 1..1000 chars; the engine route shares this model, so it validates alike."""
+    url = "/scenario/trigger-cancellation"
+    ok = await client.post(url, json={"flight": "AC1234", "reason": "x" * 1000})
+    assert ok.status_code == 200
+    assert (
+        await client.post(url, json={"flight": "AC1234", "reason": "x" * 1001})
+    ).status_code == 422
+    assert (await client.post(url, json={"flight": "AC1234", "reason": ""})).status_code == 422
+
+
 async def test_journey_detail(client):
     (jid,) = await trigger(client)
     r = await client.get(f"/journeys/{jid}")
