@@ -43,7 +43,7 @@ SSE_POLL_SECONDS = 0.05
 
 class TriggerCancellation(BaseModel):
     flight: str = Field(examples=["AC1234"])
-    reason: str = Field(min_length=1, examples=["unscheduled maintenance"])
+    reason: str = Field(min_length=1, max_length=1000, examples=["unscheduled maintenance"])
 
 
 class TriggerResult(BaseModel):
