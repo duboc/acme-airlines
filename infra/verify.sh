@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verification harness for the acme-airlines factory.
 #
-# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|all>
+# Usage: infra/verify.sh <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|webaccess|backups|watchdog|identity|telemetry|agent-engine|engines|traces|demo-engine|e2e|all>
 # Prints "PASS <check>" or "FAIL <check>: <reason>"; exits non-zero on failure.
 set -uo pipefail
 # shellcheck source=infra/lib.sh
@@ -699,7 +699,7 @@ run() {
       return "$rc" ;;
     e2e)
       local rc=0
-      for c in lead loop engines traces demo-engine; do run "$c" || rc=1; done
+      for c in lead loop engines traces demo-engine irrops-demo; do run "$c" || rc=1; done
       return "$rc" ;;
     *) echo "usage: $0 <project|hub|vertex|claude-image|hubproject|smoke|team|lead|topology|cost|skills|loop|budget|observatory|iap-oauth|irrops-demo|webaccess|backups|watchdog|identity|telemetry|agent-engine|engines|traces|demo-engine|e2e|all>" >&2; return 2 ;;
   esac

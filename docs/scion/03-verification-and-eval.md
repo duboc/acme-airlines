@@ -13,7 +13,7 @@ bash infra/tests/test_lib.sh          # offline unit tests for infra/lib.sh & fa
 bash infra/tests/test_verify.sh       # offline unit tests for verify.sh parsers (including <200k context cap & haiku-5-5)
 uv run --with pytest pytest -q infra/watchdog infra/budget-guard  # unit tests for watchdog & budget-guard
 bash infra/verify.sh all              # 21 non-destructive live infrastructure assertions
-bash infra/verify.sh e2e              # 5 live end-to-end probes (leads + heartbeats + Agent Engine + Cloud Trace)
+bash infra/verify.sh e2e              # 6 live end-to-end probes (leads + heartbeats + Agent Engine + Cloud Trace + IRROPS demo)
 ```
 
 | Check Group | Targets in [`infra/verify.sh`](../../infra/verify.sh) | What It Asserts |
