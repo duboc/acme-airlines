@@ -89,6 +89,28 @@ async def test_callers_without_the_sales_identity_are_denied_on_a2a(app, token, 
     assert SALES not in caplog.text and OTHER not in caplog.text
 
 
+async def test_a2a_guard_fails_closed_when_token_unset(monkeypatch, caplog):
+    monkeypatch.delenv("ACME_SALES_TOKEN", raising=False)  # create_local_app falls back to the env
+    main = create_local_app(sales_token=None)
+    with caplog.at_level(logging.WARNING, logger="acme.audit"):
+        async with client(main, None) as http:
+            resp = await http.post("/a2a", json={"jsonrpc": "2.0", "id": 1})
+    assert resp.status_code == 403 and resp.text == "forbidden"
+    assert any(r.name == "acme.audit" and r.event == "sales_route_denied" for r in caplog.records)
+    # no token to present or to leak; a presented bearer cannot authenticate either
+    async with client(main, OTHER) as http:
+        assert (await http.post("/a2a", json={"jsonrpc": "2.0", "id": 1})).status_code == 403
+    listener = create_a2a_app(main.state.runtime, None)
+    async with client(listener, None) as http:
+        assert (await http.post("/a2a", json={"jsonrpc": "2.0", "id": 1})).status_code == 403
+
+
+async def test_a2a_guard_allows_passenger_routes_when_token_unset(monkeypatch):
+    monkeypatch.delenv("ACME_SALES_TOKEN", raising=False)
+    async with client(create_local_app(sales_token=None), None) as http:
+        assert (await http.get("/journeys")).status_code == 200
+
+
 BYPASS_HEADERS = {
     "double space": [(b"authorization", f"Bearer  {SALES}".encode())],
     "tab": [(b"authorization", f"Bearer\t{SALES}".encode())],

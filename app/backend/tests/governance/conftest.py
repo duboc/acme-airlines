@@ -58,14 +58,19 @@ def make_journey(status=S.RESOLVED, ack=True, tier="diamond", flight="AC1252") -
 
 
 @pytest.fixture(params=["http", "engine"])
-async def stack(request):
+async def stack(request, monkeypatch):
     """Customer app + A2A skills + Sales radar (inventory-only caller) over one seeded world."""
+    monkeypatch.setenv("ACME_SALES_TOKEN", "t-sales")  # /a2a fails closed without a token (#575)
     app = create_app(FixedClock(DISRUPTION_DETECTED_AT))
     rt = app.state.runtime
     rt.auto_duty_of_care = False
     (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
     await rt.sim.rebook("MSLV42", "AC1252")
-    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://customer")
+    http = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://customer",
+        headers={"Authorization": "Bearer t-sales"},
+    )
     customer = (
         EngineCustomerClient(engine_over(rt))
         if request.param == "engine"
