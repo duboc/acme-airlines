@@ -36,6 +36,7 @@ def test_meal_window_edges_are_inclusive_at_the_start_and_exclusive_at_the_end(s
     [(3.99, True, False), (4.0, True, True), (4.01, True, True), (10.0, False, False)],
 )
 def test_breakfast_needs_an_overnight_wait_of_at_least_four_hours(hours, overnight, breakfast):
+    """DOC-04: breakfast needs an overnight wait of >= 4h."""
     meals = ev(wait_hours=hours, requires_overnight=overnight, wait_start=time(3)).meal_vouchers
     assert ("breakfast" in meals) is breakfast
 
@@ -45,10 +46,12 @@ def test_breakfast_is_not_given_for_a_long_wait_without_an_overnight_stay():
 
 
 def test_no_meals_below_two_hours_even_inside_a_meal_window():
+    """DOC-02 / DOC-03: no meal voucher below 2h."""
     assert ev(wait_hours=1.99, wait_start=time(12), requires_overnight=False).meal_vouchers == []
 
 
 def test_a_meal_window_at_the_two_hour_edge_gets_the_meal():
+    """DOC-02: lunch at exactly 2h inside 11:00-15:00."""
     assert ev(wait_hours=2.0, wait_start=time(12), requires_overnight=False).meal_vouchers == [
         "lunch"
     ]
@@ -73,6 +76,7 @@ def test_zero_wait_is_valid_and_a_negative_wait_is_refused_with_a_clear_message(
     [(0.99, False, " (threshold not met)"), (1.0, True, ""), (1.01, True, "")],
 )
 def test_communication_starts_at_exactly_one_hour(hours, included, suffix):
+    """DOC-01: communication from exactly 1h."""
     e = ev(wait_hours=hours, requires_overnight=False)
     assert e.communication_included is included
     assert e.rule_reasons["communication"] == f"{doc.ART27}, I{suffix}"
@@ -120,12 +124,14 @@ def test_eu_reasons_for_an_eu_touching_route_and_a_third_country_route():
 
 
 def test_a_short_delay_is_not_reaccommodated_and_says_so():
+    """DOC-09: a short delay is not re-accommodated."""
     e = ev(disruption_type="delay", wait_hours=1.5, requires_overnight=False)
     assert not e.reaccommodation_required
     assert e.rule_reasons["reaccommodation"] == "ANAC 400 Art. 21 (threshold not met)"
 
 
 def test_a_long_delay_is_reaccommodated_like_a_cancellation():
+    """DOC-09: a delay of >= 4h is re-accommodated."""
     e = ev(disruption_type="delay", wait_hours=4.0, requires_overnight=False)
     assert e.reaccommodation_required
     assert e.rule_reasons["reaccommodation"] == "ANAC 400 Art. 21, I & Art. 28"
@@ -240,3 +246,26 @@ def test_a_connection_that_is_already_missed_rounds_down_to_a_negative_minute():
 def test_doc10_compensation_boundary(reason, hours, eligible):
     e = ev(disruption_reason=reason, wait_hours=hours)
     assert e.compensation_eligible is eligible
+
+
+@pytest.mark.parametrize(
+    ("hours", "start", "meals"),
+    [(1.99, time(19), []), (2.0, time(19), ["dinner"]), (2.0, time(17, 59), [])],
+)
+def test_doc03_dinner_needs_two_hours_inside_the_evening_window(hours, start, meals):
+    """DOC-03: dinner needs wait >= 2h and a start in 18:00-23:00."""
+    assert ev(wait_hours=hours, wait_start=start, requires_overnight=False).meal_vouchers == meals
+
+
+@pytest.mark.parametrize(
+    ("kind", "hours", "reaccommodated"),
+    [
+        ("cancellation", 0.0, True),
+        ("delay", 3.99, False),
+        ("delay", 4.0, True),
+    ],
+)
+def test_doc09_reaccommodation_boundary(kind, hours, reaccommodated):
+    """DOC-09: cancellation OR wait >= 4h gets free re-accommodation."""
+    e = ev(disruption_type=kind, wait_hours=hours, requires_overnight=False)
+    assert e.reaccommodation_required is reaccommodated

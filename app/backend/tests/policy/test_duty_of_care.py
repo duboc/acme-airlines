@@ -48,6 +48,7 @@ def test_same_day_within_two_hours_needs_no_hotel_or_meal():
 
 
 def test_no_communication_under_one_hour():
+    """DOC-01: no communication below the one-hour threshold."""
     e = ev(wait_hours=0.9, requires_overnight=False, disruption_type="delay")
     assert not e.communication_included
     assert "threshold not met" in e.rule_reasons["communication"]
@@ -66,6 +67,7 @@ def test_no_communication_under_one_hour():
     ],
 )
 def test_meal_windows(start, wait, overnight, meals):
+    """DOC-02 / DOC-03 / DOC-04: lunch, dinner and overnight breakfast vouchers by wait start."""
     assert ev(wait_start=start, wait_hours=wait, requires_overnight=overnight,
               disruption_type="delay").meal_vouchers == meals  # fmt: skip
 
@@ -110,6 +112,7 @@ def test_short_technical_delay_is_not_compensable():
 
 
 def test_cancellation_always_requires_reaccommodation():
+    """DOC-09: a cancellation is always re-accommodated, however short the wait."""
     assert ev(wait_hours=0.5, requires_overnight=False).reaccommodation_required
 
 
