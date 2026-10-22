@@ -3,7 +3,9 @@
 Sales identifies itself with its per-caller credential (`Authorization: Bearer <sales token>`).
 A request carrying that credential is allowed to `POST /a2a` and nothing else, and `/a2a` requires
 that credential: every other combination is refused with 403 and an audit event. Fail closed:
-no path normalisation tricks, only the exact `/a2a` path and method qualify. The credential is
+no path normalisation tricks, only the exact `/a2a` path and method qualify. With no token
+configured `/a2a` is refused outright (nothing can authenticate); every other path passes, since
+without a token there is no Sales credential to recognise. The credential is
 never logged. `ACME_SALES_TOKEN` configures the token (same value Sales presents).
 """
 
@@ -50,15 +52,16 @@ class SalesRouteGuard:
         self.app, self._token = app, sales_token
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if self._token and scope["type"] in ("http", "websocket"):
+        if scope["type"] in ("http", "websocket"):
             if scope["path"] == A2A_PATH:
                 denied = not (
-                    scope["type"] == "http"
+                    self._token
+                    and scope["type"] == "http"
                     and scope["method"] == "POST"
                     and _valid_sales_bearer(scope, self._token)
                 )
             else:
-                denied = _is_sales(scope, self._token)
+                denied = bool(self._token) and _is_sales(scope, self._token)
             if denied:
                 audit.warning(
                     "guardrail audit: sales caller denied route=%s method=%s",

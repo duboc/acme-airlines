@@ -24,7 +24,8 @@ def offer_dict(jid, **over):
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
+    monkeypatch.setenv("ACME_SALES_TOKEN", "t-sales")  # /a2a fails closed without a token (#575)
     return create_app(FixedClock(DISRUPTION_DETECTED_AT))
 
 
@@ -45,7 +46,11 @@ def a2a(skill, args, parts_extra=()):
 
 
 async def post(app, body):
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://t",
+        headers={"Authorization": "Bearer t-sales"},
+    ) as c:
         return (await c.post("/a2a", json=body)).json()
 
 

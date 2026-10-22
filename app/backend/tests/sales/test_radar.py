@@ -18,13 +18,18 @@ SALES_DIR = Path(__file__).resolve().parents[2] / "src/acme/sales"
 
 
 @pytest.fixture
-async def world():
+async def world(monkeypatch):
+    monkeypatch.setenv("ACME_SALES_TOKEN", "t-sales")  # /a2a fails closed without a token (#575)
     app = create_app(FixedClock(DISRUPTION_DETECTED_AT))
     rt = app.state.runtime
     rt.auto_duty_of_care = False
     (jid,) = await rt.trigger_cancellation("AC1234", "unscheduled maintenance")
     await rt.sim.rebook("MSLV42", "AC1252")
-    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://customer")
+    http = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://customer",
+        headers={"Authorization": "Bearer t-sales"},
+    )
     inventory = SimClient(inprocess_connector(rt.sim, "sales"))
     radar = SalesRadar(A2ACustomerClient(http), inventory)
     yield radar, rt, jid
