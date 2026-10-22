@@ -55,3 +55,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-22T14:47Z | #586 (PR #587) | `7ae2a0b` (`e2e.yml`) | PR checks pass; verified `actions/cache` SHA | APPROVE |
 | 2026-10-22T14:45Z | #584 (PR #585) | `0ab0750` (`uv.lock`, `customer.py`) | `bash /tmp/verify584.sh`; checks `containers` is pass; `test_engine_requirements_match_uv_lock` passed | APPROVE |
 | 2026-10-22T14:22Z | #574 (PR #583) | `d84305f` (`app.py`, `openapi.json`, `test_api.py`) | `bash /tmp/verify574.sh`; mutated `max_length=1000` | APPROVE |
+| 2026-10-22T15:44Z | docs (PR #588) | `4f58a87` (`DEPLOYMENT.md`) | visual diff review against issue evidence | REQUEST_CHANGES (missing engine IDs for #575) |
