@@ -57,3 +57,4 @@ Dated review verdicts appended by `reviewer` (`duboc-acme-airlines` build factor
 | 2026-10-22T14:22Z | #574 (PR #583) | `d84305f` (`app.py`, `openapi.json`, `test_api.py`) | `bash /tmp/verify574.sh`; mutated `max_length=1000` | APPROVE |
 | 2026-10-22T15:44Z | docs (PR #588) | `4f58a87` (`DEPLOYMENT.md`) | visual diff review against issue evidence | REQUEST_CHANGES (missing engine IDs for #575) |
 | 2026-10-22T15:45Z | docs (PR #588 v2) | `f723828` (`DEPLOYMENT.md`) | visual diff against issue evidence | APPROVE |
+| 2026-10-22T16:20Z | #589 (PR #591) | `98a2f43` (`test_duty_of_care.py`) | `bash /tmp/verify589.sh`; mutation caught properly | APPROVE |

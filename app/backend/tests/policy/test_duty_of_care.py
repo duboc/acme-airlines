@@ -28,7 +28,7 @@ def test_mariana_overnight_cancellation():
     assert e.rule_reasons["ground_transfer"] == "ANAC 400 Art. 27, III"
     assert e.rule_reasons["meals"] == "ANAC 400 Art. 27, II"
     assert e.rule_reasons["reaccommodation"] == "ANAC 400 Art. 21, I & Art. 28"
-    assert e.rule_reasons["compensation"].startswith("CDC Art. 14")
+    assert e.rule_reasons["compensation"] == "CDC Art. 14 / STJ REsp 1.584.465 (fortuito interno)"
     assert "EU261 non-applicable" in e.rule_reasons["eu261"]
 
 
