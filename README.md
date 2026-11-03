@@ -1,11 +1,10 @@
 # acme-airlines
 
 > [!IMPORTANT]
-> **Decommissioning, 2026-11-03.** On that date the product owner asked for the GCP project, the Scion Hub, Agent
-> Engine and every Cloud Run service to be deleted, so the live URLs below stop working once the deletion completes.
-> This repository is kept as the permanent record. Start with the
-> **[project record & decommission report](docs/scion/04-project-record-and-decommission.md)**: what was built, how,
-> results, measured cost, incidents, lessons, and how to rebuild.
+> **Decommissioned on 2026-11-03.** The GCP project, the Scion Hub, Agent Engine and every Cloud Run service were
+> deleted at 20:17 UTC, so the live URLs below no longer work. This repository is kept as the permanent record. Start
+> with the **[project record & decommission report](docs/scion/04-project-record-and-decommission.md)**: what was
+> built, how, results, measured cost, incidents, lessons, and how to rebuild.
 
 Home of the **acme-airlines** application and of the **Scion software factory** that
 builds and evaluates it (modeled after [`duboc/scion-experiment`](https://github.com/duboc/scion-experiment)): two Scion projects running on a self-hosted [Scion](https://github.com/GoogleCloudPlatform/scion) Hub VM (`duboc-acme-airlines` for development on `main` and `acme-airlines-eval` for evaluation & the Observatory dashboard on `eval-dashboard`), with 12 standing agents (Claude Opus/Sonnet 5.5 + Antigravity Gemini 4 Argon) and 15-minute heartbeats.
