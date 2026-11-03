@@ -1,13 +1,13 @@
 # 04 — Project Record & Decommission Report
 
 > [!IMPORTANT]
-> **Status: decommissioning, 2026-11-03.** The product owner (PO) decided to shut the factory down. On 2026-11-03 the
-> PO asked for the GCP project `acme-airlines-factory` to be deleted. That project held the Scion Hub VM, Cloud Run,
-> Agent Engine, BigQuery, Secret Manager and Artifact Registry. [§12](#12-decommission-log) records the result.
-> **This repository is kept as the permanent record.** The live URLs in the [README](../../README.md) and the
-> [try-it guide](../product/try-it.md) stop working once the project is deleted. Where other docs in this repo differ
-> from what actually ran (model aliases, I20; the cost mechanism and idle cost, I21 and I23), this record takes
-> precedence.
+> **Status: decommissioned on 2026-11-03.** The product owner (PO) decided to shut the factory down. The GCP project
+> `acme-airlines-factory` was deleted at **2026-11-03 20:17 UTC**. It held the Scion Hub VM, Cloud Run, Agent Engine,
+> BigQuery, Secret Manager and Artifact Registry. It can be restored until about 2026-12-03, after which the deletion
+> is permanent ([§12](#12-decommission-log)). **This repository is kept as the permanent record.** The live URLs in
+> the [README](../../README.md) and the [try-it guide](../product/try-it.md) no longer work. Where other docs in this
+> repo differ from what actually ran (model aliases, I20; the cost mechanism and idle cost, I21 and I23), this record
+> takes precedence.
 
 This document is the single record of what the ACME Airlines software factory was, how it ran, what it produced, what
 it cost, what broke, and what it taught. It links to the detailed guides rather than repeating them:
@@ -213,7 +213,7 @@ transcript.
 | 10-21 → 10-22 | Audit-driven fixes: security caps, certifi CVE, e2e timeout, DOC-10/11 strings. Last product merge at 10-22 16:26 (#591). |
 | 10-23 12:02 | Last agent message: eval-lead's audit of 12 issues, which were then closed. |
 | 10-23 → 11-02 | Idle. Daily heartbeats found nothing to do. Spend ≈ $21/day, almost all of it the VM. |
-| 11-03 | The PO asks for full documentation, then decommissioning. Archive and this record produced, then deletion ([§12](#12-decommission-log)). |
+| 11-03 | The PO asks for full documentation, then decommissioning. Archive and this record produced (#596, 19:49). After the PO confirmed (it was the first time the billing-export finding, I22, was raised), the billing budget was deleted at 20:17:06 and project deletion requested at 20:17:13 ([§12](#12-decommission-log)). |
 
 ---
 
@@ -517,16 +517,16 @@ Not archived:
    temporary Parquet copy of the billing export under `gs://acme-airlines-factory-agent-engine/_decommission/` to
    download it.
 
-**Deletion**: results are appended below once the operation completes.
+**Deletion (2026-11-03, after the PO confirmed once the I22 billing-export finding was raised)**
 
 | Step | Command | Result |
 |---|---|---|
-| Delete the factory's billing budget (billing-account level) | `gcloud billing budgets delete <BUDGET_ID> --billing-account=<BILLING_ACCOUNT_ID>` | _pending_ |
-| Delete the project (this also removes the VM, Hub, Cloud Run, Agent Engine, BigQuery, Secret Manager, Artifact Registry, Scheduler and service accounts) | `gcloud projects delete acme-airlines-factory` | _pending_ |
-| Verify | Project lifecycle `DELETE_REQUESTED`; public URLs stop serving | _pending_ |
+| Delete the factory's billing budget (billing-account level) | `gcloud billing budgets delete <BUDGET_ID> --billing-account=<BILLING_ACCOUNT_ID>` | **Done** at 20:17:06 UTC. No `acme-*` budget is left on the billing account; the account's other budgets were not touched. |
+| Delete the project (this also removes the VM, Hub, Cloud Run, Agent Engine, BigQuery, Secret Manager, Artifact Registry, Scheduler and service accounts) | `gcloud projects delete acme-airlines-factory` | **Requested** at 20:17:13 UTC. `lifecycleState` = `DELETE_REQUESTED`. |
+| Verify | `gcloud projects describe`, `gcloud compute instances list`, `curl` the public URLs | At 20:19 UTC: project `DELETE_REQUESTED`; the instance list was empty (the Hub VM was gone); `acme-budget-guard` returned 503. The IAP front doors were still answering with sign-in redirects (302) while serving shut down. At 20:28 UTC the Cloud Run API rejected the project (`CONSUMER_INVALID`) and Compute listed no instances. The `*.run.app` hostnames still answered at Google's front end (IAP sign-in 302; `acme-budget-guard` 403), but unauthenticated checks can't reach the services, which belong to the deleted project. |
 
-Projects can be restored for 30 days with `gcloud projects undelete acme-airlines-factory`; after that the deletion
-is permanent.
+Restore window: run `gcloud projects undelete acme-airlines-factory` before about **2026-12-03** (30 days after the
+request). After that the deletion is permanent.
 
 **Left for the PO to do by hand** (deleting the project does not cover these)
 1. **Revoke the GitHub PATs** that the deleted systems used, in GitHub settings → Developer settings → tokens. One is
